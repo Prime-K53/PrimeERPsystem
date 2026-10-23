@@ -43,10 +43,14 @@ const CASES: Array<{
 ];
 
 describe('supported types', () => {
-  it('enables exactly the nine real document types', () => {
+  it('enables exactly the real document types (a new type cannot be enabled silently)', () => {
+    // The contract documents (the printing contract, its assessment schedule
+    // and its completion receipt) and work orders were added after this list
+    // was first written; the expectation stays exact on purpose.
     expect(SUPPORTED_DOCUMENT_TYPES).toEqual([
       'invoice', 'receipt', 'quotation', 'sales_order', 'purchase_order', 'delivery_note',
-      'supplier_payment', 'statement', 'printing_contract',
+      'supplier_payment', 'statement', 'printing_contract', 'printing_contract_schedule',
+      'printing_contract_completion_receipt', 'work_order',
     ]);
   });
 

@@ -131,31 +131,125 @@ function isProductionBuild(): boolean {
 }
 
 /**
+ * Document types the customer PORTAL serves on its public verification page.
+ *
+ * The Portal deployment used to whitelist eight slugs:
+ *
+ *   /^\/(verify\/invoice|verify\/(receipt|quotation|sales-order|purchase-order|
+ *       delivery-note|supplier-payment|statement))/
+ *
+ * and anything else fell through to its authenticated shell, so a scanner
+ * landed on the LOGIN page instead of the verification result. The Portal now
+ * renders its verification page for EVERY `/#/verify/...` route, and knows the
+ * four contract-document types, so all verifiable types are served publicly.
+ *
+ * The list stays explicit on purpose: a NEW document type must be confirmed to
+ * be served by the Portal before its QR codes are pointed at it. A type that is
+ * missing from this list falls back to the app that serves the verification
+ * route (the ERP app's own public `/#/verify`), so a QR can never dead-end on a
+ * login page.
+ */
+export const PORTAL_SERVED_VERIFICATION_TYPES: VerifiableDocumentType[] = [
+  'invoice',
+  'receipt',
+  'quotation',
+  'sales_order',
+  'purchase_order',
+  'delivery_note',
+  'supplier_payment',
+  'statement',
+  'printing_contract',
+  'printing_contract_schedule',
+  'printing_contract_completion_receipt',
+  'work_order',
+];
+
+/** True when the Portal deployment serves this type's public verification page. */
+export function isPortalServedVerificationType(
+  type: VerifiableDocumentType | null | undefined,
+): boolean {
+  if (!type) return false;
+  return (PORTAL_SERVED_VERIFICATION_TYPES as string[]).includes(type);
+}
+
+/**
+ * Pure decision table for the verification base URL.
+ *
+ * Split out of `resolveVerificationBaseUrl` so the rule is testable without
+ * stubbing `import.meta.env` (Vitest inlines it at transform time) — the same
+ * technique the Portal-origin helper uses.
+ *
+ *  - A type the Portal does NOT serve uses the app that serves the
+ *    verification route (`appOrigin`), never the Portal: the Portal would
+ *    send the scanner to its login page.
+ *  - A type the Portal DOES serve uses the Portal origin; in production it
+ *    fails closed (empty) when the Portal origin is unconfigured, so a public
+ *    QR code never silently points at a private origin.
+ */
+export function pickVerificationBaseUrl(opts: {
+  type?: VerifiableDocumentType | null;
+  portalOrigin?: string | null;
+  appOrigin?: string | null;
+  isProduction?: boolean;
+}): string {
+  const portal = String(opts.portalOrigin || '').trim().replace(/\/+$/, '');
+  const app = String(opts.appOrigin || '').trim().replace(/\/+$/, '');
+  const type = opts.type || null;
+
+  if (type && !isPortalServedVerificationType(type)) {
+    // The Portal cannot show this document: use the app that can.
+    return app;
+  }
+  if (portal) return portal;
+  if (opts.isProduction) return '';
+  return app;
+}
+
+/**
  * Public web origin used inside customer-facing QR codes.
  *
- * The Portal is the public verification surface, so this prefers the
- * configured Portal origin (`VITE_PUBLIC_PORTAL_URL`). Production builds
- * FAIL CLOSED when it is missing (return '') so new public QR codes can
- * never silently point back at the private ERP origin; callers then fall
- * back to the legacy human-readable QR payload. Local dev/test keep the
+ * The Portal is the public verification surface for the types it serves, so
+ * this prefers the configured Portal origin (`VITE_PUBLIC_PORTAL_URL`).
+ * Production builds FAIL CLOSED when it is missing (return '') so new public QR
+ * codes can never silently point back at the private ERP origin; callers then
+ * fall back to the legacy human-readable QR payload. Local dev/test keep the
  * running-app-origin fallback so offline work is unaffected.
+ *
+ * For a type the Portal does NOT serve (the contract documents, work orders),
+ * the Portal would send the scanner to its login page, so those types use the
+ * app that serves the verification route: `VITE_PUBLIC_APP_URL` when
+ * configured, otherwise the running app's own origin (the browser), otherwise
+ * '' — a server-side renderer must configure `VITE_PUBLIC_APP_URL`.
  */
-export function resolveVerificationBaseUrl(): string {
-  try {
-    // NOTE: same static-analyzability requirement as above — `import.meta.env`
-    // must stay a plain member chain so Vite injects the configured Portal
-    // origin. `(import.meta as any)?.env` bypasses injection and always falls
-    // through to the origin fallback below.
-    const fromEnv = String((import.meta as any).env?.VITE_PUBLIC_PORTAL_URL || '').trim();
-    if (fromEnv) return fromEnv.replace(/\/+$/, '');
-  } catch { /* import.meta unavailable */ }
-  if (isProductionBuild()) {
+export function resolveVerificationBaseUrl(documentType?: VerifiableDocumentType | null): string {
+  const portalOrigin = (): string => {
+    try {
+      // NOTE: same static-analyzability requirement as above — `import.meta.env`
+      // must stay a plain member chain so Vite injects the configured Portal
+      // origin. `(import.meta as any)?.env` bypasses injection and always falls
+      // through to the origin fallback below.
+      const fromEnv = String((import.meta as any).env?.VITE_PUBLIC_PORTAL_URL || '').trim();
+      return fromEnv.replace(/\/+$/, '');
+    } catch { /* import.meta unavailable */ }
     return '';
-  }
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    return String(window.location.origin).replace(/\/+$/, '');
-  }
-  return '';
+  };
+  const appOrigin = (): string => {
+    try {
+      const fromEnv = String((import.meta as any).env?.VITE_PUBLIC_APP_URL || '').trim();
+      if (fromEnv) return fromEnv.replace(/\/+$/, '');
+    } catch { /* import.meta unavailable */ }
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return String(window.location.origin).replace(/\/+$/, '');
+    }
+    return '';
+  };
+
+  return pickVerificationBaseUrl({
+    type: documentType || null,
+    portalOrigin: portalOrigin(),
+    appOrigin: appOrigin(),
+    isProduction: isProductionBuild(),
+  });
 }
 
 export interface VerifiableDocumentRef {
@@ -181,7 +275,7 @@ export function buildDocumentVerificationUrl(
   const number = String(ref?.documentNumber ?? ref?.invoiceNumber ?? ref?.contractNumber ?? ref?.number ?? '').trim();
   const token = String(ref?.verificationToken ?? '').trim();
   if (!number || !token) return null;
-  const base = String(baseUrl ?? resolveVerificationBaseUrl()).replace(/\/+$/, '');
+  const base = String(baseUrl ?? resolveVerificationBaseUrl(type)).replace(/\/+$/, '');
   if (!base) return null;
   return `${base}/#/verify/${TYPE_SLUGS[type]}/${encodeURIComponent(number)}?t=${encodeURIComponent(token)}`;
 }

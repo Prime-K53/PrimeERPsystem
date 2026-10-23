@@ -3571,6 +3571,15 @@ export interface ContractDocument {
   /** Canonical frozen payload (Zod-parsed schedule/receipt/contract doc). */
   content: Record<string, any>;
   contentHash: string;
+  /**
+   * Hash rule version applied when this document was issued.
+   *  1 / absent → legacy: the whole document, volatile metadata included.
+   *  2          → only the stable content envelope (issue date and the
+   *               per-version verification token are excluded), so unchanged
+   *               content hashes identically across repeated renders.
+   * Verification must apply the same rule; see contractDocumentService.
+   */
+  hashVersion?: number;
   verificationToken?: string;
   /** Assessment linkage for receipts (null for schedules). */
   assessmentItemId?: string;

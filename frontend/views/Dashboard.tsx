@@ -1250,7 +1250,7 @@ const DashboardContent: React.FC = () => {
     );
     const pendingPayment = contracts.filter((c: any) => c.status === 'pending_payment').length;
     const prepaidBalance = live.reduce((s: number, c: any) => {
-      const available = c.available_funds ?? (toSafeNumber(c.prepaid_amount) - toSafeNumber(c.consumed_amount) - toSafeNumber(c.reserved_amount));
+      const available = toSafeNumber(c.prepaid_amount) - toSafeNumber(c.consumed_amount) - toSafeNumber(c.reserved_amount);
       return s + Math.max(0, toSafeNumber(available));
     }, 0);
     return { live, count: live.length, pendingPayment, prepaidBalance };

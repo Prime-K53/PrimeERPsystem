@@ -8,11 +8,19 @@
  *
  * Supported types (stable number + persistent record + existing PDF):
  *   invoice, receipt, quotation, sales_order, purchase_order, delivery_note,
- *   supplier_payment, statement, printing_contract
+ *   supplier_payment, statement, printing_contract, printing_contract_schedule
  *
  * printing_contract reads assessment_contracts (official number =
  * contract_number, PC- prefix; token persisted on the record envelope).
  * Cancelled contracts verify as authentic with terminal CANCELLED status.
+ *
+ * printing_contract_schedule reads contract_documents — one immutable row per
+ * ISSUED VERSION, each with its own token/hash/status — so a schedule verifies
+ * as the exact version its QR was printed from. A legacy contract-token QR
+ * (printed before per-version documents) falls back to assessment_contracts and
+ * is reported with verificationScope 'contract': the contract is affirmed, the
+ * version is not claimed. SUPERSEDED and VOID versions verify as authentic but
+ * terminal, never as current.
  *
  * purchase_order reads the CANONICAL purchase_orders table first (the ERP
  * record created by procurementService, synced through dbService); the
@@ -34,6 +42,7 @@
  */
 const axios = require('axios');
 const crypto = require('crypto');
+const integrity = require('./documentIntegrity.cjs');
 
 const GENERIC_FAILURE = 'Document could not be verified against Prime Printing records.';
 
@@ -165,6 +174,25 @@ function mapCanonicalStatus(raw, cancelledWords, fallback) {
 
 function customerNameOf(d) {
   return String(d.businessName || d.business_name || d.customerName || d.customer_name || d.clientName || 'Customer');
+}
+
+/**
+ * True for an immutable per-version `contract_documents` envelope (as opposed
+ * to a legacy parent-contract row). The documentType is stamped by the issue
+ * service and is the only reliable discriminator between the two tables this
+ * one registry entry reads.
+ */
+function isScheduleVersionRow(d) {
+  return String((d && d.documentType) || '') === 'printing_contract_schedule';
+}
+
+/**
+ * A completion receipt is a VERSION row of its own: an immutable
+ * `contract_documents` row with its own number, token, hash and frozen
+ * content. A row that is not one is the legacy contract-level shape.
+ */
+function isReceiptVersionRow(d) {
+  return String((d && d.documentType) || '') === 'printing_contract_completion_receipt';
 }
 
 // Registry: type -> { table, idFields, statusOf, toSafe }
@@ -406,60 +434,234 @@ const REGISTRY = {
       status,
     }),
   },
-  // Customer schedule + completion receipt verify against the parent
-  // contract row (same table, same token). The receipt's official
-  // number is PCR-<contract number>, so its lookup normalizes the
-  // prefix away before matching.
+  // A contract schedule verifies as ITS OWN ISSUED VERSION, not as the parent
+  // contract. Every issue is an immutable row in `contract_documents` carrying
+  // its own number/version/token/hash/status, so the token alone identifies the
+  // exact version the QR was printed from.
+  //
+  // `assessment_contracts` is queried as a LEGACY fallback and never as a
+  // version match: schedules printed before per-version documents existed
+  // encoded the CONTRACT's token. Those resolve honestly as
+  // `verificationScope: 'contract'` — the contract is affirmed, the specific
+  // version is not claimed.
   printing_contract_schedule: {
-    table: 'assessment_contracts',
-    idFields: ['contract_number'],
-    statusOf: (c) => {
-      const s = String(c.status || '').toLowerCase().trim();
-      if (['cancelled', 'canceled', 'void', 'voided'].includes(s)) return 'CANCELLED';
-      if (!s) return 'DRAFT';
-      return s.toUpperCase();
+    tables: ['contract_documents', 'assessment_contracts'],
+    // Query every table and merge: a clear-on-first-hit lookup would 404 a
+    // legacy contract-token QR as soon as the contract owned any version row.
+    allTables: true,
+    idFields: ['documentNumber', 'contract_number'],
+    // The status of a schedule is the VERSION's own lifecycle state
+    // (VALID / SUPERSEDED / VOID) — never the contract's lifecycle. A
+    // superseded or voided version must never present as a current document.
+    statusOf: (d) => {
+      if (!isScheduleVersionRow(d)) {
+        const s = String(d.status || '').toLowerCase().trim();
+        if (['cancelled', 'canceled', 'void', 'voided'].includes(s)) return 'VOID';
+        if (!s) return 'DRAFT';
+        return s.toUpperCase();
+      }
+      const raw = String(d.status || '').toLowerCase().trim();
+      if (raw === 'superseded') return 'SUPERSEDED';
+      if (['void', 'voided', 'cancelled', 'canceled'].includes(raw)) return 'VOID';
+      if (raw === 'valid') return 'VALID';
+      return upper(raw[0], '');
     },
-    terminalInvalid: (status) => status === 'CANCELLED',
-    toSafe: (c, company, status) => ({
-      verified: true,
-      documentType: 'printing_contract_schedule',
-      contractNumber: String(c.contract_number || ''),
-      contractDate: String(c.starts_at || c.created_at || ''),
-      companyName: String(c.companyName || company),
-      customerName: customerNameOf(c),
-      currency: String(c.currency || 'MWK'),
-      prepaidTotal: Number(c.prepaid_amount ?? 0),
-      totalAssessments: Number(c.max_assessments ?? 0),
-      status,
-    }),
+    // Authentic but no longer current. Verification still succeeds so the
+    // distinction between "issued and intact" and "still the current version"
+    // survives — the status itself is what disqualifies it.
+    terminalInvalid: (status) => status !== 'VALID',
+    toSafe: (d, company, status) => {
+      if (!isScheduleVersionRow(d)) {
+        const contractStatus = (() => {
+          const s = String(d.status || '').toLowerCase().trim();
+          if (['cancelled', 'canceled', 'void', 'voided'].includes(s)) return 'VOID';
+          return upper(s, 'DRAFT');
+        })();
+        return {
+          verified: true,
+          documentType: 'printing_contract_schedule',
+          verificationScope: 'contract',
+          contractNumber: String(d.contract_number || ''),
+          companyName: String(d.companyName || company),
+          customerName: customerNameOf(d),
+          status: contractStatus,
+        };
+      }
+      const content = d.content || {};
+      return {
+        verified: true,
+        documentType: 'printing_contract_schedule',
+        verificationScope: 'version',
+        // The issued version's OWN identity. It is deliberately NOT printed on
+        // the document (the printout carries the QR only, like every other
+        // Prime ERP document): the customer scans the QR and reads the id,
+        // version, issue date and status here.
+        documentId: String(d.id || ''),
+        contractNumber: String(d.documentNumber || ''),
+        scheduleVersion: Number(d.documentVersion || 0),
+        issuedAt: String(d.issuedAt || ''),
+        companyName: String(d.companyName || company),
+        customerName: String(content.customerName || 'Customer'),
+        currency: String(content.currency || 'MWK'),
+        periodStart: String(content.periodStart || ''),
+        periodEnd: String(content.periodEnd || ''),
+        // Content integrity is SEPARATE from status: the frozen bytes still
+        // hash to the digest stored at issue. `status` (below) says whether the
+        // version is still current; this says whether it is unaltered.
+        // The digest of the frozen content, so the customer can compare it with
+        // the "Content hash" printed on the schedule itself.
+        contentHash: String(d.contentHash || ''),
+        integrity: 'sha256-verified',
+        // Deliberately NOT exposing fund amounts or per-assessment detail to
+        // an unauthenticated caller: the schedule summary is enough to confirm
+        // identity/current-ness, and the QR holder already has the paper.
+        status,
+      };
+    },
+    // The download renders the FROZEN ISSUED CONTENT. A legacy contract-level
+    // match yields null (fail closed): the exact printed version cannot be
+    // reproduced from a live contract row, so it is not served at all.
+    //
+    // Content integrity is enforced here (server-side): a version whose frozen
+    // content no longer matches its stored digest is NOT served, so a tampered
+    // row cannot be rendered as authentic. The matched row's OWN token is
+    // overlaid onto the render payload (never persisted, never mutating the
+    // frozen content) so a historical download re-embeds the version token it
+    // was issued with, not the parent contract token.
+    recordOf: (match) => {
+      if (!isScheduleVersionRow(match)) return null;
+      const content = match.content || null;
+      if (!content) return null;
+      if (!integrity.verifyScheduleRow(match).ok) return null;
+      const token = String(match.verificationToken || '').trim();
+      return token ? { ...content, verificationToken: token } : content;
+    },
   },
+  // A completion receipt verifies as ITS OWN issued receipt, not as the
+  // parent contract. Every issue is an immutable row in `contract_documents`
+  // carrying its own number, token, hash and frozen content, so the token
+  // identifies the exact receipt the QR was printed from.
+  //
+  // The legacy shape (a receipt printed before per-version documents existed)
+  // encoded the CONTRACT's number and token: it resolves honestly as
+  // `verificationScope: 'contract'` — the contract is affirmed, the receipt is
+  // not claimed.
   printing_contract_completion_receipt: {
-    table: 'assessment_contracts',
-    idFields: ['contract_number'],
-    normalize: (n) => String(n).replace(/^PCR-/i, ''),
-    statusOf: (c) => {
-      const s = String(c.status || '').toLowerCase().trim();
+    tables: ['contract_documents', 'assessment_contracts'],
+    allTables: true,
+    // The receipt's own number (`PCR-<contract>`) and, for the legacy shape,
+    // the contract number it was printed against.
+    idFields: ['documentNumber', 'receiptNumber', 'contract_number'],
+    // A legacy receipt print encoded the CONTRACT number and the contract's
+    // token: it must still resolve (as contract scope), while the receipt's
+    // own version row resolves under its own number.
+    numberVariants: (n) => [String(n).replace(/^PCR-/i, '')],
+    statusOf: (d) => {
+      if (isReceiptVersionRow(d)) {
+        const raw = String(d.status || '').toLowerCase().trim();
+        if (raw === 'superseded') return 'SUPERSEDED';
+        if (['void', 'voided', 'cancelled', 'canceled'].includes(raw)) return 'VOID';
+        if (raw === 'valid') return 'VALID';
+        return upper(raw[0], '');
+      }
+      const s = String(d.status || '').toLowerCase().trim();
       if (['cancelled', 'canceled', 'void', 'voided'].includes(s)) return 'CANCELLED';
       if (!s) return 'DRAFT';
       return s.toUpperCase();
     },
-    terminalInvalid: (status) => status === 'CANCELLED',
-    toSafe: async (c, company, status, deps) => {
-      const progress = await assessmentProgress(c, deps && deps.httpGet);
+    // A superseded or voided receipt is still AUTHENTIC (it was issued and is
+    // intact); the status says it is no longer the current one.
+    terminalInvalid: () => false,
+    toSafe: async (d, company, status, deps) => {
+      if (!isReceiptVersionRow(d)) {
+        // Legacy print: the parent contract is affirmed, no receipt version is
+        // claimed. Completion progress comes from the assessment records, never
+        // from prepaid/consumed monetary amounts, so the prepaid total is
+        // deliberately absent from this safe shape.
+        const progress = await assessmentProgress(d, deps && deps.httpGet);
+        return {
+          verified: true,
+          documentType: 'printing_contract_completion_receipt',
+          verificationScope: 'contract',
+          receiptNumber: `PCR-${String(d.contract_number || '')}`,
+          contractNumber: String(d.contract_number || ''),
+          contractDate: String(d.starts_at || d.created_at || ''),
+          companyName: String(d.companyName || company),
+          customerName: customerNameOf(d),
+          currency: String(d.currency || 'MWK'),
+          totalAssessments: Number(d.max_assessments ?? 0),
+          ...(progress || {}),
+          status,
+        };
+      }
+      const content = d.content || {};
       return {
         verified: true,
         documentType: 'printing_contract_completion_receipt',
-        receiptNumber: `PCR-${String(c.contract_number || '')}`,
-        contractNumber: String(c.contract_number || ''),
-        contractDate: String(c.starts_at || c.created_at || ''),
-        companyName: String(c.companyName || company),
-        customerName: customerNameOf(c),
-        currency: String(c.currency || 'MWK'),
-        // The prepaid amount is an accounting figure, not completion
-        // progress. It is deliberately absent from this safe shape.
-        ...(progress || {}),
+        verificationScope: 'version',
+        // The receipt's own identity — never printed on the receipt, read
+        // here after the QR is scanned.
+        documentId: String(d.id || ''),
+        receiptNumber: String(d.documentNumber || content.receiptNumber || ''),
+        contractNumber: String(content.contractNumber || ''),
+        issuedAt: String(d.issuedAt || content.date || ''),
+        companyName: String(d.companyName || company),
+        customerName: String(content.customerName || customerNameOf(d)),
+        schoolName: String(content.schoolName || ''),
+        currency: String(content.currency || 'MWK'),
+        // What the receipt actually says: the assessment it closed, what was
+        // debited, and the fund position it left behind.
+        assessmentName: (() => {
+          const item = (content.item && typeof content.item === 'object') ? content.item : {};
+          return [item.assessmentName, item.grade, item.subject]
+            .map((part) => String(part || '').trim())
+            .filter(Boolean)
+            .join(' - ');
+        })(),
+        amountDebited: Number(content.amountDebited ?? 0),
+        completedToDate: Number(content.completedToDate ?? 0),
+        totalConsumedToDate: Number(content.totalConsumedToDate ?? 0),
+        totalAssessments: Number(content.totalAssessments ?? 0),
+        remainingAssessments: Number(content.remainingAssessments ?? 0),
+        remainingReservedFunds: Number(content.remainingReservedFunds ?? 0),
+        unallocatedFunds: Number(content.unallocatedFunds ?? 0),
+        contractValue: Number(content.contractValue ?? 0),
+        walletBalanceAfter: Number(content.walletBalanceAfter ?? 0),
+        // The digest of the frozen receipt, so the customer can compare it
+        // with the one printed on the receipt.
+        contentHash: String(d.contentHash || content.contentHash || ''),
+        integrity: 'sha256-verified',
         status,
       };
+    },
+    // The download renders the FROZEN ISSUED RECEIPT. A version row is served
+    // from its own content after the stored digest is re-verified, so a
+    // tampered row can never be rendered as authentic.
+    //
+    // LEGACY PAPER RECEIPTS encoded the CONTRACT's number and token (the
+    // per-version token was allocated after the receipt builder ran). The QR
+    // therefore cannot say WHICH receipt of the contract it was printed from;
+    // it is only served when that contract has exactly ONE non-void issued
+    // receipt — then the receipt number identifies it unambiguously. With more
+    // than one, the request fails closed rather than serving the wrong paper.
+    recordOf: (match, rows) => {
+      if (isReceiptVersionRow(match)) {
+        const content = match.content || null;
+        if (!content || !integrity.verifyReceiptRow(match).ok) return null;
+        return content;
+      }
+      const contractNumber = String(match.contract_number || '').trim();
+      const supplied = String(match.verificationToken || '');
+      if (!contractNumber || !supplied) return null;
+      const receiptNumber = `PCR-${contractNumber}`;
+      const candidates = (rows || [])
+        .map((r) => r.data || r)
+        .filter((r) => isReceiptVersionRow(r)
+          && String(r.documentNumber || '') === receiptNumber
+          && String((r.content || {}).verificationToken || '') === supplied
+          && String(r.status || '').toUpperCase() !== 'VOID'
+          && integrity.verifyReceiptRow(r).ok);
+      return candidates.length === 1 ? candidates[0].content : null;
     },
   },
 };
@@ -492,26 +694,87 @@ async function fetchDocumentRows(type, documentNumber, httpGet, axiosImpl) {
   // fallback queries nonexistent columns (Postgres 42703, e.g. EXM-P726/021)
   // and masks the real lookup result. `data->>` filters never 42703.
   const quoted = documentNumber.replace(/"/g, '""');
-  const ors = entry.idFields.map((f) => `data->>${f}.eq."${quoted}"`);
+  // A type may be reachable under more than one number form (a completion
+  // receipt's own number `PCR-<contract>` AND the contract number a legacy
+  // print encoded). Every form is queried, and every form is accepted when
+  // the token matches.
+  const variants = numberVariants(entry, documentNumber);
+  const ors = [];
+  for (const variant of variants) {
+    const safe = variant.replace(/"/g, '""');
+    for (const f of entry.idFields) ors.push(`data->>${f}.eq."${safe}"`);
+  }
   const rows = [];
+  const missingTables = [];
   for (const table of tables) {
-    const { data } = await get(`${base}/rest/v1/${table}`, {
-      params: { select: '*', or: `(${ors.join(',')})`, limit: 5 },
-      headers: { apikey: key, Authorization: `Bearer ${key}` },
-      timeout: 15000,
-    });
+    let data;
+    try {
+      ({ data } = await get(`${base}/rest/v1/${table}`, {
+        params: { select: '*', or: `(${ors.join(',')})`, limit: 5 },
+        headers: { apikey: key, Authorization: `Bearer ${key}` },
+        timeout: 15000,
+      }));
+    } catch (err) {
+      // A table that does not exist in this environment must not take down the
+      // whole lookup: the caller may still verify the same document through the
+      // other configured table (e.g. a legacy contract-token schedule when
+      // `contract_documents` is not deployed). Permanent schema absence is
+      // recorded so the failure stays internally distinguishable from an
+      // invalid token or a nonexistent document.
+      const body = err && err.response ? err.response.data : undefined;
+      const code = body && typeof body === 'object' ? String(body.code || '') : '';
+      // Only a PostgREST "not in schema cache" (or Postgres undefined_table)
+      // counts as a MISSING table. A bare 404 from a misconfigured base URL is
+      // a store failure, not a schema condition, and must not be advertised as
+      // "apply a migration".
+      const missing = code === 'PGRST205'
+        || code === '42P01'
+        || /could not find the table|schema cache|relation .* does not exist/i.test(String((err && err.message) || ''));
+      if (missing) { missingTables.push(table); continue; }
+      throw err;
+    }
     if (Array.isArray(data)) rows.push(...data);
-    if (rows.length > 0 && tables.length > 1) break;
+    // Multi-table entries normally stop at the first table that answers. An
+    // entry with `allTables` (schedule: version rows first, legacy contract
+    // rows second) merges every table instead, so a legacy contract-token QR
+    // still resolves once the contract also owns version rows.
+    if (rows.length > 0 && tables.length > 1 && !entry.allTables) break;
+  }
+  // Every configured table is absent: this is a schema/deployment condition,
+  // not "no such document". Surface it distinctly (never publicly).
+  if (missingTables.length === tables.length) {
+    const err = new Error(`verification table(s) missing: ${missingTables.join(', ')}`);
+    err.code = 'TABLE_MISSING';
+    err.tables = missingTables;
+    throw err;
   }
   return rows;
 }
 
+/**
+ * The number forms a document may be looked up under. The first is the number
+ * as supplied; a type may declare extra forms (the completion receipt's
+ * legacy print encoded the CONTRACT number, `PC-...`, under the receipt
+ * number `PCR-PC-...`).
+ */
+function numberVariants(entry, documentNumber) {
+  const base = String(documentNumber || '').trim();
+  const extra = entry && typeof entry.numberVariants === 'function'
+    ? entry.numberVariants(base)
+    : [];
+  const all = [base, ...(Array.isArray(extra) ? extra : [extra])]
+    .map((v) => String(v || '').trim())
+    .filter(Boolean);
+  return Array.from(new Set(all));
+}
+
 function matchRow(type, documentNumber, rows, token) {
   const entry = REGISTRY[type];
+  const variants = numberVariants(entry, documentNumber);
   return rows
     .map((r) => r.data || r)
     .find((d) => {
-      const hit = entry.idFields.some((f) => String(d[f] ?? '') === documentNumber);
+      const hit = entry.idFields.some((f) => variants.some((v) => String(d[f] ?? '') === v));
       if (!hit) return false;
       const stored = String(d.verificationToken || '');
       if (!stored) return false;
@@ -536,12 +799,34 @@ async function verifyDocument(documentType, documentNumber, token, deps) {
   let rows;
   try {
     rows = await fetchDocumentRows(documentType, clean, httpGet);
-  } catch {
-    return { ok: false };
+  } catch (e) {
+    // Internal diagnostic only — the public route collapses every failure into
+    // the same generic response (no enumeration oracle, no schema disclosure).
+    const reason = e && e.code === 'TABLE_MISSING' ? 'table_missing'
+      : e && e.code === 'STORE_UNAVAILABLE' ? 'store_unavailable'
+      : 'store_error';
+    return { ok: false, reason };
   }
   const match = matchRow(documentType, clean, rows, supplied);
-  if (!match) return { ok: false };
+  if (!match) return { ok: false, reason: clarityReason(rows) };
+  // The schedule and the receipt are the two entries with their own frozen
+  // content hash. Verify the EXACT persisted version's integrity before
+  // reporting a successful result: a tampered or mismatched row fails closed
+  // rather than verifying as issued.
+  if (documentType === 'printing_contract_schedule' && isScheduleVersionRow(match)) {
+    const check = integrity.verifyScheduleRow(match);
+    if (!check.ok) return { ok: false, reason: `integrity_${check.reason}` };
+  }
+  if (documentType === 'printing_contract_completion_receipt' && isReceiptVersionRow(match)) {
+    const check = integrity.verifyReceiptRow(match);
+    if (!check.ok) return { ok: false, reason: `integrity_${check.reason}` };
+  }
   return { ok: true, data: await entry.toSafe(match, getConfig().company, entry.statusOf(match), deps) };
+}
+
+/** Distinguishes "nothing matched" from "the store answered with no rows". */
+function clarityReason(rows) {
+  return Array.isArray(rows) && rows.length > 0 ? 'token_mismatch' : 'no_match';
 }
 
 /**
@@ -568,6 +853,12 @@ async function getDocumentRecord(documentType, documentNumber, token, deps) {
   }
   const match = matchRow(documentType, clean, rows, supplied);
   if (!match) return null;
+  // Most entries hand the raw record to the renderer. An entry may instead
+  // declare `recordOf` to select the renderable payload — the schedule returns
+  // its FROZEN ISSUED CONTENT, and returns null (fail closed) for a legacy
+  // contract-level match, because a live contract row cannot reproduce the
+  // exact version that was printed.
+  if (typeof entry.recordOf === 'function') return entry.recordOf(match, rows, clean);
   return match;
 }
 

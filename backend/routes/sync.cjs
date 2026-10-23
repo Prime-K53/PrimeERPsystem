@@ -28,6 +28,7 @@ try {
 }
 const { validateProductsPayload } = require('../services/variantSku.cjs');
 const examinationSyncGuards = require('../services/examinationSyncGuards.cjs');
+const { validateContractDocumentOp } = require('../services/contractDocumentGuard.cjs');
 const examinationPostingService = require('../services/examinationPostingService.cjs');
 const portalLifecycleService = require('../services/portalLifecycleService.cjs');
 const { isAdmin: roleIsAdmin, isPortalCustomer: roleIsPortalCustomer, resolveRole: resolveAuthRole, normalize: normalizeRole } = require('../middleware/roles.cjs');
@@ -445,6 +446,29 @@ router.post('/ops', async (req, res) => {
     }
 
     const results = [];
+
+    // The capability gate is read AT MOST ONCE per batch, and only when the
+    // batch actually contains a contract-document operation: a settings fault
+    // must not multiply the 8 s read timeout by the number of document ops.
+    let capabilityState = null;
+    const capabilityFor = async () => {
+      if (!capabilityState) {
+        capabilityState = await cloudSyncStore.getRequiredClientCapabilityState();
+        if (capabilityState.state === 'unavailable' || capabilityState.state === 'invalid') {
+          // Context for diagnosis only: no credentials, no tokens and no
+          // document contents are logged here.
+          console.error('[sync] contract_documents capability configuration fault', {
+            state: capabilityState.state,
+            reason: capabilityState.reason,
+            lastKnownRequired: capabilityState.value || null,
+            lastKnownState: capabilityState.lastKnownState || null,
+            detail: capabilityState.detail || null,
+          });
+        }
+      }
+      return capabilityState;
+    };
+
     for (const rawOp of ops) {
       // Guard against malformed queue entries (null/undefined/non-object) so a
       // single bad op can never throw past this loop and surface as a 500.
@@ -472,8 +496,55 @@ router.post('/ops', async (req, res) => {
         continue;
       }
 
-      if (table === 'portal_ads') {
-        const adError = validatePortalAdPayload(op);
+      // Rollout gate: the contract-document write protocol changed with
+      // migrations 0052/0053 (publish-then-supersede). A client that still
+      // supersedes first is refused by the database; this gate refuses it
+      // EARLIER, with a readable reason, so the refusal is visible and the
+      // device can be told to upgrade. It is off until the `settings` row
+      // `required_client_capability` is raised.
+      if (table === 'contract_documents') {
+        const capability = await capabilityFor();
+
+        if (capability.state === 'unavailable' || capability.state === 'invalid') {
+          // The SERVER cannot confirm the requirement. Defer the operation
+          // (retryable) instead of letting an outdated client through, and
+          // never blame the client for a server-side fault: the op stays
+          // queued and is retried, so no business data is dead-lettered.
+          // Neither the pre-write probe nor applyOp runs for a deferred op.
+          const error = capability.state === 'invalid'
+            ? 'the server configuration for contract documents is invalid ('
+              + (capability.reason || 'unusable required_client_capability value')
+              + ') - the write was deferred, no data was changed'
+            : 'the server cannot confirm the required client capability for contract documents'
+              + ' - the write was deferred, no data was changed';
+          results.push({
+            operationId: op?.operationId, ok: false, id: op?.recordId || null,
+            error, retryable: true, serverConfigurationUnavailable: true,
+            configurationState: capability.state,
+            requiredCapability: capability.value || null,
+          });
+          continue;
+        }
+
+        if (capability.enforce) {
+          const required = capability.value;
+          const declared = cloudSyncStore.clientCapabilityVersion(op);
+          if (declared < required) {
+            const error = 'this client writes contract documents with an outdated protocol (declares capability '
+              + declared + ', the server requires ' + required + ') - update the app and re-issue';
+            console.warn(`[sync] contract_documents capability gate rejected ${op?.operationId}`, {
+              declared, required, recordId: op?.recordId,
+            });
+            results.push({
+              operationId: op?.operationId, ok: false, id: op?.recordId || null,
+              error, retryable: false, clientTooOld: true, requiredCapability: required,
+            });
+            continue;
+          }
+        }
+      }
+
+      if (table === 'portal_ads') {        const adError = validatePortalAdPayload(op);
         if (adError) {
           console.warn(`[sync] portal_ads validation rejected ${op?.operationId}`, { error: adError });
           results.push({ operationId: op?.operationId, ok: false, id: op?.recordId || null, error: adError, retryable: false });
@@ -508,6 +579,27 @@ router.post('/ops', async (req, res) => {
         if (contractError) {
           console.warn(`[sync] assessment_contracts validation rejected ${op?.operationId}`, { error: contractError });
           results.push({ operationId: op?.operationId, ok: false, id: op?.recordId || null, error: contractError, retryable: false });
+          continue;
+        }
+      }
+
+      // Contract-document identity / supersede guard (see
+      // validateContractDocumentOp). Deterministic rejections are surfaced as
+      // non-retryable so the client dead-letters them instead of looping.
+      if (table === 'contract_documents') {
+        let documentError = null;
+        try {
+          documentError = await validateContractDocumentOp(op, {
+            findRowsByDataField: cloudSyncStore.findRowsByDataField,
+            findRowById: cloudSyncStore.findRowById,
+          });
+        } catch (err) {
+          console.error('[sync] contract_documents validation error:', err?.message || err);
+          documentError = null;
+        }
+        if (documentError) {
+          console.warn(`[sync] contract_documents validation rejected ${op?.operationId}`, { error: documentError });
+          results.push({ operationId: op?.operationId, ok: false, id: op?.recordId || null, error: documentError, retryable: false, businessRule: true });
           continue;
         }
       }

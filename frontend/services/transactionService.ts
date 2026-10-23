@@ -305,6 +305,81 @@ async function postEditCorrectionInTx(
  */
 const inflightCustomerPaymentVoids = new Set<string>();
 
+/**
+ * Unwind the prepaid wallet funding that a printing-contract invoice
+ * settlement created.
+ *
+ * A printing contract is collected IN ADVANCE: settling its invoice credits
+ * the customer's wallet (the denormalised cache of the 21300 Customer
+ * Deposits liability) so the assessment schedule can be drawn down. Voiding
+ * the settlement must take that credit back — otherwise the customer keeps
+ * the money in their wallet AND gets the cash back.
+ *
+ * Refuses before writing anything when the funded money has already been
+ * consumed (the wallet no longer holds it), so a consumed contract can never
+ * be voided into a negative wallet. The funding row is retired and its
+ * idempotency key released, so the invoice can be settled again afterwards.
+ */
+async function reverseContractPrepaidFunding(
+    tx: any,
+    fundingTx: any,
+    customer: any,
+    reason: string
+): Promise<number> {
+    const amount = toMoney(Number(fundingTx?.amount || 0));
+    if (!(amount > 0)) return 0;
+
+    if (!customer) {
+        throw new Error(`Cannot reverse prepaid funding ${fundingTx?.id}: the customer was not found.`);
+    }
+    const balance = toMoney(Number(customer.walletBalance || 0));
+    if (balance + 0.005 < amount) {
+        throw new Error(
+            `Cannot void: the prepaid funds from ${fundingTx.id} have already been consumed ` +
+            `(wallet balance ${balance}, required ${amount}).`
+        );
+    }
+
+    customer.walletBalance = toMoney(balance - amount);
+    await tx.objectStore('customers').put(customer);
+
+    const now = new Date().toISOString();
+    const reversal = {
+        id: generateId('WLT-PREPAID-REV'),
+        customerId: fundingTx.customerId,
+        customerName: fundingTx.customerName,
+        date: now,
+        type: 'Deduction',
+        amount,
+        description: `REVERSAL: Prepaid funding from invoice #${fundingTx.reference || ''} - ${reason}`,
+        reference: fundingTx.reference,
+        data: {
+            type: 'CONTRACT_PREPAID_FUNDING_REVERSAL',
+            original_wallet_transaction_id: fundingTx.id,
+            original_idempotency_key: fundingTx.idempotencyKey,
+            invoice_id: fundingTx.data?.invoice_id,
+            payment_id: fundingTx.data?.payment_id,
+            amount,
+            reversed_at: now,
+            reason,
+        },
+    } as WalletTransaction;
+    await tx.objectStore('walletTransactions').put(reversal);
+
+    if (fundingTx.idempotencyKey) {
+        await clearIdempotencyKey(
+            tx,
+            'contract_prepaid_funding',
+            String(fundingTx.data?.invoice_id || fundingTx.reference || ''),
+            String(fundingTx.idempotencyKey)
+        );
+    }
+    // The funding row is superseded by its reversal: the money is gone, and a
+    // re-settlement must leave exactly one live funding event.
+    await tx.objectStore('walletTransactions').delete(fundingTx.id);
+    return amount;
+}
+
 export const transactionService = {
     /**
      * Internal helper to handle structured inventory deduction with audit trail
@@ -2553,23 +2628,26 @@ export const transactionService = {
 
                     let targetDebitAccount;
                     const isPrintingContractPay = String(invoice.originModule || '').toLowerCase() === 'printing_contract';
-                    // For printing contract prepaid payments, always debit a cash/bank
-                    // account (never Customer Deposits): the customer is paying us in
-                    // advance, creating a deposit liability. Using Customer Deposits as
-                    // the debit would wrongly reduce an existing liability instead of
-                    // recognising cash received.
-                    if (isPrintingContractPay) {
-                        if (paymentMethod === 'Card' || paymentMethod === 'Bank Transfer') targetDebitAccount = gl.bankAccount;
-                        else if (paymentMethod === 'Mobile Money') targetDebitAccount = gl.mobileMoneyAccount;
-                        else targetDebitAccount = gl.cashDrawerAccount;
-                    } else if (paymentMethod === 'Wallet') {
+                    // ONE rule on every settlement route: the operator's chosen
+                    // account wins, otherwise the payment method decides. A
+                    // printing-contract payment must never debit Customer
+                    // Deposits — the customer is paying us in advance, creating
+                    // the liability, not reducing it.
+                    //
+                    // The chain must be `else if`: `if (Card) bank; if (Mobile)
+                    // mobile; else cash` silently re-bound a Card payment to the
+                    // cash drawer, so the same payment landed in a different
+                    // account depending on the route.
+                    if (paymentMethod === 'Wallet' && !isPrintingContractPay) {
                         targetDebitAccount = gl.customerDepositAccount;
                     } else if (paymentAccountId) {
                         targetDebitAccount = paymentAccountId;
+                    } else if (paymentMethod === 'Card' || paymentMethod === 'Bank Transfer') {
+                        targetDebitAccount = gl.bankAccount;
+                    } else if (paymentMethod === 'Mobile Money') {
+                        targetDebitAccount = gl.mobileMoneyAccount;
                     } else {
-                        if (paymentMethod === 'Card' || paymentMethod === 'Bank Transfer') targetDebitAccount = gl.bankAccount;
-                        if (paymentMethod === 'Mobile Money') targetDebitAccount = gl.mobileMoneyAccount;
-                        else targetDebitAccount = gl.cashDrawerAccount;
+                        targetDebitAccount = gl.cashDrawerAccount;
                     }
 
                     const payEntry: LedgerEntry = {
@@ -2621,6 +2699,7 @@ export const transactionService = {
                             idempotencyKey: fundingKey,
                             data: {
                                 type: 'CONTRACT_PREPAID_FUNDING',
+                                payment_id: paymentId,
                                 invoice_id: invoice.id,
                                 invoice_number: invoice.invoiceNumber,
                                 contract_number: invoice.reference,
@@ -3294,6 +3373,78 @@ export const transactionService = {
                     await invoiceStore.put(invoice);
                 }
 
+                // 5. Prepaid wallet funding for printing-contract invoices.
+                // A printing contract is collected IN ADVANCE: the money that
+                // settles its invoice becomes prepaid funds the assessment
+                // schedule consumes. The ledger at issuance already booked
+                // Dr AR / Cr Customer Deposits, so the cash entry below
+                // (Dr Cash / Cr AR) nets to Cr Customer Deposits — the wallet
+                // balance is the denormalised cache of that liability.
+                //
+                // Keyed by the invoice's CUMULATIVE paid amount, exactly like
+                // the mark-paid route, so the two settlement routes can never
+                // fund the same money twice.
+                for (const allocation of validatedInvoiceAllocations) {
+                    const invoice = allocation.invoice;
+                    const isPrintingContractInv = String(
+                        (invoice as any).originModule || (invoice as any).origin_module || ''
+                    ).toLowerCase() === 'printing_contract';
+                    if (!isPrintingContractInv) continue;
+
+                    const fundedAmount = toMoney(allocation.allocationAmount);
+                    if (fundedAmount <= 0) continue;
+
+                    const fundingKey = `wallet:contract:invoice:${invoice.id}:prepaid:${toMoney(invoice.paidAmount)}`;
+                    const existingFunding = await tx.objectStore('idempotencyKeys').get(fundingKey);
+                    if (existingFunding) {
+                        throw new Error(`Cannot fund invoice ${invoice.id}: prepaid event ${fundingKey} already exists while the invoice is unpaid for that amount.`);
+                    }
+
+                    if (!customer && customerId) {
+                        customer = await customerStore.get(customerId);
+                    }
+                    if (!customer) {
+                        throw new Error(`Cannot fund printing-contract invoice ${invoice.id}: customer ${invoice.customerId} was not found.`);
+                    }
+                    // Mutate the loaded record (not a copy): the overpayment
+                    // and wallet-payment steps below adjust the same balance.
+                    customer.walletBalance = toMoney(Number(customer.walletBalance || 0) + fundedAmount);
+                    await customerStore.put(customer);
+
+                    const fundingTx: WalletTransaction = {
+                        id: `WTX-PREPAID-${invoice.id}-${toMoney(invoice.paidAmount)}`,
+                        customerId: String(invoice.customerId),
+                        customerName: invoice.customerName,
+                        date: payment.date || invoice.date || new Date().toISOString(),
+                        type: 'Deposit',
+                        amount: fundedAmount,
+                        description: `Prepaid funding from printing contract invoice #${invoice.id}`,
+                        reference: invoice.id,
+                        idempotencyKey: fundingKey,
+                        data: {
+                            type: 'CONTRACT_PREPAID_FUNDING',
+                            payment_id: payment.id,
+                            invoice_id: invoice.id,
+                            invoice_number: invoice.invoiceNumber,
+                            contract_number: invoice.reference,
+                            customer_id: String(invoice.customerId),
+                            amount: fundedAmount,
+                            funded_at: payment.date || invoice.date || new Date().toISOString(),
+                        },
+                    } as WalletTransaction;
+                    const priorFundingTx = await walletStore.get(fundingTx.id);
+                    if (priorFundingTx && priorFundingTx.idempotencyKey !== fundingKey) {
+                        throw new Error(`Cannot fund invoice ${invoice.id}: wallet transaction ID ${fundingTx.id} is already in use.`);
+                    }
+                    await walletStore.put(fundingTx);
+                    await tx.objectStore('idempotencyKeys').put({
+                        id: fundingKey,
+                        scope: 'contract_prepaid_funding',
+                        sourceId: invoice.id,
+                        createdAt: new Date().toISOString(),
+                    });
+                }
+
                 // [LEDGER] customer.balance is now derived from the authoritative ledger.
                 // Independent balance mutation removed.
 
@@ -3540,9 +3691,10 @@ export const transactionService = {
                     originalDebitAccount = gl.customerDepositAccount;
                 } else if (payment.accountId) {
                     originalDebitAccount = payment.accountId;
-                } else {
-                    if (payment.paymentMethod === 'Card' || payment.paymentMethod === 'Bank Transfer') originalDebitAccount = gl.bankAccount;
-                    if (payment.paymentMethod === 'Mobile Money') originalDebitAccount = gl.mobileMoneyAccount;
+                } else if (payment.paymentMethod === 'Card' || payment.paymentMethod === 'Bank Transfer') {
+                    originalDebitAccount = gl.bankAccount;
+                } else if (payment.paymentMethod === 'Mobile Money') {
+                    originalDebitAccount = gl.mobileMoneyAccount;
                 }
                 const originalCreditAccount = payment.receiptSnapshot?.paymentPurpose === 'WALLET_TOPUP'
                     ? gl.customerDepositAccount
@@ -3550,7 +3702,42 @@ export const transactionService = {
                 const resolvedReversalDebit = resolveAcct(originalCreditAccount);
                 const resolvedReversalCredit = resolveAcct(originalDebitAccount);
 
-                // 1. Reverse Invoices
+                // 1. Load the customer and unwind any prepaid wallet funding
+                // this settlement created. A printing contract is collected in
+                // advance, so the wallet credit is part of the settlement and
+                // must disappear with it. Validated BEFORE the first write: a
+                // settlement whose funds were already consumed fails cleanly,
+                // never leaving half-reversed books.
+                let customer = null as any;
+                if (payment.customerId) {
+                    customer = await customerStore.get(payment.customerId);
+                }
+
+                const fundedKeys: string[] = [];
+                for (const allocation of payment.allocations || []) {
+                    const invoice = await invoiceStore.get(allocation.invoiceId);
+                    if (!invoice) continue;
+                    const isPrintingContractInv = String(
+                        (invoice as any).originModule || (invoice as any).origin_module || ''
+                    ).toLowerCase() === 'printing_contract';
+                    if (!isPrintingContractInv) continue;
+                    fundedKeys.push(
+                        `wallet:contract:invoice:${invoice.id}:prepaid:${toMoney(invoice.paidAmount)}`
+                    );
+                }
+                const allWalletTxs = await walletStore.getAll();
+                const fundingTxs = allWalletTxs.filter((walletTx: any) => {
+                    if (walletTx?.data?.type !== 'CONTRACT_PREPAID_FUNDING') return false;
+                    if (walletTx.idempotencyKey && fundedKeys.includes(String(walletTx.idempotencyKey))) return true;
+                    // Legacy funding rows predate the payment tag: keyed by the
+                    // invoice's cumulative paid amount (matched above).
+                    return String(walletTx?.data?.payment_id || '') === String(payment.id);
+                });
+                for (const fundingTx of fundingTxs) {
+                    await reverseContractPrepaidFunding(tx, fundingTx, customer, `payment ${paymentId} voided`);
+                }
+
+                // 2. Reverse Invoices
                 for (const allocation of payment.allocations) {
                     const invoice = await invoiceStore.get(allocation.invoiceId);
                     if (invoice) {
@@ -3564,15 +3751,9 @@ export const transactionService = {
                     }
                 }
 
-                // 2. Reverse Customer Balance
+                // 2b. Reverse Customer Balance
                 // [LEDGER] customer.balance is now derived from the authoritative ledger.
                 // Independent balance mutation removed.
-
-                // Load customer for wallet reversal below.
-                let customer = null as any;
-                if (payment.customerId) {
-                    customer = await customerStore.get(payment.customerId);
-                }
 
                 // 3. Reverse Wallet (if wallet deposit was posted)
                 const walletDeposit = toMoney(
@@ -3820,7 +4001,12 @@ export const transactionService = {
                 // invoice, credit the customer's wallet so assessment
                 // consumption can debit it later. Idempotent per invoice.
                 const paidIncrease = toMoney(newPaid - existingPaid);
+                // True when THIS call recorded the payment itself (cash leg +
+                // prepaid wallet funding). The caller must then not post a
+                // second payment for the same money.
+                let paymentSettled = false;
                 if (isPrintingContractInv && paidIncrease > 0) {
+                    paymentSettled = true;
                     const gl = getGLConfig();
 
                     const customerStore = tx.objectStore('customers');
@@ -3845,6 +4031,9 @@ export const transactionService = {
                         walletBalance: toMoney(currentBalance + paidIncrease),
                     });
 
+                    const allPayments = await customerPaymentsStore.getAll();
+                    const paymentId = generateNextId('RCPT', allPayments);
+
                     const fundingTx: WalletTransaction = {
                         id: `WTX-PREPAID-${invoice.id}-${newPaid}`,
                         customerId: String(invoice.customerId),
@@ -3857,6 +4046,7 @@ export const transactionService = {
                         idempotencyKey: fundingKey,
                         data: {
                             type: 'CONTRACT_PREPAID_FUNDING',
+                            payment_id: paymentId,
                             invoice_id: invoice.id,
                             invoice_number: invoice.invoiceNumber,
                             contract_number: invoice.reference,
@@ -3890,13 +4080,14 @@ export const transactionService = {
                     // invoice-applied portion settles AR, overpayment becomes
                     // Customer Deposits (prepaid liability).
                     const paymentMethod = invoice.paymentMethod || invoice.payment_method || 'Cash';
+                    // ONE rule on every settlement route: the account chosen on
+                    // the invoice wins, otherwise the payment method decides.
                     let targetDebitAccount;
-                    if (paymentMethod === 'Card' || paymentMethod === 'Bank Transfer') targetDebitAccount = gl.bankAccount;
+                    if (paymentMethod === 'Wallet') targetDebitAccount = gl.customerDepositAccount;
+                    else if ((invoice as any).accountId) targetDebitAccount = (invoice as any).accountId;
+                    else if (paymentMethod === 'Card' || paymentMethod === 'Bank Transfer') targetDebitAccount = gl.bankAccount;
                     else if (paymentMethod === 'Mobile Money') targetDebitAccount = gl.mobileMoneyAccount;
                     else targetDebitAccount = gl.cashDrawerAccount;
-
-                    const allPayments = await customerPaymentsStore.getAll();
-                    const paymentId = generateNextId('RCPT', allPayments);
 
                     const payEntry: LedgerEntry = {
                         id: generateId('LG-INV-PAY-UPD'),
@@ -3968,7 +4159,7 @@ export const transactionService = {
                     await customerPaymentsStore.put(ensureDocumentVerificationToken(custPayment as any));
                 }
 
-                return { success: true };
+                return { success: true, paymentSettled };
             }
         );
         return result;
@@ -4137,7 +4328,7 @@ export const transactionService = {
 
     async voidInvoice(id: string, reason: string) {
         const result = await dbService.executeAtomicOperation(
-            ['invoices', 'inventory', 'ledger', 'customers', 'customerPayments', 'bankAccounts', 'bankTransactions', 'walletTransactions', 'accounts'],
+            ['invoices', 'inventory', 'ledger', 'customers', 'customerPayments', 'bankAccounts', 'bankTransactions', 'walletTransactions', 'idempotencyKeys', 'accounts'],
             async (tx) => {
                 const invoiceStore = tx.objectStore('invoices');
                 const inventoryStore = tx.objectStore('inventory');
@@ -4216,6 +4407,27 @@ export const transactionService = {
                     return (payment.allocations || []).some(a => a.invoiceId === id);
                 });
 
+                // Prepaid funding created by these settlements is part of the
+                // settlement: voiding the invoice must take it back, or the
+                // customer keeps the money in their wallet after the cash is
+                // returned. Refuses (before the first write) when the funds
+                // were already consumed.
+                const allWalletTxs = await walletStore.getAll();
+                const reversedFundingIds = new Set<string>();
+                for (const payment of relatedPayments) {
+                    const fundedKey = `wallet:contract:invoice:${id}:prepaid:${toMoney(invoice.paidAmount)}`;
+                    const fundingTxs = allWalletTxs.filter((walletTx: any) => {
+                        if (walletTx?.data?.type !== 'CONTRACT_PREPAID_FUNDING') return false;
+                        if (reversedFundingIds.has(String(walletTx.id))) return false;
+                        if (walletTx.idempotencyKey && String(walletTx.idempotencyKey) === fundedKey) return true;
+                        return String(walletTx?.data?.payment_id || '') === String(payment.id);
+                    });
+                    for (const fundingTx of fundingTxs) {
+                        await reverseContractPrepaidFunding(tx, fundingTx, customer, `invoice ${id} voided`);
+                        reversedFundingIds.add(String(fundingTx.id));
+                    }
+                }
+
                 const gl = getGLConfig();
                 const voidInvLedgerEntries: LedgerEntry[] = [];
 
@@ -4255,9 +4467,10 @@ export const transactionService = {
                         originalDebitAccount = gl.customerDepositAccount;
                     } else if (payment.accountId) {
                         originalDebitAccount = payment.accountId;
-                    } else {
-                        if (payment.paymentMethod === 'Card' || payment.paymentMethod === 'Bank Transfer') originalDebitAccount = gl.bankAccount;
-                        if (payment.paymentMethod === 'Mobile Money') originalDebitAccount = gl.mobileMoneyAccount;
+                    } else if (payment.paymentMethod === 'Card' || payment.paymentMethod === 'Bank Transfer') {
+                        originalDebitAccount = gl.bankAccount;
+                    } else if (payment.paymentMethod === 'Mobile Money') {
+                        originalDebitAccount = gl.mobileMoneyAccount;
                     }
                     const originalCreditAccount = payment.receiptSnapshot?.paymentPurpose === 'WALLET_TOPUP'
                         ? gl.customerDepositAccount

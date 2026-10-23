@@ -35,6 +35,7 @@ vi.mock('../../../services/db', () => ({
 
 import { transactionService } from '../../../services/transactionService';
 import { contractDocumentService } from '../../../services/contractDocumentService';
+import { hashLegacyScheduleContent, hashLegacyReceiptContent } from '../../../services/printingContractService';
 import { reconcilePrintingContracts } from '../../../utils/contractReconciliation';
 import { diagnoseReservationDrift } from '../../../utils/contractFunds';
 
@@ -111,7 +112,7 @@ describe('documents stay immutable + versioned (§7.1)', () => {
     expect((await docs()).length).toBe(2);
   });
 
-  it('both schedule versions remain individually hash-verifiable', async () => {
+  it('superseded versions stay hash-verifiable but are no longer valid', async () => {
     await seedWallet();
     await seedContractWithItems(3);
     const c: any = await storeFor('assessmentContracts').get(CID);
@@ -121,7 +122,97 @@ describe('documents stay immutable + versioned (§7.1)', () => {
     const v2 = await contractDocumentService.issueScheduleVersion({
       contract: { ...c, version: 2 } as any, items: await storeFor('contractAssessments').getAll() as any, customerName: 'S',
     });
-    expect((await contractDocumentService.verifyPersistedDocument(v1.id)).ok).toBe(true);
+
+    // v1 is SUPERSEDED: its integrity is intact, but it must NOT report as a
+    // current valid document (the old behaviour conflated the two).
+    const checkV1 = await contractDocumentService.verifyPersistedDocument(v1.id);
+    expect(checkV1.integrity).toBe(true);
+    expect(checkV1.current).toBe(false);
+    expect(checkV1.status).toBe('SUPERSEDED');
+    expect(checkV1.ok).toBe(false);
+
+    const checkV2 = await contractDocumentService.verifyPersistedDocument(v2.id);
+    expect(checkV2.ok).toBe(true);
+    expect(checkV2.integrity).toBe(true);
+    expect(checkV2.current).toBe(true);
+    expect(checkV2.status).toBe('VALID');
+  });
+
+  it('a VOID version fails verification even though its content is intact', async () => {
+    await seedWallet();
+    await seedContractWithItems(3);
+    const c: any = await storeFor('assessmentContracts').get(CID);
+    const v1 = await contractDocumentService.issueScheduleVersion({
+      contract: c, items: await storeFor('contractAssessments').getAll() as any, customerName: 'S',
+    });
+    const row: any = await storeFor('contractDocuments').get(v1.id);
+    await storeFor('contractDocuments').put({ ...row, status: 'VOID' });
+
+    const check = await contractDocumentService.verifyPersistedDocument(v1.id);
+    expect(check.integrity).toBe(true);
+    expect(check.ok).toBe(false);
+    expect(check.status).toBe('VOID');
+  });
+
+  it('detects a post-issue content alteration (tamper) on a persisted schedule', async () => {
+    await seedWallet();
+    await seedContractWithItems(3);
+    const c: any = await storeFor('assessmentContracts').get(CID);
+    const v1 = await contractDocumentService.issueScheduleVersion({
+      contract: c, items: await storeFor('contractAssessments').getAll() as any, customerName: 'S',
+    });
+    const row: any = await storeFor('contractDocuments').get(v1.id);
+    // Rewrite one money value but keep the stored digest — a forged edit.
+    const tampered = {
+      ...row,
+      content: {
+        ...row.content,
+        prepaidAmount: 999999999,
+        schedule: row.content.schedule.map((s: any, i: number) => (i === 0 ? { ...s, unitPrice: 1 } : s)),
+      },
+    };
+    await storeFor('contractDocuments').put(tampered);
+
+    const check = await contractDocumentService.verifyPersistedDocument(v1.id);
+    expect(check.ok).toBe(false);
+    expect(check.integrity).toBe(false);
+  });
+
+  it('re-issuing unchanged content returns the SAME version (no version churn)', async () => {
+    await seedWallet();
+    await seedContractWithItems(3);
+    const c: any = await storeFor('assessmentContracts').get(CID);
+    const items = await storeFor('contractAssessments').getAll();
+    const v1 = await contractDocumentService.issueScheduleVersion({ contract: c, items: items as any, customerName: 'S' });
+    const again = await contractDocumentService.issueScheduleVersion({
+      contract: c, items: await storeFor('contractAssessments').getAll() as any, customerName: 'S',
+    });
+    expect(again.id).toBe(v1.id);
+    expect(again.contentHash).toBe(v1.contentHash);
+    expect((await docs()).length).toBe(1);
+  });
+
+  it('an assessment-item edit supersedes the issued version even without a contract version bump', async () => {
+    await seedWallet();
+    await seedContractWithItems(3);
+    const c: any = await storeFor('assessmentContracts').get(CID);
+    const v1 = await contractDocumentService.issueScheduleVersion({
+      contract: c, items: await storeFor('contractAssessments').getAll() as any, customerName: 'S',
+    });
+
+    // Edit an item's date/price directly — the contract row itself is untouched
+    // (no version bump), exactly the gap that used to leave a stale VALID
+    // schedule in place.
+    const item: any = await storeFor('contractAssessments').get('A-1');
+    await storeFor('contractAssessments').put({ ...item, assessment_date: '2027-06-01', item_price: 150000 });
+
+    const v2 = await contractDocumentService.issueScheduleVersion({
+      contract: c, items: await storeFor('contractAssessments').getAll() as any, customerName: 'S',
+    });
+    expect(v2.id).not.toBe(v1.id);
+    expect(v2.contentHash).not.toBe(v1.contentHash);
+    expect((await storeFor('contractDocuments').get(v1.id) as any).status).toBe('SUPERSEDED');
+    expect((await contractDocumentService.verifyPersistedDocument(v1.id)).ok).toBe(false);
     expect((await contractDocumentService.verifyPersistedDocument(v2.id)).ok).toBe(true);
   });
 
@@ -238,5 +329,127 @@ describe('reconciliation is read-only (§7.3)', () => {
     // Diagnosis only — no repair.
     expect(JSON.stringify(await storeFor('assessmentContracts').getAll())).toBe(before);
     expect((await storeFor('assessmentContracts').get('PC-LEG') as any).reserved_amount).toBe(0);
+  });
+});
+
+/* ─────────────── Legacy persisted documents verify (Phase 2C) ─────────────── */
+
+describe('verifyPersistedDocument applies the legacy hash rule', () => {
+  const legacyScheduleContent = (): Record<string, any> => ({
+    documentType: 'printing_contract_schedule',
+    verificationToken: 'a'.repeat(64),
+    contractNumber: 'PC-LEGACY',
+    date: '19/10/2026',
+    version: 1,
+    status: 'active',
+    customerName: 'Legacy School',
+    schoolName: 'Legacy School',
+    schedule: [{ sequence: 1, assessmentName: 'Paper 1', status: 'reserved', unitPrice: 1000 }],
+    totalAssessments: 1,
+    scheduleComplete: false,
+    missingDateSequences: [1],
+    scheduledCount: 0,
+    consumedCount: 0,
+    releasedCount: 0,
+    cancelledCount: 0,
+    prepaidAmount: 1000,
+    reservedAmount: 1000,
+    consumedAmount: 0,
+    availableFunds: 0,
+    totalValue: 1000,
+    // schoolZone / customerPhone / notes dropped by JSONB persistence
+  });
+
+  it('verifies an authentic legacy schedule instead of calling it altered', async () => {
+    const content = legacyScheduleContent();
+    const hash = await hashLegacyScheduleContent(content);
+    const row: any = {
+      id: 'SCH-LEGACY-v1',
+      contract_id: 'CID-LEGACY',
+      documentType: 'printing_contract_schedule',
+      documentNumber: 'PC-LEGACY',
+      documentVersion: 1,
+      contractVersion: 1,
+      contentHash: hash,
+      content: { ...content, contentHash: hash },
+      status: 'VALID',
+      issuedAt: '2026-10-19T10:00:00.000Z',
+      verificationToken: 'a'.repeat(64),
+    };
+    await storeFor('contractDocuments').put(row);
+
+    const check = await contractDocumentService.verifyPersistedDocument(row.id);
+    expect(check.integrity).toBe(true);
+    expect(check.ok).toBe(true);
+    expect(check.current).toBe(true);
+  });
+
+  it('rejects a legacy schedule whose material content changed', async () => {
+    const content = legacyScheduleContent();
+    const hash = await hashLegacyScheduleContent(content);
+    const row: any = {
+      id: 'SCH-LEGACY-ALTERED',
+      contract_id: 'CID-LEGACY',
+      documentType: 'printing_contract_schedule',
+      documentNumber: 'PC-LEGACY',
+      documentVersion: 1,
+      contentHash: hash,
+      content: { ...content, contentHash: hash, prepaidAmount: 999999 },
+      status: 'VALID',
+      issuedAt: '2026-10-19T10:00:00.000Z',
+      verificationToken: 'a'.repeat(64),
+    };
+    await storeFor('contractDocuments').put(row);
+
+    const check = await contractDocumentService.verifyPersistedDocument(row.id);
+    expect(check.integrity).toBe(false);
+    expect(check.ok).toBe(false);
+    expect(check.reason).toMatch(/altered after issue/i);
+  });
+
+  it('verifies an authentic legacy completion receipt', async () => {
+    const content: Record<string, any> = {
+      documentType: 'printing_contract_completion_receipt',
+      verificationToken: 'b'.repeat(64),
+      receiptNumber: 'PCR-PC-LEGACY',
+      contractNumber: 'PC-LEGACY',
+      date: '19/10/2026',
+      version: 1,
+      status: 'active',
+      customerName: 'Legacy School',
+      schoolName: 'Legacy School',
+      item: { assessmentName: 'Paper 1', unitPrice: 1000 }, // nested optionals dropped
+      sequence: 1,
+      totalAssessments: 1,
+      completedToDate: 1,
+      remainingAssessments: 0,
+      contractValue: 1000,
+      amountDebited: 1000,
+      totalConsumedToDate: 1000,
+      remainingReservedFunds: 0,
+      unallocatedFunds: 0,
+      walletBalanceAfter: 1000,
+      walletTransactionId: 'WTX-LEGACY',
+      ledgerEntryId: 'LG-LEGACY',
+      // notes dropped by JSONB persistence
+    };
+    const hash = await hashLegacyReceiptContent(content);
+    const row: any = {
+      id: 'PCR-LEGACY',
+      contract_id: 'CID-LEGACY',
+      documentType: 'printing_contract_completion_receipt',
+      documentNumber: 'PCR-PC-LEGACY',
+      documentVersion: 1,
+      contentHash: hash,
+      content: { ...content, contentHash: hash },
+      status: 'VALID',
+      issuedAt: '2026-10-19T10:00:00.000Z',
+      verificationToken: 'b'.repeat(64),
+    };
+    await storeFor('contractDocuments').put(row);
+
+    const check = await contractDocumentService.verifyPersistedDocument(row.id);
+    expect(check.integrity).toBe(true);
+    expect(check.ok).toBe(true);
   });
 });

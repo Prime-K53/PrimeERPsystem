@@ -237,6 +237,20 @@ async function findRowsByDataField(table, field, value) {
   return Array.isArray(res.data) ? res.data : [];
 }
 
+/**
+ * Fetch one row by its primary key. Used by the contract-document guard to
+ * resolve a `supersededBy` reference before the write.
+ */
+async function findRowById(table, id) {
+  const res = await cloudHttp.get(`${SUPABASE_URL}/rest/v1/${table}`, {
+    headers: adminHeaders(),
+    params: { select: 'id,data,version', id: `eq.${id}`, limit: 1 },
+    timeout: 15000,
+  });
+  const rows = Array.isArray(res.data) ? res.data : [];
+  return rows[0] || null;
+}
+
 // ─── Unified P726 official Sales Order numbering ────────────────────────────
 // ONE official numbering family: every Sales Order mints ORD-P726/NNN from
 // one global numeric sequence per series, regardless of creation source
@@ -863,6 +877,147 @@ async function getSyncGeneration() {
   }
 }
 
+// ─── required client capability (rollout gate) ──────────────────────────────
+//
+// The document write protocol changed (migration 0052/0053): the new client
+// publishes a version BEFORE superseding its predecessor, and the database
+// validates that order. A client that still supersedes first is refused by the
+// database (permanently, as a trigger rejection), which is safe but opaque.
+//
+// This gate makes the refusal EXPLICIT and early: the client declares the
+// document protocol it implements, and the server refuses document writes from
+// a client below the required capability with a readable "upgrade required"
+// error instead of letting it reach the database.
+//
+// The requirement lives in the EXISTING `settings` table (the same mechanism
+// the sync generation uses), so no new table, no tenant/company dimension and
+// no new infrastructure is introduced. It is OFF (not_configured) until the
+// rollout raises it.
+//
+// The requirement is read as a STRUCTURED STATE, never as a bare number:
+//   not_configured - the setting is absent, or it holds the number 0.
+//   required       - the setting holds a valid capability (a positive integer).
+//   invalid        - the setting exists but its value is not a valid capability.
+//   unavailable    - the setting could not be read (database error, timeout, ...).
+// A read failure NEVER becomes `not_configured`: a fault must not be mistaken
+// for "the rollout did not activate", and the caller must defer rather than let
+// an outdated client through.
+
+const REQUIRED_CLIENT_CAPABILITY_SETTING_ID = 'required_client_capability';
+const REQUIRED_CAPABILITY_CACHE_MS = 15000;
+// A capability is a small protocol version. A value outside this range is a
+// configuration error, not a requirement.
+const MAX_CLIENT_CAPABILITY = 1000;
+
+// The state that is served while the cache is warm. It is either a state
+// derived from a SUCCESSFUL read, or an `unavailable` state describing a
+// failed read. A failed read is never cached as `not_configured`.
+let requiredCapabilityCache = null;
+// The last requirement that was successfully read, preserved across failures so
+// a fault still reports what the rollout asked for.
+let requiredCapabilityLastRequired = 0;
+
+/**
+ * Interpret the settings row.
+ *
+ * Only a real JSON NUMBER that is a finite integer inside the documented range
+ * is a capability. A numeric string, null, a boolean, a negative or a
+ * fractional value is a CONFIGURATION ERROR: it must never silently mean
+ * "not enforced".
+ */
+function parseRequiredClientCapability(rows) {
+  // The row is ABSENT: the rollout has not activated the requirement.
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return { state: 'not_configured', value: 0, enforce: false };
+  }
+  const row = rows[0] || {};
+  const data = (row && typeof row.data === 'object' && row.data !== null && !Array.isArray(row.data)) ? row.data : null;
+  // The row EXISTS but its payload is not a JSON object: a malformed
+  // configuration, not an inactive gate.
+  if (!data) {
+    return {
+      state: 'invalid',
+      value: 0,
+      enforce: false,
+      reason: 'the required_client_capability row does not hold a settings object',
+      raw: row.data,
+    };
+  }
+  if (!Object.prototype.hasOwnProperty.call(data, 'value')) {
+    return {
+      state: 'invalid',
+      value: 0,
+      enforce: false,
+      reason: 'the required_client_capability setting has no value',
+      raw: data,
+    };
+  }
+  const raw = data.value;
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || !Number.isInteger(raw) || raw < 0 || raw > MAX_CLIENT_CAPABILITY) {
+    return {
+      state: 'invalid',
+      value: 0,
+      enforce: false,
+      reason: 'the required_client_capability setting is not a capability number between 0 and ' + MAX_CLIENT_CAPABILITY,
+      raw,
+    };
+  }
+  if (raw === 0) return { state: 'not_configured', value: 0, enforce: false };
+  return { state: 'required', value: raw, enforce: true };
+}
+
+/**
+ * The current capability requirement, as a structured state.
+ *
+ * @returns {Promise<{state:'not_configured'|'required'|'invalid'|'unavailable',
+ *                    value:number, enforce:boolean, reason?:string, raw?:unknown,
+ *                    lastKnownState?:string, detail?:string}>}
+ */
+async function getRequiredClientCapabilityState() {
+  const now = Date.now();
+  if (requiredCapabilityCache && (now - requiredCapabilityCache.at) < REQUIRED_CAPABILITY_CACHE_MS) {
+    return requiredCapabilityCache;
+  }
+  try {
+    const res = await cloudHttp.get(`${SUPABASE_URL}/rest/v1/settings`, {
+      headers: { apikey: SECRET_KEY, Authorization: `Bearer ${SECRET_KEY}` },
+      params: { id: `eq.${REQUIRED_CLIENT_CAPABILITY_SETTING_ID}`, select: 'data', limit: 1 },
+      timeout: 8000,
+    });
+    const rows = Array.isArray(res.data) ? res.data : [];
+    const parsed = parseRequiredClientCapability(rows);
+    if (parsed.state === 'required') requiredCapabilityLastRequired = parsed.value;
+    requiredCapabilityCache = { ...parsed, at: now };
+    return requiredCapabilityCache;
+  } catch (err) {
+    // The read failed. Preserve the last known requirement, report the fault,
+    // and let the caller defer: a server fault must never be read as "the
+    // rollout did not activate".
+    const state = {
+      state: 'unavailable',
+      value: requiredCapabilityLastRequired,
+      enforce: false,
+      reason: 'the required client capability could not be read from the server settings',
+      lastKnownState: requiredCapabilityCache ? requiredCapabilityCache.state : null,
+      detail: String((err && err.message) || err || '').slice(0, 200),
+      at: now,
+    };
+    requiredCapabilityCache = state;
+    return state;
+  }
+}
+
+/**
+ * The capability a client declares for the document write protocol.
+ * A missing value means the LEGACY protocol (version 1).
+ */
+function clientCapabilityVersion(op) {
+  const raw = op && op.clientCapabilityVersion;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.floor(n);
+}
+
 async function setSyncGeneration(value) {
   const serverNow = new Date().toISOString();
   const payload = {
@@ -1038,6 +1193,32 @@ async function validateCustomerPaymentScope(payload, deps = {}) {
     }
   }
   return null;
+}
+
+/**
+ * Deterministic database rejections.
+ *
+ * PostgREST answers HTTP 409 for BOTH a lost optimistic-concurrency race
+ * (retryable — re-reading the row resolves it) and a deterministic rejection
+ * (retrying can NEVER succeed). The two are told apart by the SQLSTATE:
+ *
+ *   23505 unique_violation      — a unique index refused the write (e.g. the
+ *                                  contract-document identity index, or the
+ *                                  0049 number index).
+ *   23P01 exclusion_violation    — an exclusion constraint refused the write.
+ *   P0001 raise_exception        — a trigger refused the write (e.g. the
+ *                                  contract-document immutability trigger).
+ *
+ * These are surfaced (dead-lettered with the reason) instead of being retried
+ * in a loop that can never converge.
+ */
+function deterministicConflict(pgCode) {
+  switch (String(pgCode || '')) {
+    case '23505': return 'unique_violation';
+    case '23P01': return 'exclusion_violation';
+    case 'P0001': return 'trigger_rejected';
+    default: return null;
+  }
 }
 
 /**
@@ -1294,6 +1475,9 @@ async function applyOp(op) {
     return { operationId, ok: true, id: result.id, updatedAt: result.updatedAt, version: result.version };
   } catch (err) {
     const status = err?.response?.status;
+    const body = err?.response && typeof err.response.data === 'object' ? err.response.data : null;
+    const pgCode = body ? String(body.code || '') : '';
+    const pgMessage = body ? String(body.message || '') : '';
     const detail = err?.response?.data ? (typeof err.response.data === 'string' ? err.response.data : JSON.stringify(err.response.data)) : '';
     const message = err?.message || String(err);
     const normalized = detail && detail.length < 300 ? detail : message;
@@ -1311,8 +1495,23 @@ async function applyOp(op) {
       // Server-side error — may be transient (overload, restart, etc.)
       isRetryable = true;
     } else if (status === 409) {
-      // Conflict — OCC version mismatch or unique constraint
-      isRetryable = true;
+      // Conflict. PostgREST answers 409 for BOTH a lost optimistic-concurrency
+      // race (retryable: re-reading the row can resolve it) and a DETERMINISTIC
+      // database rejection — a unique-violation (23505) or a trigger raising
+      // (P0001, e.g. the contract-document immutability trigger). Retrying a
+      // deterministic rejection can never succeed, so it must be surfaced
+      // (dead-lettered) instead of looping forever.
+      const deterministic = deterministicConflict(pgCode);
+      isRetryable = !deterministic;
+    } else if (status === 400 && pgCode === 'P0001') {
+      // PostgREST answers 400 — NOT 409 — for a raised exception
+      // (SQLSTATE P0001, `RAISE EXCEPTION`). That is exactly what the
+      // contract-document immutability trigger does, so a refused write must be
+      // recognised here and surfaced as a permanent, labelled failure instead
+      // of an opaque 400. A 400 with any OTHER SQLSTATE (a validation error, a
+      // malformed request, a bad PostgREST path) keeps the ordinary 4xx
+      // handling below: permanent, but NOT labelled as a trigger rejection.
+      isRetryable = false;
     } else {
       // 4xx (except 409/429): schema errors (PGRST204/PGRST205), authorization
       // failures, constraint violations, bad requests → non-retryable.
@@ -1320,7 +1519,33 @@ async function applyOp(op) {
     }
 
     console.warn(`[cloudSyncStore] ${operation} ${table}/${recordId} failed (${status || 'network'}): ${normalized}`);
-    return { operationId, ok: false, id: recordId, error: normalized, retryable: isRetryable };
+    // A missing table (schema not deployed in this environment, e.g. 0049
+    // contract_documents) is permanent for this op, so it stays non-retryable —
+    // but it is flagged distinctly with a documented recovery path so a VALID
+    // record is never silently dead-lettered with no way back.
+    const schemaMissing = /PGRST205|42P01|could not find the table|schema cache/i.test(`${detail} ${message}`);
+    // A deterministic database rejection (unique violation / trigger refusal)
+    // is surfaced with its own conflict type so the client dead-letters it and
+    // shows the reason, instead of retrying a write that can never succeed.
+    // A raised exception arrives as HTTP 400 (PostgREST maps P0001 to 400),
+    // a unique violation as HTTP 409.
+    const deterministic = (status === 409 || status === 400) ? deterministicConflict(pgCode) : null;
+    return {
+      operationId,
+      ok: false,
+      id: recordId,
+      error: normalized,
+      retryable: isRetryable,
+      ...(deterministic
+        ? { conflict: true, conflictType: deterministic, conflictReason: pgMessage || normalized }
+        : {}),
+      ...(schemaMissing
+        ? {
+          schemaMissing: true,
+          recovery: `Apply the missing migration for '${table}' and re-push this operation from the dead-letter queue; the record remains locally intact.`,
+        }
+        : {}),
+    };
   }
 }
 
@@ -1333,6 +1558,7 @@ module.exports = {
   listRows,
   listPullPage,
   findRowsByDataField,
+  findRowById,
   upsertRow,
   softDeleteRow,
   checkIdempotency,
@@ -1341,6 +1567,8 @@ module.exports = {
   purgeTombstones,
   ensureSalesOrderNumber,
   getSyncGeneration,
+  getRequiredClientCapabilityState,
+  clientCapabilityVersion,
   incrementSyncGeneration,
   propagateCustomerRenameToCloud,
 };

@@ -1,4 +1,4 @@
-import { ExaminationInvoiceSchema, FinancialDocSchema, LogisticsDocSchema, PrimeDocData, ReceiptSchema, SalesExchangeSchema, StatementSchema, SubscriptionDocSchema, SupplierPaymentSchema } from '../views/shared/components/PDF/schemas';
+import { ExaminationInvoiceSchema, FinancialDocSchema, LogisticsDocSchema, PrimeDocData, ReceiptSchema, SalesExchangeSchema, StatementSchema, SubscriptionDocSchema, SupplierPaymentSchema, ContractScheduleSchema, PrintingContractSchema, ContractCompletionReceiptSchema } from '../views/shared/components/PDF/schemas';
 import { bomService } from '../services/bomService';
 import { currencyService } from '../services/currencyService';
 import { buildReceiptAcknowledgement, formatReceiptDisplayDate } from '../services/receiptCalculationService';
@@ -493,6 +493,70 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
             ...(sourceToken ? { verificationToken: sourceToken } : {}),
         };
         return StatementSchema.parse(statementData);
+    }
+
+    /**
+     * CONTRACT SCHEDULE (assessment schedule).
+     *
+     * A schedule only reaches this mapper through the public QR download /
+     * portal path — the staff UI builds it with buildContractScheduleDoc and
+     * hands it straight to PrimeDocument. Without this branch it fell through to
+     * the logistics schema below, whose zod object silently STRIPS `schedule`,
+     * `contentHash` and every count, so the document then failed validation and
+     * the download route collapsed it into a generic 404.
+     *
+     * The frozen issued content IS the renderer contract, so it passes through
+     * verbatim. Nothing is derived here: a mapper-synthesised date or client
+     * name would contradict the very snapshot the QR points at.
+     */
+    if (docType === 'CONTRACT_SCHEDULE') {
+        return ContractScheduleSchema.parse({
+            ...item,
+            documentType: 'printing_contract_schedule',
+            verificationToken: sourceToken || (item as any).verificationToken,
+        });
+    }
+
+    /**
+     * PRINTING CONTRACT.
+     *
+     * Only the public QR download reaches this mapper with the raw contract
+     * record — the staff UI builds the doc with buildPrintingContractDoc and
+     * hands it straight to PrimeDocument. Without this branch the generic
+     * financial schema below silently STRIPS `lines`, `contentHash`, the agreed
+     * profile and the signatures, so validation failed and the download route
+     * collapsed the contract into its generic 404.
+     *
+     * The raw snapshot is assembled into the canonical doc shape by
+     * services/officialDocumentService.normalizeRecordForRenderer before it
+     * gets here; this branch only validates and passes it through.
+     */
+    if (docType === 'PRINTING_CONTRACT') {
+        return PrintingContractSchema.parse({
+            ...item,
+            documentType: 'printing_contract',
+            verificationToken: sourceToken || (item as any).verificationToken,
+        });
+    }
+
+    /**
+     * CONTRACT COMPLETION RECEIPT.
+     *
+     * Same failure mode as the schedule: the public download used to fall
+     * through to the financial schema, which stripped `receiptNumber`,
+     * `amountDebited` and the frozen fund position, so a verified receipt
+     * downloaded as an unrelated generic document.
+     *
+     * The frozen issued content IS the renderer contract, so it passes through
+     * verbatim. Nothing is derived: a mapper-synthesised amount would
+     * contradict the snapshot the QR points at.
+     */
+    if (docType === 'CONTRACT_COMPLETION_RECEIPT') {
+        return ContractCompletionReceiptSchema.parse({
+            ...item,
+            documentType: 'printing_contract_completion_receipt',
+            verificationToken: sourceToken || (item as any).verificationToken,
+        });
     }
 
     /**

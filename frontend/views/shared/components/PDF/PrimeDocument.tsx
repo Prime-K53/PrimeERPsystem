@@ -22,6 +22,7 @@ import { CompanyConfig } from '../../../../types.ts';
 import { DEFAULT_CURRENCIES } from '../../../../types/currency.ts';
 import { resolvePdfLogoSource, resolvePdfQrCodeSource } from '../../../../utils/companyAssetUtils.ts';
 import { normalizeSignatureDataUrl } from '../../../../utils/signatureUtils.ts';
+import { formatIsoDate } from '../../../../utils/isoDate.ts';
 import {
   getDefaultPaymentTermsLabel,
   getStoredCompanyConfig,
@@ -31,6 +32,7 @@ import {
 import { generateAccountSummary } from '../../../../utils/pdfMapper.ts';
 import { currencyService } from '../../../../services/currencyService';
 import { resolveReceiptPaymentBadge, buildReceiptAcknowledgement } from '../../../../services/receiptCalculationService';
+import { stripCustomerIdSuffix } from '../../../../services/printingContractService';
 import {
   PaginationFurniture,
   VerificationLabel,
@@ -2280,7 +2282,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     // geometry — and its shrink-to-fit / hard one-line guarantees — so a long
     // school or company name can neither wrap nor slide under the logo.
     const preambleFontSize = 12;
-    const preambleTitleFontSize = scaledFont(20);
+    const preambleTitleFontSize = scaledFont(18);
     const preambleMetaRightIndent = Math.min(RECEIPT_META_INDENT * fontScale, 128);
     const preambleNameGutter = !!logo ? templateSettings.logoWidth + 12 : 0;
     const preambleNameAvailWidth = RECEIPT_CONTENT_WIDTH - (!!logo ? (templateSettings.logoWidth + 12) * 2 : 24);
@@ -2289,7 +2291,8 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
       Math.min(templateSettings.companyNameFontSize, preambleNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6))
     );
     const customerNameLabel = 'Customer Name: ';
-    const customerNameText = String(cs.customerName || 'N/A');
+    const rawCustomerName = String(cs.customerName || '');
+    const customerNameText = rawCustomerName.split(/\r?\n/)[0].trim() || 'N/A';
     const customerNameFontSize = fitFontSize(
       customerNameText,
       Math.max(24, RECEIPT_CONTENT_WIDTH - measureTextWidth(customerNameLabel, preambleFontSize, true)),
@@ -2331,25 +2334,17 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     };
 
     const scheduleRows = cs.schedule || [];
-    // Compact range ("19 Oct – 30 Apr") so the identity strip stays on one
-    // line. Years are deliberately omitted: the academic year is stated in
-    // its own metadata row, so repeating it here would only add noise.
+    // Contract window with BOTH years ("19 Oct 2026 – 30 Apr 2027"). The years
+    // are load-bearing: without them a schedule dated 1 Jun 2027 reads as if it
+    // sat inside a window ending 30 Apr. Dates are canonical ISO values, so the
+    // label never depends on the browser locale.
     const periodLabel = (() => {
-      if (!cs.periodStart && !cs.periodEnd) return '—';
-      if (!cs.periodStart || !cs.periodEnd) {
-        return `${cs.periodStart ? formatDateOnly(cs.periodStart) : '—'} – ${cs.periodEnd ? formatDateOnly(cs.periodEnd) : 'Open'}`;
-      }
-      const start = new Date(cs.periodStart);
-      const end = new Date(cs.periodEnd);
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-        return `${formatDateOnly(cs.periodStart)} – ${formatDateOnly(cs.periodEnd)}`;
-      }
-      const shortLabel = (value: Date) =>
-        value.toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
-      const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
-      return sameMonth
-        ? `${start.getDate()} – ${shortLabel(end)}`
-        : `${shortLabel(start)} – ${shortLabel(end)}`;
+      if (!cs.periodStart && !cs.periodEnd) return 'Not stated';
+      const start = formatIsoDate(cs.periodStart);
+      const end = formatIsoDate(cs.periodEnd);
+      if (!cs.periodStart) return `to ${end || 'Open'}`;
+      if (!cs.periodEnd) return `${start} to Open`;
+      return `${start} to ${end}`;
     })();
 
     // Fixed column widths: the assessment column takes the remainder. Explicit
@@ -2406,20 +2401,59 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     if (cs.chargePerCandidate !== undefined) profileRows.push(['Charge per candidate', moneyOf(cs.chargePerCandidate)]);
     if (cs.assessmentSittings) profileRows.push(['Assessment sittings', String(cs.assessmentSittings)]);
 
+    // Progress counts. "Scheduled" means DATED, non-cancelled assessments —
+    // a schedule is only agreed once each live assessment carries a date. The
+    // undated remainder is stated explicitly so the number can never read as
+    // complete when it is not.
+    const activeAssessments = cs.activeAssessments ?? cs.totalAssessments;
+    const undatedCount = cs.undatedCount ?? (cs.missingDateSequences || []).length;
     const progressRows: Array<[string, string]> = [
       ['Total assessments', String(cs.totalAssessments)],
       ['Scheduled', String(cs.scheduledCount)],
+      ['Awaiting date', String(undatedCount)],
       ['Consumed', String(cs.consumedCount)],
       ['Released', String(cs.releasedCount)],
       ['Cancelled', String(cs.cancelledCount)],
     ];
+    // Fund position — the authoritative `available_funds` generated column
+    // (or its exact formula). The label says "commercial value", never
+    // "funded": `prepaid_amount` is agreed commercial value, not evidence that
+    // payment was received. A negative or internally inconsistent position is
+    // printed as-is, never clamped to a reassuring zero.
+    const availableFunds = Number(cs.availableFunds) || 0;
+    const fundInconsistencies = cs.fundInconsistencies || [];
+    const releasedAmount = Number(cs.releasedAmount || 0);
     const fundRows: Array<[string, string]> = [
-      ['Prepaid funds', moneyOf(cs.prepaidAmount)],
+      ['Contract value (commercial)', moneyOf(cs.prepaidAmount)],
       ['Reserved', moneyOf(cs.reservedAmount)],
       ['Consumed', moneyOf(cs.consumedAmount)],
-      ['Available balance', moneyOf(cs.availableFunds)],
+      [`Available balance${cs.availableFundsSource === 'generated' ? '' : ' (derived)'}`, moneyOf(availableFunds)],
+      // A released assessment is a MOVEMENT, not a fourth bucket: the money it
+      // carried is already inside the available balance above. It is shown as a
+      // memo so the customer can see what was returned, never as an addition to
+      // the position.
+      ...(releasedAmount > 0 ? [['Released (returned to balance)', moneyOf(releasedAmount)]] as Array<[string, string]> : []),
     ];
     const missingSequences = cs.missingDateSequences || [];
+    // Exceptions printed on the face of the document: a date outside the
+    // contract period, a price that disagrees with the agreed pricing basis.
+    // Both are disclosed verbatim — never corrected on the document.
+    const outOfPeriodRows = cs.outOfPeriodRows || [];
+    const outOfPeriodSequences = new Set(outOfPeriodRows.map((r) => Number(r.sequence)));
+    const pricingMismatches = cs.pricingMismatches || [];
+    // The assessments the schedule value actually covers: the reserved and the
+    // consumed ones. A released assessment is listed but no longer owed, so it
+    // is excluded from the value and from the count that labels it.
+    const entitledAssessmentCount = scheduleRows.filter((row) => {
+      const status = String(row.status || '').trim().toLowerCase();
+      return status !== 'released'
+        && !['cancelled', 'canceled', 'void', 'voided'].includes(status);
+    }).length;
+    // The currency unit, stated once so the amounts cannot be misread.
+    const baseCurrency = currencyService.getCurrency(currencyService.getBaseCurrency());
+    const currencyUnitNote = baseCurrency?.code
+      ? `All amounts in ${baseCurrency.code}${baseCurrency.name ? ` (${baseCurrency.name})` : ''}, stated to two decimal places.`
+      : `All amounts in ${scheduleCurrency}, stated to two decimal places.`;
 
     return (
       <Document title={`Contract Schedule - ${cs.contractNumber}`} author={companyName}>
@@ -2453,17 +2487,17 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             </View>
           </View>
 
-          <Text style={{ fontSize: preambleTitleFontSize, fontWeight: 'bold', color: monoText(mode, '#000'), textAlign: 'center', marginTop: 6, marginBottom: 6 }}>
+          <Text style={{ fontSize: preambleTitleFontSize, fontWeight: 'bold', color: monoText(mode, '#000'), textAlign: 'center', marginTop: 4, marginBottom: 4 }}>
             Assessment Schedule
           </Text>
-          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 8 }} />
+          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 6 }} />
 
           {/* Addressee: who the schedule is issued to. The name takes the full
               content width and prints on ONE row (school names run past 60
               characters) — shrink-to-fit plus a hard one-line clamp, exactly
               as the receipt guarantees it. The contract's own party
               descriptors follow on a dimmed line beneath. */}
-          <View style={{ marginBottom: 8 }}>
+          <View style={{ marginBottom: 6 }}>
             <Text style={{ fontSize: preambleFontSize, color: monoText(mode, '#111111'), maxLines: 1, textOverflow: 'ellipsis' }}>
               <Text style={{ fontWeight: 'bold' }}>{customerNameLabel}</Text>
               <Text style={{ fontSize: customerNameFontSize }}>{customerNameText}</Text>
@@ -2479,19 +2513,19 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               carried is still here: contract number, version, issue date,
               contract period and status, plus the currency the money is
               stated in. */}
-          <View style={{ flexDirection: 'row', gap: RECEIPT_META_GAP, marginBottom: 8 }}>
+          <View style={{ flexDirection: 'row', gap: RECEIPT_META_GAP, marginBottom: 6 }}>
             <View style={{ flex: 1 }}>
-              {preambleMetaRow('Contract No', String(cs.contractNumber || '—'))}
+              {preambleMetaRow('Contract No', String(cs.contractNumber || 'Not stated'))}
               {preambleMetaRow('Branch', String(cs.billedBranch || 'Main Account'))}
-              {preambleMetaRow('Issued', formatDateOnly(cs.date))}
+              {preambleMetaRow('Issued', formatIsoDate(cs.date) || 'Not issued')}
             </View>
             <View style={{ flex: 1, paddingLeft: preambleMetaRightIndent }}>
               {preambleMetaRow('Contract Period', periodLabel)}
               {preambleMetaRow('Status', toTitleCase(String(cs.status || 'draft')), { fontWeight: 'bold', color: scheduleTone(String(cs.status || 'draft')).text })}
-              {preambleMetaRow('Academic Year', String(cs.academicYear || '—'))}
+              {preambleMetaRow('Academic Year', String(cs.academicYear || 'Not stated'))}
             </View>
           </View>
-          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 10 }} />
+          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 6 }} />
 
           {/* ── Agreed contract profile (every recorded term, nothing dropped) ── */}
           <View style={{ borderWidth: 0.8, borderColor: hairline, borderRadius: 3, padding: 8 }}>
@@ -2499,18 +2533,9 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             {profileRows.length === 0 ? (
               <Text style={{ fontSize: 9.5 * fontScale, color: inkTone('#64748b') }}>No agreed profile recorded on this contract.</Text>
             ) : (
-              <View style={{ flexDirection: 'row', gap: 16 }}>
-                <View style={{ flex: 1 }}>
-                  {profileRows.filter((_, index) => index % 2 === 0).map(([label, value], index) => (
-                    <View key={label}>{defRow(label, value, index > 0)}</View>
-                  ))}
-                </View>
-                <View style={{ flex: 1 }}>
-                  {profileRows.filter((_, index) => index % 2 === 1).map(([label, value], index) => (
-                    <View key={label}>{defRow(label, value, index > 0)}</View>
-                  ))}
-                </View>
-              </View>
+              <Text style={{ fontSize: 9 * fontScale, color: inkTone('#334155'), lineHeight: 1.45 }}>
+                {profileRows.map(([label, value]) => `${label}: ${value}`).join('  ·  ')}
+              </Text>
             )}
           </View>
 
@@ -2527,14 +2552,19 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             {scheduleRows.map((row, index) => {
               const qualifiers = [row.grade, row.subject].filter(Boolean).join(' · ');
               return (
-                <View key={index} wrap={false} style={{ flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 4, borderBottomWidth: 0.5, borderColor: hairline, ...(index % 2 === 1 ? { backgroundColor: softFill } : null) }}>
+                <View key={index} wrap={false} style={{ flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 2.5, borderBottomWidth: 0.5, borderColor: hairline, ...(index % 2 === 1 ? { backgroundColor: softFill } : null) }}>
                   <Text style={{ width: COL.seq, textAlign: 'right', fontSize: 9 * fontScale, color: inkTone('#94a3b8') }}>{row.sequence}</Text>
                   <View style={{ flexGrow: 1, flexBasis: 0, marginLeft: 10, marginRight: 8 }}>
-                    <Text style={{ fontSize: 9.5 * fontScale, color: inkTone('#0f172a') }}>{row.assessmentName}</Text>
-                    {qualifiers ? <Text style={{ fontSize: 8 * fontScale, color: inkTone('#64748b'), marginTop: 1 }}>{qualifiers}</Text> : null}
+                    <Text style={{ fontSize: 9.5 * fontScale, color: inkTone('#0f172a') }}>
+                      {row.assessmentName}
+                      {qualifiers ? <Text style={{ fontSize: 8 * fontScale, color: inkTone('#64748b') }}>{`  (${qualifiers})`}</Text> : null}
+                    </Text>
                   </View>
                   <Text style={{ width: COL.scheduled, fontSize: 9 * fontScale, color: inkTone('#334155') }}>
-                    {row.assessmentDate ? formatDateOnly(row.assessmentDate) : 'Not scheduled'}
+                    {row.assessmentDate ? formatIsoDate(row.assessmentDate) : 'Not scheduled'}
+                    {outOfPeriodSequences.has(Number(row.sequence)) ? (
+                      <Text style={{ fontSize: 7.5 * fontScale, color: inkTone('#b91c1c') }}>{'\n'}outside contract period</Text>
+                    ) : null}
                   </Text>
                   <View style={{ width: COL.status, alignItems: 'flex-start' }}>{statusPill(String(row.status || 'reserved'))}</View>
                   <Text style={{ width: COL.value, textAlign: 'right', fontSize: 9.5 * fontScale, color: inkTone('#0f172a') }}>
@@ -2546,10 +2576,22 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
 
             <View wrap={false} style={{ flexDirection: 'row', alignItems: 'center', paddingTop: 6, borderTopWidth: 1, borderColor: monoLine(mode, '#0f172a') }}>
               <Text style={{ flexGrow: 1, flexBasis: 0, fontSize: 9 * fontScale, fontWeight: 'bold', letterSpacing: 0.6, textTransform: 'uppercase', color: inkTone('#334155') }}>
-                {scheduleRows.length} assessment{scheduleRows.length === 1 ? '' : 's'} · schedule value
+                {(cs.releasedCount || 0) > 0
+                  ? `${entitledAssessmentCount} of ${activeAssessments} active assessment${activeAssessments === 1 ? '' : 's'} · schedule value`
+                  : `${activeAssessments} active assessment${activeAssessments === 1 ? '' : 's'} · schedule value`}
               </Text>
               <Text style={{ fontSize: 10.5 * fontScale, fontWeight: 'bold', color: inkTone('#0f172a') }}>{moneyOf(cs.totalValue)}</Text>
             </View>
+            {(cs.cancelledCount || 0) > 0 ? (
+              <Text style={{ fontSize: 8.5 * fontScale, color: inkTone('#64748b'), marginTop: 3 }}>
+                {cs.cancelledCount} cancelled assessment{(cs.cancelledCount || 0) === 1 ? '' : 's'} excluded from the active schedule value{(cs.cancelledValue || 0) > 0 ? ` (cancelled value ${moneyOf(cs.cancelledValue || 0)})` : ''}.
+              </Text>
+            ) : null}
+            {(cs.releasedCount || 0) > 0 ? (
+              <Text style={{ fontSize: 8.5 * fontScale, color: inkTone('#64748b'), marginTop: 3 }}>
+                {(cs.releasedCount || 0)} released assessment{(cs.releasedCount || 0) === 1 ? '' : 's'} excluded from the schedule value{releasedAmount > 0 ? ` (${moneyOf(releasedAmount)})` : ''}: the reservation was returned to the available balance.
+              </Text>
+            ) : null}
           </View>
 
           {/* ── Schedule completeness (reported, never substituted) ── */}
@@ -2558,7 +2600,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               <View style={{ width: 3, backgroundColor: monoFill(mode, '#f59e0b') }} />
               <View style={{ flex: 1, padding: 9 }}>
                 <Text style={{ fontSize: 9.5 * fontScale, fontWeight: 'bold', color: inkTone('#92400e') }}>
-                  Schedule incomplete — {missingSequences.length} of {cs.totalAssessments} assessment{cs.totalAssessments === 1 ? '' : 's'} have no scheduled date (sequence{missingSequences.length === 1 ? '' : 's'} {missingSequences.join(', ')}).
+                  Schedule incomplete: {missingSequences.length} of {activeAssessments} active assessment{activeAssessments === 1 ? '' : 's'} have no scheduled date (sequence{missingSequences.length === 1 ? '' : 's'} {missingSequences.join(', ')}).
                 </Text>
                 <Text style={{ fontSize: 9 * fontScale, color: inkTone('#92400e'), marginTop: 2, lineHeight: 1.4 }}>
                   This schedule is not yet complete as agreed. Missing dates are reported explicitly and are never substituted.
@@ -2567,15 +2609,76 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             </View>
           ) : null}
 
-          {/* ── Lifecycle progress + fund position ── */}
-          <View wrap={false} style={{ flexDirection: 'row', marginTop: 10, borderWidth: 0.8, borderColor: hairline, borderRadius: 3 }}>
-            <View style={{ flex: 1, padding: 10 }}>
-              {sectionHeading('Progress')}
-              {progressRows.map(([label, value], index) => (
-                <View key={label}>{defRow(label, value, index > 0)}</View>
-              ))}
+          {/* ── Schedule exceptions (disclosed, never corrected) ──
+              A scheduled date outside the contract period, or a recorded price
+              that disagrees with the agreed pricing basis, is a disagreement
+              between two facts the customer is looking at. Both are printed
+              verbatim: the assessment date and the recorded price are never
+              changed to fit the period or the formula. ── */}
+          {(outOfPeriodRows.length > 0 || pricingMismatches.length > 0) ? (
+            <View wrap={false} style={{ marginTop: 10, flexDirection: 'row', borderWidth: 0.8, borderColor: monoLine(mode, '#ef4444'), borderRadius: 3, backgroundColor: monoFill(mode, '#fef2f2') }}>
+              <View style={{ width: 3, backgroundColor: monoFill(mode, '#ef4444') }} />
+              <View style={{ flex: 1, padding: 9 }}>
+                <Text style={{ fontSize: 9.5 * fontScale, fontWeight: 'bold', color: inkTone('#991b1b') }}>
+                  Schedule needs review
+                </Text>
+                {outOfPeriodRows.map((row) => (
+                  <Text key={`oop-${row.sequence}`} style={{ fontSize: 9 * fontScale, color: inkTone('#991b1b'), marginTop: 2, lineHeight: 1.45 }}>
+                    • Assessment {row.sequence} ({row.assessmentName}) is scheduled for {formatIsoDate(row.assessmentDate)}, which is {row.reason === 'after_period_end' ? 'after the contract period ends' : 'before the contract period starts'}.
+                  </Text>
+                ))}
+                {pricingMismatches.map((row) => (
+                  <Text key={`pm-${row.sequence}`} style={{ fontSize: 9 * fontScale, color: inkTone('#991b1b'), marginTop: 2, lineHeight: 1.45 }}>
+                    • Assessment {row.sequence} ({row.assessmentName}) is priced {moneyOf(row.recorded)}, but the agreed pricing basis is {moneyOf(row.expected)}.
+                  </Text>
+                ))}
+                <Text style={{ fontSize: 8.5 * fontScale, color: inkTone('#991b1b'), marginTop: 3, lineHeight: 1.45 }}>
+                  Dates and amounts are shown as recorded and are not adjusted on this document.
+                </Text>
+              </View>
             </View>
-            <View style={{ flex: 1, padding: 10, borderLeftWidth: 0.6, borderColor: hairline }}>
+          ) : null}
+
+          {/* ── Fund position inconsistencies (reported, never repaired) ──
+              A negative balance, a reservation bucket that disagrees with the
+              reserved assessments, or an authoritative/derived disagreement is
+              printed verbatim. Silently clamping it to zero would misstate the
+              customer's position on a contractual document. ── */}
+          {fundInconsistencies.length > 0 ? (
+            <View wrap={false} style={{ marginTop: 10, flexDirection: 'row', borderWidth: 0.8, borderColor: monoLine(mode, '#ef4444'), borderRadius: 3, backgroundColor: monoFill(mode, '#fef2f2') }}>
+              <View style={{ width: 3, backgroundColor: monoFill(mode, '#ef4444') }} />
+              <View style={{ flex: 1, padding: 9 }}>
+                <Text style={{ fontSize: 9.5 * fontScale, fontWeight: 'bold', color: inkTone('#991b1b') }}>
+                  Fund position needs review
+                </Text>
+                {fundInconsistencies.map((detail, index) => (
+                  <Text key={index} style={{ fontSize: 9 * fontScale, color: inkTone('#991b1b'), marginTop: 2, lineHeight: 1.45 }}>
+                    • {detail}
+                  </Text>
+                ))}
+                <Text style={{ fontSize: 8.5 * fontScale, color: inkTone('#991b1b'), marginTop: 3, lineHeight: 1.45 }}>
+                  Figures are shown as recorded and are not adjusted on this document.
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          {/* ── Lifecycle progress + fund position ── */}
+          <View wrap={false} style={{ flexDirection: 'row', marginTop: 8, borderWidth: 0.8, borderColor: hairline, borderRadius: 3 }}>
+            <View style={{ flex: 1, padding: 8 }}>
+              {sectionHeading('Progress')}
+              {/* Two explicit lines, never one wrapped line: react-pdf
+                  hyphenates when a line break falls inside a word, and a break
+                  after the "·" separator printed a stray "-" on the document.
+                  Fixed breaks keep every separator intact. */}
+              <Text style={{ fontSize: 8.5 * fontScale, color: inkTone('#334155'), lineHeight: 1.45 }}>
+                {progressRows.slice(0, 3).map(([label, value]) => `${label} ${value}`).join('  ·  ')}
+              </Text>
+              <Text style={{ fontSize: 8.5 * fontScale, color: inkTone('#334155'), lineHeight: 1.45 }}>
+                {progressRows.slice(3).map(([label, value]) => `${label} ${value}`).join('  ·  ')}
+              </Text>
+            </View>
+            <View style={{ flex: 1, padding: 8, borderLeftWidth: 0.6, borderColor: hairline }}>
               {sectionHeading('Fund Position')}
               {fundRows.map(([label, value], index) => (
                 <View key={label}>{defRow(label, value, index > 0)}</View>
@@ -2583,9 +2686,18 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             </View>
           </View>
 
+          {/* ── Legend + currency unit ──
+              The statuses are the customer's terms, not ours: what a reserved,
+              consumed, released or cancelled assessment means for the money. */}
+          <View wrap={false} style={{ marginTop: 5 }}>
+            <Text style={{ fontSize: 7.5 * fontScale, color: inkTone('#64748b'), lineHeight: 1.35 }}>
+              Reserved: committed to a scheduled assessment. Consumed: completed and chargeable. Released: reservation returned to the available balance. Cancelled: excluded from this schedule. {currencyUnitNote}
+            </Text>
+          </View>
+
           {/* ── Agreed terms (carried on the contract, printed here) ── */}
           {(cs.terms || cs.notes) ? (
-            <View wrap={false} style={{ marginTop: 10, borderWidth: 0.8, borderColor: hairline, borderRadius: 3, padding: 10 }}>
+            <View wrap={false} style={{ marginTop: 8, borderWidth: 0.8, borderColor: hairline, borderRadius: 3, padding: 8 }}>
               {sectionHeading('Terms & Conditions')}
               {cs.terms ? (
                 <Text style={{ fontSize: 9 * fontScale, color: inkTone('#334155'), lineHeight: 1.5 }}>{cs.terms}</Text>
@@ -2603,28 +2715,40 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
 
           {/* Closing line — same wording and weight as the payment receipt so
               the two documents close identically. */}
-          <View wrap={false} style={{ marginTop: 10, alignItems: 'center' }}>
-            <Text style={{ fontSize: scaledFont(12), color: inkTone('#334155'), textAlign: 'center' }}>
+          <View wrap={false} style={{ marginTop: 6, alignItems: 'center' }}>
+            <Text style={{ fontSize: scaledFont(11), color: inkTone('#334155'), textAlign: 'center' }}>
               Thank you for choosing <Text style={{ fontWeight: 'bold' }}>{companyName}</Text>
             </Text>
           </View>
 
-          {/* ── Document integrity + security footer ── */}
-          <View wrap={false} style={{ marginTop: 10, borderTopWidth: 0.5, borderColor: monoLine(mode, '#e2e8f0'), paddingTop: 8 }}>
-            <Text style={{ fontSize: 10.5 * fontScale, fontWeight: 'bold', color: monoText(mode, '#1e3a8a'), letterSpacing: 0.4 }}>
+                    {/* ── Document integrity ─────────────────────────────────────────────────
+              The tamper-evidence digest of the schedule. The document's IDENTITY
+              (id, version, issued date, status) is deliberately NOT printed:
+              the customer scans the QR and sees it on the verification page,
+              like every other Prime ERP document. The digest is printed so the
+              customer can compare it with the one the verification page shows.
+              ──────────────────────────────────────────────────── */}
+          <View wrap={false} style={{ marginTop: 8, borderTopWidth: 0.5, borderColor: monoLine(mode, '#e2e8f0'), paddingTop: 6 }}>
+            <Text style={{ fontSize: 10 * fontScale, fontWeight: 'bold', color: monoText(mode, '#1e3a8a'), letterSpacing: 0.4 }}>
               DOCUMENT INTEGRITY
             </Text>
-            <Text style={{ marginTop: 6, fontSize: 8.5 * fontScale, color: monoText(mode, '#1e3a8a'), letterSpacing: 0.3 }}>
+            <Text style={{ marginTop: 4, fontSize: 8 * fontScale, color: monoText(mode, '#1e3a8a'), letterSpacing: 0.3 }}>
               Content hash: {cs.contentHash}
             </Text>
-            <Text style={{ marginTop: 4, fontSize: 9 * fontScale, color: monoText(mode, '#475569'), lineHeight: 1.45 }}>
-              This hash covers the contract, the full assessment schedule with its
-              sequences and dates, and the fund position. Any alteration changes
-              the hash. Quote the contract number and hash to verify with {companyName}.
+            <Text style={{ marginTop: 2, fontSize: 8 * fontScale, color: inkTone('#475569'), lineHeight: 1.35 }}>
+              This SHA-256 digest covers the contract identity, the assessment schedule
+              and the fund position; any change to them changes the digest. It is a
+              tamper-evidence fingerprint, not a digital signature. Scan the QR code to
+              view this document's record and verify it with {companyName}.
             </Text>
           </View>
 
-          <View wrap={false} style={{ marginTop: 10 }}>
+        {/* The verification QR block is rendered ONCE, after the last block of
+            the document — never repeated on every page. The general invoice
+            repeats its fixed footer, which on a multi-page document prints the
+            same verification block twice; the schedule carries the block once,
+            on the final page. */}
+          <View wrap={false} style={{ marginTop: 8 }}>
             <VerificationLabel fontScale={fontScale} />
             <SecurityFooter colorMode={mode}
               data={cs}
@@ -2643,131 +2767,285 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
   if (type === 'CONTRACT_COMPLETION_RECEIPT') {
     const cr = data as ContractCompletionReceiptDoc;
     const cancelled = isCancelledStatus(String(cr.status || ''), cr as unknown as Record<string, unknown>);
+    // The receipt carries no currency field: the money is stated in the
+    // company's configured currency, exactly as on the payment receipt.
+    const crCurrency = config?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || 'K';
+
+    // ── Preamble geometry (the payment receipt's, verbatim) ────────────────
+    // Centred company identity with the logo pinned out of flow at the left
+    // margin, centred title, a rule, then the addressee row and the
+    // two-column inline metadata grid whose right column is indented two tab
+    // stops. The same shrink-to-fit + hard one-line guarantees apply, so a
+    // long school or company name can neither wrap nor slide under the logo.
+    const crBodyFontSize = 12;
+    const crTitleFontSize = 20 * fontScale;
+    const crMetaRightIndent = Math.min(RECEIPT_META_INDENT * fontScale, 128);
+    const crNameGutter = !!logo ? templateSettings.logoWidth + 12 : 0;
+    const crNameAvailWidth = RECEIPT_CONTENT_WIDTH - (!!logo ? (templateSettings.logoWidth + 12) * 2 : 24);
+    const crNameFontSize = Math.max(
+      8.5,
+      Math.min(templateSettings.companyNameFontSize, crNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6))
+    );
+
+    // Customer identity. The contract screens assemble the display name with
+    // the internal customer id ("Mtakataka CCAP School (CUST-0033)"); that id
+    // never reaches a customer-facing receipt — the same funnel the document
+    // builder uses. The name takes the full content width and prints on ONE
+    // row (shrink-to-fit plus a hard clamp), so it never breaks the header's
+    // rhythm however long the registered school name is.
+    const crCustomerNameLabel = 'Customer Name: ';
+    const crCustomerName = stripCustomerIdSuffix(String(cr.customerName || '').trim()) || 'Customer';
+    const crCustomerFontSize = fitFontSize(
+      crCustomerName,
+      Math.max(24, RECEIPT_CONTENT_WIDTH - measureTextWidth(crCustomerNameLabel, crBodyFontSize, true)),
+      { maxSize: crBodyFontSize, minSize: 7 },
+    );
+    // Party descriptor beneath the name. A value that merely repeats the
+    // customer name is dropped (the common case: the school IS the customer)
+    // so the identity block never states the same thing twice.
+    const crCustomerKey = crCustomerName.trim().toLowerCase();
+    const crCustomerSubline = String(cr.schoolName || '').trim();
+    const crShowSubline = !!crCustomerSubline && crCustomerSubline.toLowerCase() !== crCustomerKey;
+
+    // Palette indirection: every colour goes through the print-mode helpers so
+    // the mono copy degrades to black/greyscale without a second template.
+    const crInk = (hex: string) => monoText(mode, hex);
+    const crHairline = monoLine(mode, '#cbd5e1');
+    const crSoftFill = monoFill(mode, '#f8fafc');
+    const crMoney = (value: number) => `${crCurrency} ${formatAmount(Number(value) || 0)}`;
+
+    // Lifecycle tone. Deliberately local: getStatusTone() is shaped for invoice
+    // payment states (its fallback is "overdue red"), which would paint an
+    // active/completed contract red.
+    const crStatusTone = (() => {
+      if (mode === 'mono') return '#000';
+      const key = String(cr.status || '').trim().toLowerCase();
+      if (['active', 'completed', 'consumed', 'closed', 'fulfilled'].includes(key)) return '#047857';
+      if (['draft', 'pending', 'reserved', 'scheduled', 'processing', 'in_progress'].includes(key)) return '#b45309';
+      if (['cancelled', 'canceled', 'void', 'voided'].includes(key)) return '#b91c1c';
+      return '#475569';
+    })();
+
+    // Inline "Label: value" metadata row — the payment receipt's metadata
+    // grammar, kept verbatim so the two documents read as one family.
+    const crMetaRow = (label: string, value: string, valueStyle?: any) => (
+      <Text style={{ fontSize: crBodyFontSize, color: crInk('#111111'), marginBottom: 2 }}>
+        <Text style={{ fontWeight: 'bold' }}>{label}: </Text>
+        <Text style={valueStyle}>{value}</Text>
+      </Text>
+    );
+
+    const crSectionHeading = (label: string) => (
+      <Text style={{ fontSize: crBodyFontSize, fontWeight: 'bold', color: crInk('#111111'), marginBottom: 3 }}>{label}</Text>
+    );
+
+    // Bordered definition row — the fund-position grammar of the assessment
+    // schedule, carried over so the two contract documents read as one family.
+    const crDefRow = (label: string, value: string, withDivider = true) => (
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 1.5, ...(withDivider ? { borderTopWidth: 0.5, borderColor: crHairline } : null) }}>
+        <Text style={{ fontSize: 9 * fontScale, color: crInk('#475569') }}>{label}</Text>
+        <Text style={{ fontSize: 9.5 * fontScale, fontWeight: 'bold', color: crInk('#0f172a'), marginLeft: 10, textAlign: 'right', flexShrink: 1 }}>
+          {value}
+        </Text>
+      </View>
+    );
+
+    const crCellText = { fontSize: crBodyFontSize, color: crInk('#111111') } as const;
+    const crCellBold = { fontSize: crBodyFontSize, fontWeight: 'bold' as const, color: crInk('#111111') };
+
     return (
-      <Document title={`Completion Receipt - ${cr.receiptNumber}`} author={companyName}>
+      <Document title={`Assessment Completion Receipt - ${cr.receiptNumber}`} author={companyName}>
         <Page size="A4" style={[s.page, pageStyle]}>
           {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
           {cancelled && <CancelledWatermark colorMode={mode} />}
           <PaginationFurniture colorMode={mode}
-            identity={{ title: 'Completion Receipt', number: String(cr.receiptNumber || ''), customer: String(cr.customerName || '') }}
+            identity={{ title: 'Assessment Completion Receipt', number: String(cr.receiptNumber || ''), customer: crCustomerName }}
             companyName={companyName}
           />
 
-          <View style={s.headerSection}>
-            <View style={s.headerLeft}>
-              <Text style={[s.title, titleStyle, { fontFamily: 'Helvetica' }]}>Assessment Completion Receipt</Text>
-              <View style={s.infoText}>
-                <Text>Receipt # : {cr.receiptNumber}</Text>
-                <Text>Contract # : {cr.contractNumber}</Text>
-                <Text>Date : {formatDateOnly(cr.date)} · Version {cr.version}</Text>
-                <Text>Status : {toTitleCase(String(cr.status || 'draft'))}{cr.completedToDate >= cr.totalAssessments && cr.totalAssessments > 0 ? ' · Fully completed' : ''}</Text>
-              </View>
-            </View>
-            <View style={s.headerRight}>
-              {renderBrandMark('right')}
-            </View>
-          </View>
-
-          <View style={[s.billingSection, { marginTop: 0, marginBottom: 12 }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Company</Text>
-              <View style={s.recipientInfoText}>
-                <Text style={s.recipientName}>{companyName}</Text>
-                {companyAddress ? <Text style={s.recipientDetail}>{companyAddress}</Text> : null}
-                {companyContact ? <Text style={s.recipientPhone}>{companyContact}</Text> : null}
-              </View>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Client</Text>
-              <View style={s.recipientInfoText}>
-                <Text style={s.recipientName}>{cr.customerName || 'N/A'}</Text>
-                {cr.schoolName ? <Text style={s.recipientDetail}>{cr.schoolName}</Text> : null}
-              </View>
+          {/* Formal company header: real logo from settings pinned flush to
+              the left margin (absolute, out of flow, at the settings-driven
+              logoWidth so brand-asset sizing is preserved). The identity block
+              spans the full width with symmetric gutters, so the name stays
+              page-centred and can never slide under the logo. */}
+          <View style={{ position: 'relative', alignItems: 'center', marginBottom: 6, paddingTop: 2 }}>
+            {!!logo && (
+              <Image src={logo} style={{ position: 'absolute', left: 0, top: 0, width: templateSettings.logoWidth }} />
+            )}
+            <View style={{ alignItems: 'center', width: '100%', paddingLeft: crNameGutter, paddingRight: crNameGutter }}>
+              <Text style={{ fontSize: crNameFontSize, fontWeight: 'bold', color: crInk('#000'), textAlign: 'center', maxLines: 1, textOverflow: 'ellipsis' }}>{companyName}</Text>
+              {!!receiptCompanyAddress && (
+                <Text style={{ fontSize: crBodyFontSize, color: crInk('#334155'), textAlign: 'center', marginTop: 2 }}>{receiptCompanyAddress}</Text>
+              )}
+              {!!companyContact && (
+                <Text style={{ fontSize: crBodyFontSize, color: crInk('#334155'), textAlign: 'center', marginTop: 2 }}>{companyContact}</Text>
+              )}
             </View>
           </View>
 
-          <View style={{ marginTop: 8 }}>
-            <View style={s.tableHeader}>
-              <Text style={{ flex: 3 }}>Completed Assessment</Text>
-              <Text style={{ flex: 2 }}>Consumed</Text>
-              <Text style={{ flex: 1, textAlign: 'right' }}>Price</Text>
-            </View>
-            <View style={s.row}>
-              <Text style={{ flex: 3 }}>
-                {cr.item?.assessmentName}{[cr.item?.grade, cr.item?.subject].filter(Boolean).join(' · ') ? ` (${[cr.item?.grade, cr.item?.subject].filter(Boolean).join(' · ')})` : ''}
-              </Text>
-              <Text style={{ flex: 2 }}>{cr.item?.consumedAt ? formatDateOnly(cr.item.consumedAt) : '—'}</Text>
-              <Text style={{ flex: 1, textAlign: 'right' }}>{currency} {formatAmount(cr.item?.unitPrice || 0)}</Text>
-            </View>
-          </View>
+          <Text style={{ fontSize: crTitleFontSize, fontWeight: 'bold', color: crInk('#000'), textAlign: 'center', marginTop: 6, marginBottom: 6 }}>
+            Assessment Completion Receipt
+          </Text>
+          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 4 }} />
 
-          <View style={[s.summaryContainer, { justifyContent: 'flex-end' }]}>
-            <View style={{ width: 280 }}>
-              <View style={[s.totalRow]}>
-                <Text style={{ flex: 1, fontWeight: 'bold' }}>Completion Progress</Text>
-                <Text style={{ fontWeight: 'bold', textAlign: 'right' }}>{cr.completedToDate} / {cr.totalAssessments}</Text>
-              </View>
-              <View style={[s.totalRow]}>
-                <Text style={{ flex: 1 }}>This completion (sequence {cr.sequence})</Text>
-                <Text style={{ textAlign: 'right' }}>{currency} {formatAmount(cr.amountDebited)}</Text>
-              </View>
-              <View style={[s.totalRow]}>
-                <Text style={{ flex: 1 }}>Remaining Assessments</Text>
-                <Text style={{ textAlign: 'right' }}>{cr.remainingAssessments}</Text>
-              </View>
-              <View style={[s.totalRow]}>
-                <Text style={{ flex: 1 }}>Consumed To Date</Text>
-                <Text style={{ textAlign: 'right' }}>{currency} {formatAmount(cr.totalConsumedToDate)}</Text>
-              </View>
-              <View style={[s.totalRow]}>
-                <Text style={{ flex: 1 }}>Contract Value / Reserved</Text>
-                <Text style={{ textAlign: 'right' }}>{currency} {formatAmount(cr.contractValue)} / {currency} {formatAmount(cr.remainingReservedFunds)}</Text>
-              </View>
-              <View style={[s.totalRow]}>
-                <Text style={{ flex: 1 }}>Unallocated Funds</Text>
-                <Text style={{ textAlign: 'right' }}>{currency} {formatAmount(cr.unallocatedFunds)}</Text>
-              </View>
-              <View style={[s.totalRow]}>
-                <Text style={{ flex: 1 }}>Wallet Balance After</Text>
-                <Text style={{ textAlign: 'right' }}>{currency} {formatAmount(cr.walletBalanceAfter)}</Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={{ marginTop: 8, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
-            <Text style={{ fontWeight: 'bold', marginBottom: 4, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Canonical linkage</Text>
-            <Text style={{ fontSize: 11, color: monoText(mode, '#334155'), fontFamily: "'JetBrains Mono', monospace" }}>
-              Wallet transaction: {cr.walletTransactionId || '—'}
+          {/* Addressee row: the customer name spans the full content width so
+              it can always print on ONE row. It sits directly under the title
+              because it is who the receipt is for; the two-column grid below
+              carries the completion facts. */}
+          <View style={{ marginBottom: 6 }}>
+            <Text style={{ fontSize: crBodyFontSize, color: crInk('#111111'), marginBottom: 3, maxLines: 1, textOverflow: 'ellipsis' }}>
+              <Text style={{ fontWeight: 'bold' }}>{crCustomerNameLabel}</Text>
+              <Text style={{ fontSize: crCustomerFontSize }}>{crCustomerName}</Text>
             </Text>
-            <Text style={{ fontSize: 11, color: monoText(mode, '#334155'), fontFamily: "'JetBrains Mono', monospace", marginTop: 2 }}>
-              Ledger entry: {cr.ledgerEntryId || '—'}
+            {crShowSubline && (
+              <Text style={{ fontSize: 9 * fontScale, color: crInk('#64748b') }}>{crCustomerSubline}</Text>
+            )}
+          </View>
+
+          {/* Formal two-column metadata block: the receipt's own facts at left;
+              the issue date, academic year, assessment sequence and contract
+              state at right (right column indented two tab stops, as on the
+              payment receipt). Every field the document carries is printed. */}
+          <View style={{ flexDirection: 'row', gap: RECEIPT_META_GAP, marginBottom: 8 }}>
+            <View style={{ flex: 1 }}>
+              {crMetaRow('Receipt No', String(cr.receiptNumber || 'Not stated'))}
+              {crMetaRow('Contract No', String(cr.contractNumber || 'Not stated'))}
+              {crMetaRow('Version', String(cr.version ?? 1))}
+              {crMetaRow('Currency', resolveReceiptCurrencyLabel(crCurrency))}
+            </View>
+            <View style={{ flex: 1, paddingLeft: crMetaRightIndent }}>
+              {crMetaRow('Date', String(cr.date || 'Not stated'))}
+              {crMetaRow('Academic Year', String(cr.academicYear || 'Not stated'))}
+              {crMetaRow('Sequence', `${cr.sequence} of ${cr.totalAssessments}`)}
+              {crMetaRow('Status', toTitleCase(String(cr.status || 'draft')), { fontWeight: 'bold', color: crInk(crStatusTone) })}
+            </View>
+          </View>
+          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 4 }} />
+
+          {/* Bordered details table: the payment receipt's Description /
+              Line Total / Paid table carries one completed assessment instead
+              of a payment line. Price is the assessment's agreed unit price;
+              Debited is the amount this receipt recognised, so the two money
+              columns answer two different questions. */}
+          {crSectionHeading('Completion Details Table')}
+          <View style={{ borderWidth: 0.5, borderColor: monoLine(mode, '#9ca3af'), marginBottom: 8 }}>
+            <View style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>
+              <Text style={[crCellBold, { flex: 3, padding: 4, borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }]}>Description</Text>
+              <Text style={[crCellBold, { flex: 1, padding: 4, textAlign: 'right', borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }]}>Price</Text>
+              <Text style={[crCellBold, { flex: 1, padding: 4, textAlign: 'right' }]}>Debited</Text>
+            </View>
+            <View style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>
+              <View style={{ flex: 3, padding: 4, borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>
+                <Text style={[crCellBold, { marginBottom: 1 }]}>{cr.item.assessmentName || 'Assessment'}</Text>
+                {(!!cr.item.grade || !!cr.item.subject) && (
+                  <Text style={{ fontSize: 9 * fontScale, color: crInk('#64748b'), marginBottom: 1 }}>
+                    {[cr.item.grade, cr.item.subject].filter(Boolean).join(' · ')}
+                  </Text>
+                )}
+                <Text style={{ fontSize: 9 * fontScale, color: crInk('#64748b') }}>
+                  Consumed: {cr.item.consumedAt || 'Not recorded'}
+                </Text>
+              </View>
+              <View style={{ flex: 1, padding: 4, justifyContent: 'center', borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>
+                <Text style={[crCellText, { textAlign: 'right' }]}>{crMoney(cr.item.unitPrice)}</Text>
+              </View>
+              <View style={{ flex: 1, padding: 4, justifyContent: 'center' }}>
+                <Text style={[crCellText, { textAlign: 'right' }]}>{crMoney(cr.amountDebited)}</Text>
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', padding: 4 }}>
+              <Text style={[crCellBold, { flex: 4, textAlign: 'right' }]}>Amount Debited</Text>
+              <Text style={[crCellBold, { flex: 1, textAlign: 'right' }]}>{crMoney(cr.amountDebited)}</Text>
+            </View>
+          </View>
+
+          {/* Completion progress against the contractual entitlement at left;
+              the fund position the debit produced at right. Labels are the
+              customer's terms, and every figure is printed as recorded — a
+              negative or inconsistent position is never clamped to zero. */}
+          {crSectionHeading('Completion & Fund Position')}
+          <View style={{ flexDirection: 'row', borderWidth: 0.8, borderColor: crHairline, borderRadius: 3, marginBottom: 8 }}>
+            <View style={{ flex: 1, padding: 7 }}>
+              <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', letterSpacing: 1.2, textTransform: 'uppercase', color: crInk('#64748b'), marginBottom: 5 }}>
+                Progress
+              </Text>
+              {crDefRow('Completion Progress', `${cr.completedToDate} / ${cr.totalAssessments}`, false)}
+              {crDefRow('Remaining Assessments', String(cr.remainingAssessments))}
+              {crDefRow('Total Assessments', String(cr.totalAssessments))}
+            </View>
+            <View style={{ flex: 1, padding: 7, borderLeftWidth: 0.6, borderColor: crHairline }}>
+              <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', letterSpacing: 1.2, textTransform: 'uppercase', color: crInk('#64748b'), marginBottom: 5 }}>
+                Fund Position
+              </Text>
+              {crDefRow('Contract Value', crMoney(cr.contractValue), false)}
+              {crDefRow('Consumed to Date', crMoney(cr.totalConsumedToDate))}
+              {crDefRow('Reserved Funds', crMoney(cr.remainingReservedFunds))}
+              {crDefRow('Unallocated Funds', crMoney(cr.unallocatedFunds))}
+              {crDefRow('Wallet Balance After', crMoney(cr.walletBalanceAfter))}
+            </View>
+          </View>
+          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 4 }} />
+
+          {/* Canonical linkage: the two references that tie this printed
+              receipt to the wallet movement and ledger entry that recognised
+              the debit. Printed verbatim so a printed copy reconciles against
+              the books without the database. */}
+          {crSectionHeading('Canonical Linkage')}
+          <View style={{ borderWidth: 0.8, borderColor: crHairline, borderRadius: 3, padding: 6, backgroundColor: crSoftFill, marginBottom: 6 }}>
+            <Text style={{ fontSize: crBodyFontSize, color: crInk('#111111'), marginBottom: 2 }}>
+              <Text style={{ fontWeight: 'bold' }}>Wallet Transaction: </Text>
+              <Text>{cr.walletTransactionId || 'Not recorded'}</Text>
+            </Text>
+            <Text style={{ fontSize: crBodyFontSize, color: crInk('#111111'), marginBottom: 3 }}>
+              <Text style={{ fontWeight: 'bold' }}>Ledger Entry: </Text>
+              <Text>{cr.ledgerEntryId || 'Not recorded'}</Text>
+            </Text>
+            <Text style={{ fontSize: 8.5 * fontScale, color: crInk('#64748b'), lineHeight: 1.35 }}>
+              These references tie this receipt to the wallet movement and ledger entry that recognised the debit.
             </Text>
           </View>
 
-          {cr.notes ? (
-            <View style={{ marginTop: 8, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
-              <Text style={{ fontSize: 11, lineHeight: 1.6, color: monoText(mode, '#334155') }}>Notes: {cr.notes}</Text>
-            </View>
-          ) : null}
-
-          <View wrap={false} style={{ marginTop: 16, borderTopWidth: 0.5, borderColor: monoLine(mode, '#e2e8f0'), paddingTop: 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={{ fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#1e3a8a'), letterSpacing: 0.4 }}>
-                DOCUMENT INTEGRITY
+          {/* Formal notes section — the stored contract notes, else a neutral
+              statement. Nothing the blocks above already print is repeated. */}
+          <View style={{ marginTop: 2 }}>
+            {crSectionHeading('Notes Section')}
+            <View style={{ padding: 7, backgroundColor: crSoftFill, borderRadius: 8 }}>
+              <Text style={{ fontSize: crBodyFontSize, lineHeight: 1.5, color: crInk('#334155') }}>
+                {String(cr.notes || '').trim() || 'No additional notes are recorded on this contract.'}
               </Text>
             </View>
-            <Text style={{ marginTop: 6, fontSize: 9, color: monoText(mode, '#1e3a8a'), lineHeight: 1.45 }}>
+          </View>
+          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginTop: 5, marginBottom: 5 }} />
+
+          {/* Closing line — same wording and weight as the payment receipt. */}
+          <View wrap={false} style={{ marginTop: 4, alignItems: 'center' }}>
+            <Text style={{ fontSize: scaledFont(11), color: crInk('#334155'), textAlign: 'center' }}>
+              Thank you for choosing <Text style={{ fontWeight: 'bold' }}>{companyName}</Text>
+            </Text>
+          </View>
+
+          {/* ── Document integrity ──────────────────────────────────────────
+              The tamper-evidence digest of the receipt. The document's
+              IDENTITY (id, version, issued date, status) is deliberately not
+              printed: the customer scans the QR and sees it on the
+              verification page, like every other Prime ERP document.
+              ────────────────────────────────────────────────────────────── */}
+          <View wrap={false} style={{ marginTop: 6, borderTopWidth: 0.5, borderColor: monoLine(mode, '#e2e8f0'), paddingTop: 5 }}>
+            <Text style={{ fontSize: 10 * fontScale, fontWeight: 'bold', color: monoText(mode, '#1e3a8a'), letterSpacing: 0.4 }}>
+              DOCUMENT INTEGRITY
+            </Text>
+            <Text style={{ marginTop: 3, fontSize: 8 * fontScale, color: monoText(mode, '#1e3a8a'), letterSpacing: 0.3 }}>
               Content hash: {cr.contentHash}
             </Text>
-            <Text style={{ marginTop: 4, fontSize: 9, color: monoText(mode, '#475569'), lineHeight: 1.45 }}>
-              This hash covers the contract, the completed assessment, the
-              completion progress, the recognised debit and the prepaid fund
-              position. Any alteration changes the hash. Quote the receipt
-              number and hash to verify with {companyName}.
+            <Text style={{ marginTop: 2, fontSize: 8 * fontScale, color: crInk('#475569'), lineHeight: 1.35 }}>
+              SHA-256 digest of the completed assessment, its progress and the fund position
+              — scan the QR code to verify this record with {companyName}.
             </Text>
           </View>
 
-          <View wrap={false} style={{ marginTop: 10 }}>
+          {/* The verification QR block is rendered ONCE, after the last block
+              of the document — never repeated on every page. */}
+          <View wrap={false} style={{ marginTop: 6 }}>
             <VerificationLabel fontScale={fontScale} />
             <SecurityFooter colorMode={mode}
               data={cr}

@@ -16,6 +16,7 @@
 const path = require('path');
 const fs = require('fs');
 const { getCompanyConfig } = require('./companyConfigService.cjs');
+const integrity = require('./documentIntegrity.cjs');
 
 let rendererPromise = null;
 
@@ -175,6 +176,15 @@ const PUBLIC_TO_RENDERER_TYPE = {
   supplier_payment: 'SUPPLIER_PAYMENT',
   statement: 'ACCOUNT_STATEMENT',
   printing_contract: 'PRINTING_CONTRACT',
+  // Without this mapping a schedule fell through to the generic renderer
+  // branch, failed validation, and the download route collapsed into its
+  // generic 404: the document verified but could never be downloaded.
+  printing_contract_schedule: 'CONTRACT_SCHEDULE',
+  // Same failure mode for the completion receipt: without the canonical type
+  // the renderer's generic financial branch stripped the receipt fields (and
+  // printed a document that was not the receipt). The public download must
+  // serve the receipt template the QR was printed from.
+  printing_contract_completion_receipt: 'CONTRACT_COMPLETION_RECEIPT',
 };
 
 function toCanonicalRendererType(type) {
@@ -185,6 +195,215 @@ function toCanonicalRendererType(type) {
   const lowered = raw.toLowerCase();
   if (PUBLIC_TO_RENDERER_TYPE[lowered]) return PUBLIC_TO_RENDERER_TYPE[lowered];
   return raw;
+}
+
+// ─── Printing contract: stored record → renderable document ───────────────
+//
+// A printing contract is NOT an immutable issued snapshot: the QR verifies the
+// live `assessment_contracts` record (number + token + status), and the staff
+// UI builds the PDF from that record on demand with
+// `buildPrintingContractDoc` (frontend/services/printingContractService.ts).
+//
+// The public download receives the STORED record instead — snake_case contract
+// columns plus the nested `data` bag — which the renderer cannot consume. These
+// helpers mirror the frontend builder so a verified contract can be downloaded
+// as the same document the ERP prints. The content hash is recomputed over the
+// assembled document because it is a print-time digest (the ERP never persists
+// it): the downloaded copy is generated from the live record, exactly like a
+// fresh ERP print.
+//
+// Pure assembly only: no field values are derived beyond the same fallbacks
+// the frontend builder uses.
+
+const roundMoney = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.round((parsed + Number.EPSILON) * 100) / 100;
+};
+
+const text = (value) => (value === undefined || value === null ? '' : String(value));
+
+const displayDate = (iso) => {
+  const parsed = iso ? new Date(iso) : new Date();
+  if (Number.isNaN(parsed.getTime())) return new Date().toLocaleDateString('en-GB');
+  return parsed.toLocaleDateString('en-GB');
+};
+
+const numberOrUndefined = (value) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+};
+
+/** Mirrors frontend/utils/contractProfile.ts readContractProfile (read only). */
+function readContractProfile(data) {
+  const d = (data && typeof data === 'object') ? data : {};
+  const nested = (d.contract_profile && typeof d.contract_profile === 'object') ? d.contract_profile : {};
+  const printSpec = (nested.print_spec || d.print_spec || {});
+  const pricing = (nested.pricing_rules || d.pricing_rules || {});
+  const delivery = (nested.delivery_terms || d.delivery_terms || {});
+  const cand = (nested.candidature || d.candidature || {});
+  return {
+    printSpec: {
+      paperSize: text(printSpec.paper_size ?? printSpec.paperSize ?? ''),
+      paperType: text(printSpec.paper_type ?? printSpec.paperType ?? ''),
+      paperWeight: text(printSpec.paper_weight ?? printSpec.paperWeight ?? ''),
+      colorMode: text(printSpec.color_mode ?? printSpec.colorMode ?? ''),
+      sides: text(printSpec.sides ?? ''),
+      pagesPerCopy: text(printSpec.pages_per_copy ?? printSpec.pagesPerCopy ?? ''),
+      copies: text(printSpec.copies ?? ''),
+      orientation: text(printSpec.orientation ?? ''),
+      finishing: text(printSpec.finishing ?? ''),
+      packaging: text(printSpec.packaging ?? ''),
+      specNotes: text(printSpec.notes ?? printSpec.spec_notes ?? ''),
+    },
+    pricingRules: {
+      model: text(pricing.model ?? pricing.pricing_model ?? ''),
+      chargePerCandidate: numberOrUndefined(
+        pricing.charge_per_candidate ?? pricing.chargePerCandidate ?? d.charge_per_candidate,
+      ),
+      discount: text(pricing.discount ?? ''),
+      urgentFee: text(pricing.urgent_fee ?? pricing.urgentFee ?? ''),
+      taxHandling: text(pricing.tax_handling ?? pricing.taxHandling ?? ''),
+      rulesNotes: text(pricing.notes ?? pricing.rules_notes ?? ''),
+    },
+    delivery: {
+      method: text(delivery.method ?? delivery.delivery_method ?? ''),
+      timeline: text(delivery.timeline ?? delivery.delivery_timeline ?? ''),
+      address: text(delivery.address ?? delivery.delivery_address ?? ''),
+      packaging: text(delivery.packaging ?? ''),
+      deliveryNotes: text(delivery.notes ?? delivery.delivery_notes ?? ''),
+    },
+    candidature: {
+      totalCandidature: numberOrUndefined(cand.total ?? cand.total_candidature ?? d.total_candidature),
+      sittings: text(cand.sittings ?? cand.assessment_sittings ?? d.assessment_sittings ?? ''),
+      spec: text(cand.spec ?? cand.assessment_spec ?? d.assessment_spec ?? ''),
+    },
+  };
+}
+
+/** Mirrors frontend/utils/contractProfile.ts summarisePrintSpec. */
+function summarisePrintSpec(p) {
+  const bits = [
+    p.paperSize,
+    p.paperType,
+    p.paperWeight ? `${p.paperWeight}gsm` : '',
+    p.colorMode,
+    p.sides,
+    p.pagesPerCopy ? `${p.pagesPerCopy}pp` : '',
+    p.copies ? `×${p.copies}` : '',
+    p.orientation,
+  ].map((s) => text(s).trim()).filter(Boolean);
+  const head = bits.join(' · ');
+  const tail = [p.finishing, p.packaging].map((s) => text(s).trim()).filter(Boolean).join(' · ');
+  if (head && tail) return `${head} — ${tail}`;
+  return head || tail || '';
+}
+
+const mapContractLines = (snapshot) => {
+  const inner = (snapshot.data && typeof snapshot.data === 'object') ? snapshot.data : {};
+  const raw = Array.isArray(inner.lines) ? inner.lines : [];
+  const mapped = raw
+    .filter((l) => l && text(l.assessment_name).trim() !== '' && Math.floor(Number(l.quantity)) > 0)
+    .map((l) => {
+      const qty = Math.max(0, Math.floor(Number(l.quantity) || 0));
+      const price = roundMoney(Math.max(0, Number(l.unit_price) || 0));
+      const qualifiers = [l.assessment_grade, l.assessment_subject].filter(Boolean).join(' · ');
+      return {
+        desc: qualifiers ? `${text(l.assessment_name).trim()} (${qualifiers})` : text(l.assessment_name).trim(),
+        qty,
+        price,
+        total: roundMoney(qty * price),
+      };
+    });
+  if (mapped.length > 0) return mapped;
+  const qty = Math.max(1, Math.floor(Number(snapshot.max_assessments) || 0));
+  const price = roundMoney(Math.max(0, Number(snapshot.assessment_price) || 0));
+  return [{ desc: text(snapshot.title || 'Printing contract').trim(), qty, price, total: roundMoney(qty * price) }];
+};
+
+const mapContractSignatureBlock = (block) => {
+  if (!block || typeof block !== 'object') return null;
+  if (!text(block.name).trim() || !text(block.signatureDataUrl).trim()) return null;
+  return {
+    name: text(block.name).trim(),
+    role: text(block.role).trim(),
+    signatureDataUrl: text(block.signatureDataUrl),
+    mode: block.mode === 'Upload' ? 'Upload' : 'Draw',
+    signedAt: text(block.signedAt),
+    signedBy: text(block.signedBy),
+  };
+};
+
+/**
+ * Assemble the canonical PrintingContractDoc from the stored contract record.
+ * An already-canonical doc (staff/server caller) passes through untouched so
+ * its issued digest is preserved.
+ */
+function normalizePrintingContractRecord(record) {
+  if (
+    record && record.contractNumber
+    && Array.isArray(record.lines) && record.lines.length > 0
+    && record.contentHash
+  ) {
+    return record;
+  }
+  const snapshot = record || {};
+  const inner = (snapshot.data && typeof snapshot.data === 'object') ? snapshot.data : {};
+  const profile = readContractProfile(inner);
+  const company = mapContractSignatureBlock((inner.signatures || {}).company);
+  const customer = mapContractSignatureBlock((inner.signatures || {}).customer);
+  const pricingBits = [
+    profile.pricingRules.model ? String(profile.pricingRules.model).replace(/_/g, ' ') : '',
+    profile.pricingRules.chargePerCandidate !== undefined
+      ? `Charge per candidate: ${roundMoney(profile.pricingRules.chargePerCandidate)}`
+      : '',
+    profile.pricingRules.discount ? `Discount: ${profile.pricingRules.discount}` : '',
+    profile.pricingRules.urgentFee ? `Urgent: ${profile.pricingRules.urgentFee}` : '',
+    profile.pricingRules.taxHandling,
+    profile.pricingRules.rulesNotes,
+  ].filter((s) => text(s).trim()).join(' · ') || undefined;
+  const deliveryBits = [
+    profile.delivery.method,
+    profile.delivery.timeline,
+    profile.delivery.address,
+    profile.delivery.packaging ? `Pack: ${profile.delivery.packaging}` : '',
+    profile.delivery.deliveryNotes,
+  ].filter((s) => text(s).trim()).join(' · ') || undefined;
+  const doc = {
+    documentType: 'printing_contract',
+    verificationToken: text(snapshot.verificationToken).trim() || undefined,
+    contractNumber: text(snapshot.contract_number || snapshot.contractNumber).trim(),
+    // The stored record carries no print instant; use the agreement's own
+    // lifecycle date. The date is part of the recomputed digest, never a
+    // claim about a different (historical) printout.
+    date: displayDate(snapshot.created_at || snapshot.activated_at || snapshot.starts_at || snapshot.serverUpdatedAt),
+    version: Number(snapshot.version) || 1,
+    status: text(snapshot.status || 'draft'),
+    customerName: text(snapshot.customerName || snapshot.customer_name).trim() || 'Customer',
+    schoolName: text(snapshot.schoolName || snapshot.school_name).trim() || undefined,
+    periodStart: snapshot.starts_at || undefined,
+    periodEnd: snapshot.ends_at || undefined,
+    lines: mapContractLines(snapshot),
+    prepaidAmount: roundMoney(Number(snapshot.prepaid_amount ?? snapshot.prepaidAmount) || 0),
+    maxAssessments: Math.max(0, Math.floor(Number(snapshot.max_assessments ?? snapshot.maxAssessments) || 0)),
+    assessmentPrice: roundMoney(Number(snapshot.assessment_price ?? snapshot.assessmentPrice) || 0),
+    terms: text(snapshot.terms).trim() || undefined,
+    notes: text(snapshot.notes).trim() || undefined,
+    totalCandidature: profile.candidature.totalCandidature,
+    assessmentSpec: profile.candidature.spec.trim() || undefined,
+    chargePerCandidate: profile.pricingRules.chargePerCandidate,
+    assessmentSittings: profile.candidature.sittings.trim() || undefined,
+    printSpecSummary: summarisePrintSpec(profile.printSpec) || undefined,
+    pricingRulesSummary: pricingBits,
+    deliveryTermsSummary: deliveryBits,
+    signatures: { company, customer },
+    fullySigned: Boolean(company && customer),
+    issuedInvoiceId: text(inner.issued_invoice_id).trim() || undefined,
+  };
+  if (!doc.contractNumber) return record;
+  doc.contentHash = integrity.sha256(integrity.stableStringify(doc));
+  return doc;
 }
 
 /**
@@ -209,6 +428,12 @@ function toCanonicalRendererType(type) {
  *   canonical keys; no accounting recalculation is introduced.
  */
 function normalizeRecordForRenderer(raw, type) {
+  // The printing contract is a live commercial agreement, not an invoice-shaped
+  // record: its stored snapshot needs the contract document assembled before
+  // the generic aliasing below (which would otherwise discard the agreed
+  // lines/profile and add invoice-only keys).
+  if (type === 'PRINTING_CONTRACT') return normalizePrintingContractRecord(raw);
+
   const record = { ...(raw || {}) };
 
   // Fill one canonical key from the first stored alias that carries a value.

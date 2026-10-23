@@ -5,7 +5,13 @@ if (typeof globalThis.__PRIME_DOC_VITE_ENV__ === "undefined") {
   try {
     var __primePortalUrl = (typeof process !== "undefined" && process.env && process.env.VITE_PUBLIC_PORTAL_URL) || "";
     if (__primePortalUrl) globalThis.__PRIME_DOC_VITE_ENV__.VITE_PUBLIC_PORTAL_URL = __primePortalUrl;
-  } catch { /* process.env unavailable — renderer stays fail-closed without a Portal origin */ }
+    // The origin that serves the PUBLIC verification route for the document
+    // types the Portal does not serve (the contract documents). Without it a
+    // server-rendered schedule would encode a Portal URL that lands the
+    // scanner on the Portal login page instead of the verification result.
+    var __primeAppUrl = (typeof process !== "undefined" && process.env && process.env.VITE_PUBLIC_APP_URL) || "";
+    if (__primeAppUrl) globalThis.__PRIME_DOC_VITE_ENV__.VITE_PUBLIC_APP_URL = __primeAppUrl;
+  } catch { /* process.env unavailable - renderer stays fail-closed without a Portal origin */ }
 }
 if (typeof globalThis.__PRIME_DOC_IMPORT_META_URL__ === "undefined") {
   globalThis.__PRIME_DOC_IMPORT_META_URL__ = require("url").pathToFileURL(__filename).href;
@@ -230860,7 +230866,14 @@ var StatementSchema = external_exports.object({
   totalInvoiced: external_exports.number(),
   totalReceived: external_exports.number(),
   finalBalance: external_exports.number(),
-  status: external_exports.string().optional()
+  status: external_exports.string().optional(),
+  // Account scope. A Main statement and a branch statement for the same
+  // customer + period are DIFFERENT documents. Persisted through the schema so
+  // the PDF/QR identifies the exact account — never just the customer name.
+  branchKey: external_exports.string().optional(),
+  subAccountId: external_exports.string().optional(),
+  branchLabel: external_exports.string().optional(),
+  scopeAmbiguous: external_exports.boolean().optional()
 });
 var SalesExchangeSchema = external_exports.object({
   ...VerifiableDocFields,
@@ -230984,6 +230997,13 @@ var PrintingContractSchema = external_exports.object({
   assessmentPrice: external_exports.number(),
   terms: external_exports.string().optional(),
   notes: external_exports.string().optional(),
+  totalCandidature: external_exports.number().optional(),
+  assessmentSpec: external_exports.string().optional(),
+  chargePerCandidate: external_exports.number().optional(),
+  assessmentSittings: external_exports.string().optional(),
+  printSpecSummary: external_exports.string().optional(),
+  pricingRulesSummary: external_exports.string().optional(),
+  deliveryTermsSummary: external_exports.string().optional(),
   signatures: external_exports.object({
     company: ContractSignatureSchema.nullable().optional(),
     customer: ContractSignatureSchema.nullable().optional()
@@ -231000,6 +231020,10 @@ var ContractScheduleSchema = external_exports.object({
   status: external_exports.string(),
   customerName: external_exports.string(),
   schoolName: external_exports.string().optional(),
+  schoolZone: external_exports.string().optional(),
+  customerPhone: external_exports.string().optional(),
+  billedBranch: external_exports.string().optional(),
+  academicYear: external_exports.string().optional(),
   periodStart: external_exports.string().optional(),
   periodEnd: external_exports.string().optional(),
   schedule: external_exports.array(external_exports.object({
@@ -231012,9 +231036,11 @@ var ContractScheduleSchema = external_exports.object({
     unitPrice: external_exports.number()
   }).passthrough()),
   totalAssessments: external_exports.number(),
+  activeAssessments: external_exports.number().optional(),
   scheduleComplete: external_exports.boolean(),
   missingDateSequences: external_exports.array(external_exports.number()),
   scheduledCount: external_exports.number(),
+  undatedCount: external_exports.number().optional(),
   consumedCount: external_exports.number(),
   releasedCount: external_exports.number(),
   cancelledCount: external_exports.number(),
@@ -231022,13 +231048,43 @@ var ContractScheduleSchema = external_exports.object({
   reservedAmount: external_exports.number(),
   consumedAmount: external_exports.number(),
   availableFunds: external_exports.number(),
+  availableFundsSource: external_exports.enum(["generated", "derived"]).optional(),
+  fundPositionConsistent: external_exports.boolean().optional(),
+  fundInconsistencies: external_exports.array(external_exports.string()).optional(),
   totalValue: external_exports.number(),
+  cancelledValue: external_exports.number().optional(),
+  hashVersion: external_exports.number().optional(),
   totalCandidature: external_exports.number().optional(),
   assessmentSpec: external_exports.string().optional(),
   chargePerCandidate: external_exports.number().optional(),
   assessmentSittings: external_exports.string().optional(),
   terms: external_exports.string().optional(),
   notes: external_exports.string().optional(),
+  /**
+   * Assessments scheduled outside the contract period — disclosed on the
+   * document, never corrected. Absent when every dated assessment is inside.
+   */
+  outOfPeriodRows: external_exports.array(external_exports.object({
+    sequence: external_exports.number(),
+    assessmentName: external_exports.string(),
+    assessmentDate: external_exports.string(),
+    reason: external_exports.enum(["before_period_start", "after_period_end"])
+  })).optional(),
+  /**
+   * Rows whose recorded price disagrees with the per-candidate pricing basis.
+   */
+  pricingMismatches: external_exports.array(external_exports.object({
+    sequence: external_exports.number(),
+    assessmentName: external_exports.string(),
+    expected: external_exports.number(),
+    recorded: external_exports.number()
+  })).optional(),
+  /** Value of the released assessments (returned to the available balance). */
+  releasedAmount: external_exports.number().optional(),
+  /** The issued version's own identity — excluded from the content hash. */
+  documentId: external_exports.string().optional(),
+  /** The issued version's own version number — excluded from the content hash. */
+  documentVersion: external_exports.number().optional(),
   contentHash: external_exports.string()
 });
 var ContractCompletionReceiptSchema = external_exports.object({
@@ -231040,6 +231096,7 @@ var ContractCompletionReceiptSchema = external_exports.object({
   status: external_exports.string(),
   customerName: external_exports.string(),
   schoolName: external_exports.string().optional(),
+  academicYear: external_exports.string().optional(),
   item: external_exports.object({
     assessmentName: external_exports.string(),
     grade: external_exports.string().optional(),
@@ -231960,19 +232017,61 @@ function isProductionBuild() {
   }
   return false;
 }
-function resolveVerificationBaseUrl() {
-  try {
-    const fromEnv = String(__PRIME_DOC_VITE_ENV__?.VITE_PUBLIC_PORTAL_URL || "").trim();
-    if (fromEnv) return fromEnv.replace(/\/+$/, "");
-  } catch {
+var PORTAL_SERVED_VERIFICATION_TYPES = [
+  "invoice",
+  "receipt",
+  "quotation",
+  "sales_order",
+  "purchase_order",
+  "delivery_note",
+  "supplier_payment",
+  "statement",
+  "printing_contract",
+  "printing_contract_schedule",
+  "printing_contract_completion_receipt",
+  "work_order"
+];
+function isPortalServedVerificationType(type) {
+  if (!type) return false;
+  return PORTAL_SERVED_VERIFICATION_TYPES.includes(type);
+}
+function pickVerificationBaseUrl(opts2) {
+  const portal = String(opts2.portalOrigin || "").trim().replace(/\/+$/, "");
+  const app = String(opts2.appOrigin || "").trim().replace(/\/+$/, "");
+  const type = opts2.type || null;
+  if (type && !isPortalServedVerificationType(type)) {
+    return app;
   }
-  if (isProductionBuild()) {
+  if (portal) return portal;
+  if (opts2.isProduction) return "";
+  return app;
+}
+function resolveVerificationBaseUrl(documentType) {
+  const portalOrigin = () => {
+    try {
+      const fromEnv = String(__PRIME_DOC_VITE_ENV__?.VITE_PUBLIC_PORTAL_URL || "").trim();
+      return fromEnv.replace(/\/+$/, "");
+    } catch {
+    }
     return "";
-  }
-  if (typeof window !== "undefined" && window.location?.origin) {
-    return String(window.location.origin).replace(/\/+$/, "");
-  }
-  return "";
+  };
+  const appOrigin = () => {
+    try {
+      const fromEnv = String(__PRIME_DOC_VITE_ENV__?.VITE_PUBLIC_APP_URL || "").trim();
+      if (fromEnv) return fromEnv.replace(/\/+$/, "");
+    } catch {
+    }
+    if (typeof window !== "undefined" && window.location?.origin) {
+      return String(window.location.origin).replace(/\/+$/, "");
+    }
+    return "";
+  };
+  return pickVerificationBaseUrl({
+    type: documentType || null,
+    portalOrigin: portalOrigin(),
+    appOrigin: appOrigin(),
+    isProduction: isProductionBuild()
+  });
 }
 function buildDocumentVerificationUrl(ref, baseUrl) {
   const type = String(ref?.documentType || "invoice");
@@ -231980,7 +232079,7 @@ function buildDocumentVerificationUrl(ref, baseUrl) {
   const number6 = String(ref?.documentNumber ?? ref?.invoiceNumber ?? ref?.contractNumber ?? ref?.number ?? "").trim();
   const token = String(ref?.verificationToken ?? "").trim();
   if (!number6 || !token) return null;
-  const base = String(baseUrl ?? resolveVerificationBaseUrl()).replace(/\/+$/, "");
+  const base = String(baseUrl ?? resolveVerificationBaseUrl(type)).replace(/\/+$/, "");
   if (!base) return null;
   return `${base}/#/verify/${TYPE_SLUGS[type]}/${encodeURIComponent(number6)}?t=${encodeURIComponent(token)}`;
 }
@@ -232420,9 +232519,36 @@ var mapToInvoiceData = (item, companyConfig, targetType, boms, inventory) => {
       finalBalance: toNum(item.finalBalance ?? item.closingBalance ?? item.closing_balance ?? 0),
       status: item.status || void 0,
       documentType: "statement",
+      // Account scope must survive mapping — a branch statement printed
+      // from the QR/download path must not render as the Main statement.
+      ...item.branchKey ? { branchKey: String(item.branchKey) } : {},
+      ...item.subAccountId ? { subAccountId: String(item.subAccountId) } : {},
+      ...item.branchLabel ? { branchLabel: String(item.branchLabel) } : {},
+      ...item.scopeAmbiguous ? { scopeAmbiguous: true } : {},
       ...sourceToken ? { verificationToken: sourceToken } : {}
     };
     return StatementSchema.parse(statementData);
+  }
+  if (docType === "CONTRACT_SCHEDULE") {
+    return ContractScheduleSchema.parse({
+      ...item,
+      documentType: "printing_contract_schedule",
+      verificationToken: sourceToken || item.verificationToken
+    });
+  }
+  if (docType === "PRINTING_CONTRACT") {
+    return PrintingContractSchema.parse({
+      ...item,
+      documentType: "printing_contract",
+      verificationToken: sourceToken || item.verificationToken
+    });
+  }
+  if (docType === "CONTRACT_COMPLETION_RECEIPT") {
+    return ContractCompletionReceiptSchema.parse({
+      ...item,
+      documentType: "printing_contract_completion_receipt",
+      verificationToken: sourceToken || item.verificationToken
+    });
   }
   if (docType === "RECEIPT") {
     const rawAllocations = Array.isArray(item.allocations) ? item.allocations : [];
@@ -233473,6 +233599,57 @@ var resolvePdfLogoSource = (config2, showCompanyLogo = true) => {
 };
 var resolvePdfQrCodeSource = (value2) => normalizeImageDataUrl(value2) || "";
 
+// utils/isoDate.ts
+var ISO_DATE_PREFIX = /^(\d{4})-(\d{2})-(\d{2})/;
+var DISPLAY_DATE_DMY = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+var ISO_LIKE = /^\d{4}-\d/;
+var MONTHS_SHORT = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec"
+];
+var daysInMonth = (year, month) => {
+  if (month < 1 || month > 12) return 0;
+  if (month === 2) return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28;
+  return [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+};
+var isValidYmd = (year, month, day) => Number.isFinite(year) && Number.isFinite(month) && Number.isFinite(day) && month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth(year, month);
+var pad2 = (value2) => String(value2).padStart(2, "0");
+var toYmd = (year, month, day) => `${String(year).padStart(4, "0")}-${pad2(month)}-${pad2(day)}`;
+function toIsoDateOnly(value2) {
+  const raw = String(value2 ?? "").trim();
+  if (!raw) return void 0;
+  const iso = ISO_DATE_PREFIX.exec(raw);
+  if (iso) {
+    const [year, month, day] = [Number(iso[1]), Number(iso[2]), Number(iso[3])];
+    return isValidYmd(year, month, day) ? toYmd(year, month, day) : void 0;
+  }
+  const dmy = DISPLAY_DATE_DMY.exec(raw);
+  if (dmy) {
+    const [day, month, year] = [Number(dmy[1]), Number(dmy[2]), Number(dmy[3])];
+    return isValidYmd(year, month, day) ? toYmd(year, month, day) : void 0;
+  }
+  if (ISO_LIKE.test(raw)) return void 0;
+  return void 0;
+}
+function formatIsoDate(value2) {
+  const raw = String(value2 ?? "").trim();
+  if (!raw) return "";
+  const iso = toIsoDateOnly(raw);
+  if (!iso) return raw;
+  const [year, month, day] = iso.split("-");
+  return `${Number(day)} ${MONTHS_SHORT[Number(month) - 1]} ${year}`;
+}
+
 // utils/debugFlags.ts
 var import_meta = {};
 var TRUE_VALUES = /* @__PURE__ */ new Set(["1", "true", "yes", "on"]);
@@ -233594,6 +233771,9 @@ var getDefaultPaymentTermsLabel = (companyConfig) => {
   );
   return termsDays === 0 ? "Due on receipt" : `Net ${termsDays}`;
 };
+
+// services/printingContractService.ts
+var stripCustomerIdSuffix = (name) => String(name || "").replace(/\s*\((?=[A-Z0-9-]*\d)[A-Z0-9-]{2,}\)\s*$/i, "").trim();
 
 // views/shared/components/PDF/documentPagination.tsx
 var import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
@@ -234175,6 +234355,18 @@ var pickFirstText2 = (...values) => {
     if (normalized) return normalized;
   }
   return "";
+};
+var stripChargePerCandidateSubstring = (summary) => {
+  const trimmed = String(summary || "").trim();
+  if (!trimmed) return trimmed;
+  const fragmentRe = /^Charge per candidate:\s*[^·]+$/i;
+  const cleaned = trimmed.replace(/\s·\s*$/, "").trim();
+  if (!cleaned.includes(" \xB7 ")) {
+    return fragmentRe.test(cleaned) ? "" : cleaned;
+  }
+  const segments = cleaned.split(" \xB7 ").filter((s4) => s4.trim().length > 0);
+  const kept = segments.filter((s4) => !fragmentRe.test(s4.trim()));
+  return kept.length > 0 ? kept.join(" \xB7 ") : "";
 };
 var buildCompanyAddress = (config2) => {
   return [config2?.addressLine1, config2?.city, config2?.country].map((value2) => String(value2 ?? "").trim()).filter(Boolean).join(", ");
@@ -235826,6 +236018,32 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
           ] })
         ] })
       ] }) }),
+      pc.totalCandidature !== void 0 || pc.assessmentSpec || pc.chargePerCandidate !== void 0 || pc.assessmentSittings || pc.printSpecSummary || pc.pricingRulesSummary || pc.deliveryTermsSummary ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 8, padding: 10, backgroundColor: monoFill(mode, "#f8fafc"), borderRadius: 8 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 4, fontSize: 10, textTransform: "uppercase", color: monoText(mode, "#64748b") }, children: "Agreed specification" }),
+        pc.totalCandidature !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, color: monoText(mode, "#334155") }, children: [
+          "Candidature: ",
+          pc.totalCandidature,
+          pc.assessmentSittings ? ` \xB7 ${pc.assessmentSittings}` : "",
+          pc.assessmentSpec ? ` \xB7 ${pc.assessmentSpec}` : ""
+        ] }) : null,
+        pc.totalCandidature === void 0 && (pc.assessmentSittings || pc.assessmentSpec) ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, color: monoText(mode, "#334155") }, children: [
+          "Candidature: ",
+          [pc.assessmentSittings, pc.assessmentSpec].filter(Boolean).join(" \xB7 ")
+        ] }) : null,
+        pc.printSpecSummary ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, color: monoText(mode, "#334155") }, children: [
+          "Printing: ",
+          pc.printSpecSummary
+        ] }) : null,
+        pc.chargePerCandidate !== void 0 || pc.pricingRulesSummary ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, color: monoText(mode, "#334155") }, children: [
+          "Pricing: ",
+          pc.chargePerCandidate !== void 0 ? `Charge per candidate: ${currency} ${formatAmount2(pc.chargePerCandidate)}` : "",
+          pc.chargePerCandidate !== void 0 && pc.pricingRulesSummary ? ` \xB7 ${stripChargePerCandidateSubstring(pc.pricingRulesSummary)}` : pc.pricingRulesSummary || ""
+        ] }) : null,
+        pc.deliveryTermsSummary ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, color: monoText(mode, "#334155") }, children: [
+          "Delivery: ",
+          pc.deliveryTermsSummary
+        ] }) : null
+      ] }) : null,
       /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 8, padding: 10, backgroundColor: monoFill(mode, "#f8fafc"), borderRadius: 8 }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 4, fontSize: 10, textTransform: "uppercase", color: monoText(mode, "#64748b") }, children: "Terms & Conditions" }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11, lineHeight: 1.6, color: monoText(mode, "#334155") }, children: pc.terms || "No specific terms recorded on this contract." }),
@@ -235870,6 +236088,115 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
   if (type === "CONTRACT_SCHEDULE") {
     const cs2 = data2;
     const cancelled = isCancelledStatus(String(cs2.status || ""), cs2);
+    const scheduleCurrency = config2?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || "K";
+    const preambleFontSize = 12;
+    const preambleTitleFontSize = scaledFont(18);
+    const preambleMetaRightIndent = Math.min(RECEIPT_META_INDENT * fontScale, 128);
+    const preambleNameGutter = !!logo ? templateSettings.logoWidth + 12 : 0;
+    const preambleNameAvailWidth = RECEIPT_CONTENT_WIDTH - (!!logo ? (templateSettings.logoWidth + 12) * 2 : 24);
+    const preambleNameFontSize = Math.max(
+      8.5,
+      Math.min(templateSettings.companyNameFontSize, preambleNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6))
+    );
+    const customerNameLabel = "Customer Name: ";
+    const rawCustomerName = String(cs2.customerName || "");
+    const customerNameText = rawCustomerName.split(/\r?\n/)[0].trim() || "N/A";
+    const customerNameFontSize = fitFontSize(
+      customerNameText,
+      Math.max(24, RECEIPT_CONTENT_WIDTH - measureTextWidth(customerNameLabel, preambleFontSize, true)),
+      { maxSize: preambleFontSize, minSize: 7 }
+    );
+    const partySeen = /* @__PURE__ */ new Set([customerNameText.trim().toLowerCase()]);
+    const customerSubline = [cs2.schoolName, cs2.schoolZone, cs2.customerPhone].map((value2) => String(value2 || "").trim()).filter((value2) => {
+      const key = value2.toLowerCase();
+      if (!key || partySeen.has(key)) return false;
+      partySeen.add(key);
+      return true;
+    }).join(" \xB7 ");
+    const inkTone = (hex3) => monoText(mode, hex3);
+    const hairline = monoLine(mode, "#cbd5e1");
+    const softFill = monoFill(mode, "#f8fafc");
+    const moneyOf = (value2) => `${scheduleCurrency} ${formatAmount2(Number(value2) || 0)}`;
+    const scheduleTone = (status) => {
+      if (mode === "mono") return { border: "#000", text: "#000" };
+      const key = String(status || "").trim().toLowerCase();
+      if (["consumed", "completed", "active", "printed"].includes(key)) return { border: "#10b981", text: "#047857" };
+      if (["reserved", "scheduled", "processing", "pending", "in_progress"].includes(key)) return { border: "#f59e0b", text: "#b45309" };
+      if (["cancelled", "canceled", "void"].includes(key)) return { border: "#ef4444", text: "#b91c1c" };
+      return { border: "#94a3b8", text: "#475569" };
+    };
+    const scheduleRows = cs2.schedule || [];
+    const periodLabel = (() => {
+      if (!cs2.periodStart && !cs2.periodEnd) return "Not stated";
+      const start2 = formatIsoDate(cs2.periodStart);
+      const end2 = formatIsoDate(cs2.periodEnd);
+      if (!cs2.periodStart) return `to ${end2 || "Open"}`;
+      if (!cs2.periodEnd) return `${start2} to Open`;
+      return `${start2} to ${end2}`;
+    })();
+    const COL = { seq: 26, scheduled: 70, status: 74, value: 84 };
+    const thStyle = {
+      fontSize: 7.5 * fontScale,
+      fontWeight: "bold",
+      letterSpacing: 1,
+      textTransform: "uppercase",
+      color: inkTone("#64748b")
+    };
+    const sectionHeading = (label) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", letterSpacing: 1.2, textTransform: "uppercase", color: inkTone("#64748b"), marginBottom: 6 }, children: label });
+    const preambleMetaRow = (label, value2, valueStyle) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: preambleFontSize, color: monoText(mode, "#111111"), marginBottom: 4 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
+        label,
+        ": "
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: valueStyle, children: value2 })
+    ] });
+    const defRow = (label, value2, withDivider = true) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", paddingVertical: 3, ...withDivider ? { borderTopWidth: 0.5, borderColor: hairline } : null }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: inkTone("#475569") }, children: label }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9.5 * fontScale, fontWeight: "bold", color: inkTone("#0f172a"), marginLeft: 10, textAlign: "right", flexShrink: 1 }, children: value2 })
+    ] });
+    const statusPill = (status) => {
+      const tone = scheduleTone(status);
+      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { borderWidth: 0.6, borderColor: tone.border, borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1.5 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7.5 * fontScale, fontWeight: "bold", letterSpacing: 0.3, textTransform: "uppercase", color: tone.text, textAlign: "center" }, children: toTitleCase(String(status || "reserved")) }) });
+    };
+    const profileRows = [];
+    if (cs2.totalCandidature !== void 0) profileRows.push(["Total candidature", String(cs2.totalCandidature)]);
+    if (cs2.assessmentSpec) profileRows.push(["Printing specification", String(cs2.assessmentSpec)]);
+    if (cs2.chargePerCandidate !== void 0) profileRows.push(["Charge per candidate", moneyOf(cs2.chargePerCandidate)]);
+    if (cs2.assessmentSittings) profileRows.push(["Assessment sittings", String(cs2.assessmentSittings)]);
+    const activeAssessments = cs2.activeAssessments ?? cs2.totalAssessments;
+    const undatedCount = cs2.undatedCount ?? (cs2.missingDateSequences || []).length;
+    const progressRows = [
+      ["Total assessments", String(cs2.totalAssessments)],
+      ["Scheduled", String(cs2.scheduledCount)],
+      ["Awaiting date", String(undatedCount)],
+      ["Consumed", String(cs2.consumedCount)],
+      ["Released", String(cs2.releasedCount)],
+      ["Cancelled", String(cs2.cancelledCount)]
+    ];
+    const availableFunds = Number(cs2.availableFunds) || 0;
+    const fundInconsistencies = cs2.fundInconsistencies || [];
+    const releasedAmount = Number(cs2.releasedAmount || 0);
+    const fundRows = [
+      ["Contract value (commercial)", moneyOf(cs2.prepaidAmount)],
+      ["Reserved", moneyOf(cs2.reservedAmount)],
+      ["Consumed", moneyOf(cs2.consumedAmount)],
+      [`Available balance${cs2.availableFundsSource === "generated" ? "" : " (derived)"}`, moneyOf(availableFunds)],
+      // A released assessment is a MOVEMENT, not a fourth bucket: the money it
+      // carried is already inside the available balance above. It is shown as a
+      // memo so the customer can see what was returned, never as an addition to
+      // the position.
+      ...releasedAmount > 0 ? [["Released (returned to balance)", moneyOf(releasedAmount)]] : []
+    ];
+    const missingSequences = cs2.missingDateSequences || [];
+    const outOfPeriodRows = cs2.outOfPeriodRows || [];
+    const outOfPeriodSequences = new Set(outOfPeriodRows.map((r4) => Number(r4.sequence)));
+    const pricingMismatches = cs2.pricingMismatches || [];
+    const entitledAssessmentCount = scheduleRows.filter((row) => {
+      const status = String(row.status || "").trim().toLowerCase();
+      return status !== "released" && !["cancelled", "canceled", "void", "voided"].includes(status);
+    }).length;
+    const baseCurrency = currencyService.getCurrency(currencyService.getBaseCurrency());
+    const currencyUnitNote = baseCurrency?.code ? `All amounts in ${baseCurrency.code}${baseCurrency.name ? ` (${baseCurrency.name})` : ""}, stated to two decimal places.` : `All amounts in ${scheduleCurrency}, stated to two decimal places.`;
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: `Contract Schedule - ${cs2.contractNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [s4.page, pageStyle], children: [
       channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
       cancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
@@ -235877,187 +236204,191 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
         PaginationFurniture,
         {
           colorMode: mode,
-          identity: { title: "Contract Schedule", number: String(cs2.contractNumber || ""), customer: String(cs2.customerName || "") },
+          identity: { title: "Assessment Schedule", number: String(cs2.contractNumber || ""), customer: String(cs2.customerName || "") },
           companyName
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.headerSection, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.headerLeft, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.title, titleStyle, { fontFamily: "Helvetica" }], children: "Assessment Schedule" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.infoText, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Contract # : ",
-              cs2.contractNumber
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Date : ",
-              formatDateOnly(cs2.date),
-              " \xB7 Version ",
-              cs2.version
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Status : ",
-              toTitleCase(String(cs2.status || "draft")),
-              cs2.scheduleComplete ? "" : " \xB7 Incomplete schedule"
-            ] })
-          ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.headerRight, children: renderBrandMark("right") })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.billingSection, { marginTop: 0, marginBottom: 12 }], children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: monoText(mode, "#64748b") }, children: "Company" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.recipientInfoText, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientName, children: companyName }),
-            companyAddress ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientDetail, children: companyAddress }) : null,
-            companyContact ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientPhone, children: companyContact }) : null
-          ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: monoText(mode, "#64748b") }, children: "Client" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.recipientInfoText, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientName, children: cs2.customerName || "N/A" }),
-            cs2.schoolName ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientDetail, children: cs2.schoolName }) : null,
-            cs2.periodStart || cs2.periodEnd ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: s4.recipientDetail, children: [
-              formatDateOnly(cs2.periodStart),
-              " \u2192 ",
-              cs2.periodEnd ? formatDateOnly(cs2.periodEnd) : "open"
-            ] }) : null
-          ] })
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { position: "relative", alignItems: "center", marginBottom: 4, paddingTop: 0 }, children: [
+        !!logo && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: logo, style: { position: "absolute", left: 0, top: 0, width: templateSettings.logoWidth } }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "center", width: "100%", paddingLeft: preambleNameGutter, paddingRight: preambleNameGutter }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: preambleNameFontSize, fontWeight: "bold", color: monoText(mode, "#000"), textAlign: "center", maxLines: 1, textOverflow: "ellipsis" }, children: companyName }),
+          !!receiptCompanyAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: preambleFontSize, color: monoText(mode, "#334155"), textAlign: "center", marginTop: 1 }, children: receiptCompanyAddress }),
+          !!companyContact && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: preambleFontSize, color: monoText(mode, "#334155"), textAlign: "center", marginTop: 1 }, children: companyContact })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 8 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.tableHeader, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Seq" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3 }, children: "Assessment" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2 }, children: "Scheduled" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Status" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Price" })
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: preambleTitleFontSize, fontWeight: "bold", color: monoText(mode, "#000"), textAlign: "center", marginTop: 4, marginBottom: 4 }, children: "Assessment Schedule" }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginBottom: 6 } }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 6 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: preambleFontSize, color: monoText(mode, "#111111"), maxLines: 1, textOverflow: "ellipsis" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: customerNameLabel }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: customerNameFontSize }, children: customerNameText })
         ] }),
-        (cs2.schedule || []).map((row, i2) => {
+        !!customerSubline && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: inkTone("#64748b"), marginTop: 3 }, children: customerSubline })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", gap: RECEIPT_META_GAP, marginBottom: 6 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
+          preambleMetaRow("Contract No", String(cs2.contractNumber || "Not stated")),
+          preambleMetaRow("Branch", String(cs2.billedBranch || "Main Account")),
+          preambleMetaRow("Issued", formatIsoDate(cs2.date) || "Not issued")
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, paddingLeft: preambleMetaRightIndent }, children: [
+          preambleMetaRow("Contract Period", periodLabel),
+          preambleMetaRow("Status", toTitleCase(String(cs2.status || "draft")), { fontWeight: "bold", color: scheduleTone(String(cs2.status || "draft")).text }),
+          preambleMetaRow("Academic Year", String(cs2.academicYear || "Not stated"))
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginBottom: 6 } }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { borderWidth: 0.8, borderColor: hairline, borderRadius: 3, padding: 8 }, children: [
+        sectionHeading("Contract Summary"),
+        profileRows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9.5 * fontScale, color: inkTone("#64748b") }, children: "No agreed profile recorded on this contract." }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: inkTone("#334155"), lineHeight: 1.45 }, children: profileRows.map(([label, value2]) => `${label}: ${value2}`).join("  \xB7  ") })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 10 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", alignItems: "flex-end", borderBottomWidth: 1, borderColor: monoLine(mode, "#0f172a"), paddingBottom: 4 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [thStyle, { width: COL.seq, textAlign: "right" }], children: "#" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [thStyle, { flexGrow: 1, flexBasis: 0, marginLeft: 10, marginRight: 8 }], children: "Assessment" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [thStyle, { width: COL.scheduled }], children: "Scheduled" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [thStyle, { width: COL.status }], children: "Status" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [thStyle, { width: COL.value, textAlign: "right" }], children: "Value" })
+        ] }),
+        scheduleRows.map((row, index2) => {
           const qualifiers = [row.grade, row.subject].filter(Boolean).join(" \xB7 ");
-          return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.row, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: row.sequence }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 3 }, children: [
+          return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { flexDirection: "row", alignItems: "flex-start", paddingVertical: 2.5, borderBottomWidth: 0.5, borderColor: hairline, ...index2 % 2 === 1 ? { backgroundColor: softFill } : null }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: COL.seq, textAlign: "right", fontSize: 9 * fontScale, color: inkTone("#94a3b8") }, children: row.sequence }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flexGrow: 1, flexBasis: 0, marginLeft: 10, marginRight: 8 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9.5 * fontScale, color: inkTone("#0f172a") }, children: [
               row.assessmentName,
-              qualifiers ? ` (${qualifiers})` : ""
+              qualifiers ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8 * fontScale, color: inkTone("#64748b") }, children: `  (${qualifiers})` }) : null
+            ] }) }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: COL.scheduled, fontSize: 9 * fontScale, color: inkTone("#334155") }, children: [
+              row.assessmentDate ? formatIsoDate(row.assessmentDate) : "Not scheduled",
+              outOfPeriodSequences.has(Number(row.sequence)) ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 7.5 * fontScale, color: inkTone("#b91c1c") }, children: [
+                "\n",
+                "outside contract period"
+              ] }) : null
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2 }, children: row.assessmentDate ? formatDateOnly(row.assessmentDate) : "Not scheduled" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: toTitleCase(String(row.status || "reserved")) }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, textAlign: "right" }, children: [
-              currency,
-              " ",
-              formatAmount2(row.unitPrice)
-            ] })
-          ] }, i2);
-        })
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: COL.status, alignItems: "flex-start" }, children: statusPill(String(row.status || "reserved")) }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: COL.value, textAlign: "right", fontSize: 9.5 * fontScale, color: inkTone("#0f172a") }, children: moneyOf(row.unitPrice) })
+          ] }, index2);
+        }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { flexDirection: "row", alignItems: "center", paddingTop: 6, borderTopWidth: 1, borderColor: monoLine(mode, "#0f172a") }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flexGrow: 1, flexBasis: 0, fontSize: 9 * fontScale, fontWeight: "bold", letterSpacing: 0.6, textTransform: "uppercase", color: inkTone("#334155") }, children: (cs2.releasedCount || 0) > 0 ? `${entitledAssessmentCount} of ${activeAssessments} active assessment${activeAssessments === 1 ? "" : "s"} \xB7 schedule value` : `${activeAssessments} active assessment${activeAssessments === 1 ? "" : "s"} \xB7 schedule value` }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10.5 * fontScale, fontWeight: "bold", color: inkTone("#0f172a") }, children: moneyOf(cs2.totalValue) })
+        ] }),
+        (cs2.cancelledCount || 0) > 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 8.5 * fontScale, color: inkTone("#64748b"), marginTop: 3 }, children: [
+          cs2.cancelledCount,
+          " cancelled assessment",
+          (cs2.cancelledCount || 0) === 1 ? "" : "s",
+          " excluded from the active schedule value",
+          (cs2.cancelledValue || 0) > 0 ? ` (cancelled value ${moneyOf(cs2.cancelledValue || 0)})` : "",
+          "."
+        ] }) : null,
+        (cs2.releasedCount || 0) > 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 8.5 * fontScale, color: inkTone("#64748b"), marginTop: 3 }, children: [
+          cs2.releasedCount || 0,
+          " released assessment",
+          (cs2.releasedCount || 0) === 1 ? "" : "s",
+          " excluded from the schedule value",
+          releasedAmount > 0 ? ` (${moneyOf(releasedAmount)})` : "",
+          ": the reservation was returned to the available balance."
+        ] }) : null
       ] }),
-      !cs2.scheduleComplete && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 8, padding: 10, backgroundColor: monoFill(mode, "#fffbeb"), borderRadius: 8, border: `1px solid ${monoLine(mode, "#f59e0b")}` }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, fontWeight: "bold", color: monoText(mode, "#92400e") }, children: [
-          "Incomplete schedule \u2014 ",
-          cs2.missingDateSequences?.length || 0,
-          " assessment(s) have no scheduled date (sequence(s): ",
-          (cs2.missingDateSequences || []).join(", "),
-          ")."
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, color: monoText(mode, "#92400e"), marginTop: 2 }, children: "This schedule is not yet complete as agreed \u2014 the missing dates are reported explicitly, not substituted." })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: [s4.summaryContainer, { justifyContent: "flex-end" }], children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { width: 280 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontWeight: "bold" }, children: "Total Assessments" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", textAlign: "right" }, children: cs2.totalAssessments })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1 }, children: "Scheduled / Consumed" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
-            cs2.scheduledCount,
-            " / ",
-            cs2.consumedCount
-          ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1 }, children: "Released / Cancelled" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
-            cs2.releasedCount,
-            " / ",
-            cs2.cancelledCount
-          ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1 }, children: "Prepaid / Reserved" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
-            currency,
+      !cs2.scheduleComplete ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10, flexDirection: "row", borderWidth: 0.8, borderColor: monoLine(mode, "#f59e0b"), borderRadius: 3, backgroundColor: monoFill(mode, "#fffbeb") }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: 3, backgroundColor: monoFill(mode, "#f59e0b") } }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 9 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9.5 * fontScale, fontWeight: "bold", color: inkTone("#92400e") }, children: [
+            "Schedule incomplete: ",
+            missingSequences.length,
+            " of ",
+            activeAssessments,
+            " active assessment",
+            activeAssessments === 1 ? "" : "s",
+            " have no scheduled date (sequence",
+            missingSequences.length === 1 ? "" : "s",
             " ",
-            formatAmount2(cs2.prepaidAmount),
-            " / ",
-            currency,
-            " ",
-            formatAmount2(cs2.reservedAmount)
-          ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1 }, children: "Consumed / Available" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
-            currency,
-            " ",
-            formatAmount2(cs2.consumedAmount),
-            " / ",
-            currency,
-            " ",
-            formatAmount2(cs2.availableFunds)
-          ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontWeight: "bold" }, children: "Schedule Value" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold", textAlign: "right" }, children: [
-            currency,
-            " ",
-            formatAmount2(cs2.totalValue)
-          ] })
+            missingSequences.join(", "),
+            ")."
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: inkTone("#92400e"), marginTop: 2, lineHeight: 1.4 }, children: "This schedule is not yet complete as agreed. Missing dates are reported explicitly and are never substituted." })
         ] })
+      ] }) : null,
+      outOfPeriodRows.length > 0 || pricingMismatches.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10, flexDirection: "row", borderWidth: 0.8, borderColor: monoLine(mode, "#ef4444"), borderRadius: 3, backgroundColor: monoFill(mode, "#fef2f2") }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: 3, backgroundColor: monoFill(mode, "#ef4444") } }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 9 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9.5 * fontScale, fontWeight: "bold", color: inkTone("#991b1b") }, children: "Schedule needs review" }),
+          outOfPeriodRows.map((row) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9 * fontScale, color: inkTone("#991b1b"), marginTop: 2, lineHeight: 1.45 }, children: [
+            "\u2022 Assessment ",
+            row.sequence,
+            " (",
+            row.assessmentName,
+            ") is scheduled for ",
+            formatIsoDate(row.assessmentDate),
+            ", which is ",
+            row.reason === "after_period_end" ? "after the contract period ends" : "before the contract period starts",
+            "."
+          ] }, `oop-${row.sequence}`)),
+          pricingMismatches.map((row) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9 * fontScale, color: inkTone("#991b1b"), marginTop: 2, lineHeight: 1.45 }, children: [
+            "\u2022 Assessment ",
+            row.sequence,
+            " (",
+            row.assessmentName,
+            ") is priced ",
+            moneyOf(row.recorded),
+            ", but the agreed pricing basis is ",
+            moneyOf(row.expected),
+            "."
+          ] }, `pm-${row.sequence}`)),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5 * fontScale, color: inkTone("#991b1b"), marginTop: 3, lineHeight: 1.45 }, children: "Dates and amounts are shown as recorded and are not adjusted on this document." })
+        ] })
+      ] }) : null,
+      fundInconsistencies.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10, flexDirection: "row", borderWidth: 0.8, borderColor: monoLine(mode, "#ef4444"), borderRadius: 3, backgroundColor: monoFill(mode, "#fef2f2") }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: 3, backgroundColor: monoFill(mode, "#ef4444") } }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 9 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9.5 * fontScale, fontWeight: "bold", color: inkTone("#991b1b") }, children: "Fund position needs review" }),
+          fundInconsistencies.map((detail, index2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9 * fontScale, color: inkTone("#991b1b"), marginTop: 2, lineHeight: 1.45 }, children: [
+            "\u2022 ",
+            detail
+          ] }, index2)),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5 * fontScale, color: inkTone("#991b1b"), marginTop: 3, lineHeight: 1.45 }, children: "Figures are shown as recorded and are not adjusted on this document." })
+        ] })
+      ] }) : null,
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { flexDirection: "row", marginTop: 8, borderWidth: 0.8, borderColor: hairline, borderRadius: 3 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 8 }, children: [
+          sectionHeading("Progress"),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5 * fontScale, color: inkTone("#334155"), lineHeight: 1.45 }, children: progressRows.slice(0, 3).map(([label, value2]) => `${label} ${value2}`).join("  \xB7  ") }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5 * fontScale, color: inkTone("#334155"), lineHeight: 1.45 }, children: progressRows.slice(3).map(([label, value2]) => `${label} ${value2}`).join("  \xB7  ") })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 8, borderLeftWidth: 0.6, borderColor: hairline }, children: [
+          sectionHeading("Fund Position"),
+          fundRows.map(([label, value2], index2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { children: defRow(label, value2, index2 > 0) }, label))
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { wrap: false, style: { marginTop: 5 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 7.5 * fontScale, color: inkTone("#64748b"), lineHeight: 1.35 }, children: [
+        "Reserved: committed to a scheduled assessment. Consumed: completed and chargeable. Released: reservation returned to the available balance. Cancelled: excluded from this schedule. ",
+        currencyUnitNote
       ] }) }),
-      cs2.totalCandidature !== void 0 || cs2.assessmentSpec || cs2.chargePerCandidate !== void 0 || cs2.assessmentSittings ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 8, padding: 10, backgroundColor: monoFill(mode, "#f8fafc"), borderRadius: 8 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 4, fontSize: 10, textTransform: "uppercase", color: monoText(mode, "#64748b") }, children: "Recorded specification" }),
-        cs2.totalCandidature !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, color: monoText(mode, "#334155") }, children: [
-          "Total candidature: ",
-          cs2.totalCandidature
-        ] }) : null,
-        cs2.assessmentSpec ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, color: monoText(mode, "#334155") }, children: [
-          "Specification: ",
-          cs2.assessmentSpec
-        ] }) : null,
-        cs2.chargePerCandidate !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, color: monoText(mode, "#334155") }, children: [
-          "Charge per candidate: ",
-          currency,
-          " ",
-          formatAmount2(cs2.chargePerCandidate)
-        ] }) : null,
-        cs2.assessmentSittings ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, color: monoText(mode, "#334155") }, children: [
-          "Sittings: ",
-          cs2.assessmentSittings
+      cs2.terms || cs2.notes ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 8, borderWidth: 0.8, borderColor: hairline, borderRadius: 3, padding: 8 }, children: [
+        sectionHeading("Terms & Conditions"),
+        cs2.terms ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: inkTone("#334155"), lineHeight: 1.5 }, children: cs2.terms }) : null,
+        cs2.notes ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: cs2.terms ? 7 : 0 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", letterSpacing: 1, textTransform: "uppercase", color: inkTone("#64748b"), marginBottom: 3 }, children: "Notes" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: inkTone("#334155"), lineHeight: 1.5 }, children: cs2.notes })
         ] }) : null
       ] }) : null,
-      cs2.terms ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 8, padding: 10, backgroundColor: monoFill(mode, "#f8fafc"), borderRadius: 8 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 4, fontSize: 10, textTransform: "uppercase", color: monoText(mode, "#64748b") }, children: "Terms & Conditions" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11, lineHeight: 1.6, color: monoText(mode, "#334155") }, children: cs2.terms }),
-        cs2.notes ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, lineHeight: 1.6, color: monoText(mode, "#334155"), marginTop: 6 }, children: [
-          "Notes: ",
-          cs2.notes
-        ] }) : null
-      ] }) : null,
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 16, borderTopWidth: 0.5, borderColor: monoLine(mode, "#e2e8f0"), paddingTop: 8 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flexDirection: "row", alignItems: "center", gap: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10.5, fontWeight: "bold", color: monoText(mode, "#1e3a8a"), letterSpacing: 0.4 }, children: "DOCUMENT INTEGRITY" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 6, fontSize: 9, color: monoText(mode, "#1e3a8a"), lineHeight: 1.45 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { wrap: false, style: { marginTop: 6, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: scaledFont(11), color: inkTone("#334155"), textAlign: "center" }, children: [
+        "Thank you for choosing ",
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: companyName })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 8, borderTopWidth: 0.5, borderColor: monoLine(mode, "#e2e8f0"), paddingTop: 6 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, fontWeight: "bold", color: monoText(mode, "#1e3a8a"), letterSpacing: 0.4 }, children: "DOCUMENT INTEGRITY" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 4, fontSize: 8 * fontScale, color: monoText(mode, "#1e3a8a"), letterSpacing: 0.3 }, children: [
           "Content hash: ",
           cs2.contentHash
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 4, fontSize: 9, color: monoText(mode, "#475569"), lineHeight: 1.45 }, children: [
-          "This hash covers the contract, the full assessment schedule with its sequences and dates, and the fund position. Any alteration changes the hash. Quote the contract number and hash to verify with ",
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 2, fontSize: 8 * fontScale, color: inkTone("#475569"), lineHeight: 1.35 }, children: [
+          "This SHA-256 digest covers the contract identity, the assessment schedule and the fund position; any change to them changes the digest. It is a tamper-evidence fingerprint, not a digital signature. Scan the QR code to view this document's record and verify it with ",
           companyName,
           "."
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 8 }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           SecurityFooter,
@@ -236077,170 +236408,171 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
   if (type === "CONTRACT_COMPLETION_RECEIPT") {
     const cr = data2;
     const cancelled = isCancelledStatus(String(cr.status || ""), cr);
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: `Completion Receipt - ${cr.receiptNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [s4.page, pageStyle], children: [
+    const crCurrency = config2?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || "K";
+    const crBodyFontSize = 12;
+    const crTitleFontSize = 20 * fontScale;
+    const crMetaRightIndent = Math.min(RECEIPT_META_INDENT * fontScale, 128);
+    const crNameGutter = !!logo ? templateSettings.logoWidth + 12 : 0;
+    const crNameAvailWidth = RECEIPT_CONTENT_WIDTH - (!!logo ? (templateSettings.logoWidth + 12) * 2 : 24);
+    const crNameFontSize = Math.max(
+      8.5,
+      Math.min(templateSettings.companyNameFontSize, crNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6))
+    );
+    const crCustomerNameLabel = "Customer Name: ";
+    const crCustomerName = stripCustomerIdSuffix(String(cr.customerName || "").trim()) || "Customer";
+    const crCustomerFontSize = fitFontSize(
+      crCustomerName,
+      Math.max(24, RECEIPT_CONTENT_WIDTH - measureTextWidth(crCustomerNameLabel, crBodyFontSize, true)),
+      { maxSize: crBodyFontSize, minSize: 7 }
+    );
+    const crCustomerKey = crCustomerName.trim().toLowerCase();
+    const crCustomerSubline = String(cr.schoolName || "").trim();
+    const crShowSubline = !!crCustomerSubline && crCustomerSubline.toLowerCase() !== crCustomerKey;
+    const crInk = (hex3) => monoText(mode, hex3);
+    const crHairline = monoLine(mode, "#cbd5e1");
+    const crSoftFill = monoFill(mode, "#f8fafc");
+    const crMoney = (value2) => `${crCurrency} ${formatAmount2(Number(value2) || 0)}`;
+    const crStatusTone = (() => {
+      if (mode === "mono") return "#000";
+      const key = String(cr.status || "").trim().toLowerCase();
+      if (["active", "completed", "consumed", "closed", "fulfilled"].includes(key)) return "#047857";
+      if (["draft", "pending", "reserved", "scheduled", "processing", "in_progress"].includes(key)) return "#b45309";
+      if (["cancelled", "canceled", "void", "voided"].includes(key)) return "#b91c1c";
+      return "#475569";
+    })();
+    const crMetaRow = (label, value2, valueStyle) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: crBodyFontSize, color: crInk("#111111"), marginBottom: 2 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
+        label,
+        ": "
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: valueStyle, children: value2 })
+    ] });
+    const crSectionHeading = (label) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: crBodyFontSize, fontWeight: "bold", color: crInk("#111111"), marginBottom: 3 }, children: label });
+    const crDefRow = (label, value2, withDivider = true) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", paddingVertical: 1.5, ...withDivider ? { borderTopWidth: 0.5, borderColor: crHairline } : null }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: crInk("#475569") }, children: label }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9.5 * fontScale, fontWeight: "bold", color: crInk("#0f172a"), marginLeft: 10, textAlign: "right", flexShrink: 1 }, children: value2 })
+    ] });
+    const crCellText = { fontSize: crBodyFontSize, color: crInk("#111111") };
+    const crCellBold = { fontSize: crBodyFontSize, fontWeight: "bold", color: crInk("#111111") };
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: `Assessment Completion Receipt - ${cr.receiptNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [s4.page, pageStyle], children: [
       channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
       cancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
         PaginationFurniture,
         {
           colorMode: mode,
-          identity: { title: "Completion Receipt", number: String(cr.receiptNumber || ""), customer: String(cr.customerName || "") },
+          identity: { title: "Assessment Completion Receipt", number: String(cr.receiptNumber || ""), customer: crCustomerName },
           companyName
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.headerSection, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.headerLeft, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.title, titleStyle, { fontFamily: "Helvetica" }], children: "Assessment Completion Receipt" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.infoText, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Receipt # : ",
-              cr.receiptNumber
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Contract # : ",
-              cr.contractNumber
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Date : ",
-              formatDateOnly(cr.date),
-              " \xB7 Version ",
-              cr.version
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Status : ",
-              toTitleCase(String(cr.status || "draft")),
-              cr.completedToDate >= cr.totalAssessments && cr.totalAssessments > 0 ? " \xB7 Fully completed" : ""
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { position: "relative", alignItems: "center", marginBottom: 6, paddingTop: 2 }, children: [
+        !!logo && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: logo, style: { position: "absolute", left: 0, top: 0, width: templateSettings.logoWidth } }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "center", width: "100%", paddingLeft: crNameGutter, paddingRight: crNameGutter }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: crNameFontSize, fontWeight: "bold", color: crInk("#000"), textAlign: "center", maxLines: 1, textOverflow: "ellipsis" }, children: companyName }),
+          !!receiptCompanyAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: crBodyFontSize, color: crInk("#334155"), textAlign: "center", marginTop: 2 }, children: receiptCompanyAddress }),
+          !!companyContact && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: crBodyFontSize, color: crInk("#334155"), textAlign: "center", marginTop: 2 }, children: companyContact })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: crTitleFontSize, fontWeight: "bold", color: crInk("#000"), textAlign: "center", marginTop: 6, marginBottom: 6 }, children: "Assessment Completion Receipt" }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginBottom: 4 } }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 6 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: crBodyFontSize, color: crInk("#111111"), marginBottom: 3, maxLines: 1, textOverflow: "ellipsis" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: crCustomerNameLabel }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: crCustomerFontSize }, children: crCustomerName })
+        ] }),
+        crShowSubline && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: crInk("#64748b") }, children: crCustomerSubline })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", gap: RECEIPT_META_GAP, marginBottom: 8 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
+          crMetaRow("Receipt No", String(cr.receiptNumber || "Not stated")),
+          crMetaRow("Contract No", String(cr.contractNumber || "Not stated")),
+          crMetaRow("Version", String(cr.version ?? 1)),
+          crMetaRow("Currency", resolveReceiptCurrencyLabel(crCurrency))
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, paddingLeft: crMetaRightIndent }, children: [
+          crMetaRow("Date", String(cr.date || "Not stated")),
+          crMetaRow("Academic Year", String(cr.academicYear || "Not stated")),
+          crMetaRow("Sequence", `${cr.sequence} of ${cr.totalAssessments}`),
+          crMetaRow("Status", toTitleCase(String(cr.status || "draft")), { fontWeight: "bold", color: crInk(crStatusTone) })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginBottom: 4 } }),
+      crSectionHeading("Completion Details Table"),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { borderWidth: 0.5, borderColor: monoLine(mode, "#9ca3af"), marginBottom: 8 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellBold, { flex: 3, padding: 4, borderRightWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }], children: "Description" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellBold, { flex: 1, padding: 4, textAlign: "right", borderRightWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }], children: "Price" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellBold, { flex: 1, padding: 4, textAlign: "right" }], children: "Debited" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 3, padding: 4, borderRightWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellBold, { marginBottom: 1 }], children: cr.item.assessmentName || "Assessment" }),
+            (!!cr.item.grade || !!cr.item.subject) && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: crInk("#64748b"), marginBottom: 1 }, children: [cr.item.grade, cr.item.subject].filter(Boolean).join(" \xB7 ") }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9 * fontScale, color: crInk("#64748b") }, children: [
+              "Consumed: ",
+              cr.item.consumedAt || "Not recorded"
             ] })
-          ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.headerRight, children: renderBrandMark("right") })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.billingSection, { marginTop: 0, marginBottom: 12 }], children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: monoText(mode, "#64748b") }, children: "Company" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.recipientInfoText, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientName, children: companyName }),
-            companyAddress ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientDetail, children: companyAddress }) : null,
-            companyContact ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientPhone, children: companyContact }) : null
-          ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: monoText(mode, "#64748b") }, children: "Client" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.recipientInfoText, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientName, children: cr.customerName || "N/A" }),
-            cr.schoolName ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientDetail, children: cr.schoolName }) : null
-          ] })
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 8 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.tableHeader, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3 }, children: "Completed Assessment" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2 }, children: "Consumed" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Price" })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.row, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 3 }, children: [
-            cr.item?.assessmentName,
-            [cr.item?.grade, cr.item?.subject].filter(Boolean).join(" \xB7 ") ? ` (${[cr.item?.grade, cr.item?.subject].filter(Boolean).join(" \xB7 ")})` : ""
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2 }, children: cr.item?.consumedAt ? formatDateOnly(cr.item.consumedAt) : "\u2014" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, textAlign: "right" }, children: [
-            currency,
-            " ",
-            formatAmount2(cr.item?.unitPrice || 0)
-          ] })
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flex: 1, padding: 4, justifyContent: "center", borderRightWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellText, { textAlign: "right" }], children: crMoney(cr.item.unitPrice) }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flex: 1, padding: 4, justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellText, { textAlign: "right" }], children: crMoney(cr.amountDebited) }) })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", padding: 4 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellBold, { flex: 4, textAlign: "right" }], children: "Amount Debited" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellBold, { flex: 1, textAlign: "right" }], children: crMoney(cr.amountDebited) })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: [s4.summaryContainer, { justifyContent: "flex-end" }], children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { width: 280 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontWeight: "bold" }, children: "Completion Progress" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold", textAlign: "right" }, children: [
-            cr.completedToDate,
-            " / ",
-            cr.totalAssessments
-          ] })
+      crSectionHeading("Completion & Fund Position"),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderWidth: 0.8, borderColor: crHairline, borderRadius: 3, marginBottom: 8 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 7 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", letterSpacing: 1.2, textTransform: "uppercase", color: crInk("#64748b"), marginBottom: 5 }, children: "Progress" }),
+          crDefRow("Completion Progress", `${cr.completedToDate} / ${cr.totalAssessments}`, false),
+          crDefRow("Remaining Assessments", String(cr.remainingAssessments)),
+          crDefRow("Total Assessments", String(cr.totalAssessments))
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1 }, children: [
-            "This completion (sequence ",
-            cr.sequence,
-            ")"
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
-            currency,
-            " ",
-            formatAmount2(cr.amountDebited)
-          ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1 }, children: "Remaining Assessments" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { textAlign: "right" }, children: cr.remainingAssessments })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1 }, children: "Consumed To Date" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
-            currency,
-            " ",
-            formatAmount2(cr.totalConsumedToDate)
-          ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1 }, children: "Contract Value / Reserved" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
-            currency,
-            " ",
-            formatAmount2(cr.contractValue),
-            " / ",
-            currency,
-            " ",
-            formatAmount2(cr.remainingReservedFunds)
-          ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1 }, children: "Unallocated Funds" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
-            currency,
-            " ",
-            formatAmount2(cr.unallocatedFunds)
-          ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1 }, children: "Wallet Balance After" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
-            currency,
-            " ",
-            formatAmount2(cr.walletBalanceAfter)
-          ] })
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 7, borderLeftWidth: 0.6, borderColor: crHairline }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", letterSpacing: 1.2, textTransform: "uppercase", color: crInk("#64748b"), marginBottom: 5 }, children: "Fund Position" }),
+          crDefRow("Contract Value", crMoney(cr.contractValue), false),
+          crDefRow("Consumed to Date", crMoney(cr.totalConsumedToDate)),
+          crDefRow("Reserved Funds", crMoney(cr.remainingReservedFunds)),
+          crDefRow("Unallocated Funds", crMoney(cr.unallocatedFunds)),
+          crDefRow("Wallet Balance After", crMoney(cr.walletBalanceAfter))
         ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginBottom: 4 } }),
+      crSectionHeading("Canonical Linkage"),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { borderWidth: 0.8, borderColor: crHairline, borderRadius: 3, padding: 6, backgroundColor: crSoftFill, marginBottom: 6 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: crBodyFontSize, color: crInk("#111111"), marginBottom: 2 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Wallet Transaction: " }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: cr.walletTransactionId || "Not recorded" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: crBodyFontSize, color: crInk("#111111"), marginBottom: 3 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Ledger Entry: " }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: cr.ledgerEntryId || "Not recorded" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5 * fontScale, color: crInk("#64748b"), lineHeight: 1.35 }, children: "These references tie this receipt to the wallet movement and ledger entry that recognised the debit." })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 2 }, children: [
+        crSectionHeading("Notes Section"),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { padding: 7, backgroundColor: crSoftFill, borderRadius: 8 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: crBodyFontSize, lineHeight: 1.5, color: crInk("#334155") }, children: String(cr.notes || "").trim() || "No additional notes are recorded on this contract." }) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginTop: 5, marginBottom: 5 } }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { wrap: false, style: { marginTop: 4, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: scaledFont(11), color: crInk("#334155"), textAlign: "center" }, children: [
+        "Thank you for choosing ",
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: companyName })
       ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 8, padding: 10, backgroundColor: monoFill(mode, "#f8fafc"), borderRadius: 8 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 4, fontSize: 10, textTransform: "uppercase", color: monoText(mode, "#64748b") }, children: "Canonical linkage" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, color: monoText(mode, "#334155"), fontFamily: "'JetBrains Mono', monospace" }, children: [
-          "Wallet transaction: ",
-          cr.walletTransactionId || "\u2014"
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, color: monoText(mode, "#334155"), fontFamily: "'JetBrains Mono', monospace", marginTop: 2 }, children: [
-          "Ledger entry: ",
-          cr.ledgerEntryId || "\u2014"
-        ] })
-      ] }),
-      cr.notes ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 8, padding: 10, backgroundColor: monoFill(mode, "#f8fafc"), borderRadius: 8 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, lineHeight: 1.6, color: monoText(mode, "#334155") }, children: [
-        "Notes: ",
-        cr.notes
-      ] }) }) : null,
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 16, borderTopWidth: 0.5, borderColor: monoLine(mode, "#e2e8f0"), paddingTop: 8 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flexDirection: "row", alignItems: "center", gap: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10.5, fontWeight: "bold", color: monoText(mode, "#1e3a8a"), letterSpacing: 0.4 }, children: "DOCUMENT INTEGRITY" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 6, fontSize: 9, color: monoText(mode, "#1e3a8a"), lineHeight: 1.45 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 6, borderTopWidth: 0.5, borderColor: monoLine(mode, "#e2e8f0"), paddingTop: 5 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, fontWeight: "bold", color: monoText(mode, "#1e3a8a"), letterSpacing: 0.4 }, children: "DOCUMENT INTEGRITY" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 3, fontSize: 8 * fontScale, color: monoText(mode, "#1e3a8a"), letterSpacing: 0.3 }, children: [
           "Content hash: ",
           cr.contentHash
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 4, fontSize: 9, color: monoText(mode, "#475569"), lineHeight: 1.45 }, children: [
-          "This hash covers the contract, the completed assessment, the completion progress, the recognised debit and the prepaid fund position. Any alteration changes the hash. Quote the receipt number and hash to verify with ",
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 2, fontSize: 8 * fontScale, color: crInk("#475569"), lineHeight: 1.35 }, children: [
+          "SHA-256 digest of the completed assessment, its progress and the fund position \u2014 scan the QR code to verify this record with ",
           companyName,
           "."
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 6 }, children: [
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale }),
         /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           SecurityFooter,

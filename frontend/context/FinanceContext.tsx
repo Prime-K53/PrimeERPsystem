@@ -398,9 +398,12 @@ const handleOpenInventory = async () => {
           const nextPaid = Number(invoice.paidAmount || 0);
           const paidDelta = roundFinancial(nextPaid - prevPaid);
 
-          await transactionService.updateInvoice(invoice);
+          // The service records the payment itself for printing-contract
+          // invoices (payment row + Dr Cash / Cr AR + prepaid wallet funding).
+          // Posting a second payment here would count the same money twice.
+          const settled = await transactionService.updateInvoice(invoice);
 
-          if (paidDelta > 0 && invoice.status !== 'Draft' && invoice.status !== 'Cancelled') {
+          if (paidDelta > 0 && !settled?.paymentSettled && invoice.status !== 'Draft' && invoice.status !== 'Cancelled') {
               const allPayments = await dbService.getAll<CustomerPayment>('customerPayments');
               const paymentId = generateNextId('RCPT', allPayments, companyConfig);
               const payment: CustomerPayment = {

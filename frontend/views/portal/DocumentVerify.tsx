@@ -21,6 +21,7 @@ const TYPE_TITLES: Record<string, string> = {
   supplier_payment: 'Supplier payment',
   statement: 'Statement',
   'printing-contract': 'Printing contract',
+  'printing-contract-schedule': 'Contract schedule',
 };
 
 const TERMINAL_STATUSES = ['VOID', 'CANCELLED', 'SUPERSEDED'];
@@ -235,6 +236,93 @@ function stubModel(data: VerificationData, slug: string): StubModel {
         ],
         total: { label: 'Prepaid amount', value: fmtTotal(currency, data.prepaidTotal) },
         statusLabel: 'Contract status',
+        statusValue,
+        statusTone: tone,
+      };
+    }
+    case 'printing-contract-schedule': {
+      // A schedule is verified as its OWN issued version. Legacy prints
+      // (contract-token QR, before per-version documents) are reported as
+      // contract-scope rather than silently presented as a version match.
+      const isVersion = data.verificationScope === 'version';
+      const rows: StubRow[] = [
+        { label: 'Document number', value: str(data.contractNumber) },
+        { label: 'Customer', value: str(data.customerName) },
+      ];
+      if (isVersion) {
+        rows.push({ label: 'Document ID', value: str(data.documentId) });
+        rows.push({ label: 'Issued', value: fmtDateYMD(data.issuedAt) });
+        rows.push({ label: 'Schedule version', value: str(data.scheduleVersion) });
+        // Content integrity (frozen bytes still match the digest stored at
+        // issue) is distinct from the version lifecycle status below.
+        if (data.integrity === 'sha256-verified') {
+          rows.push({ label: 'Content integrity', value: 'SHA-256 verified' });
+        }
+        // The digest itself, so it can be compared with the "Content hash"
+        // printed on the schedule.
+        if (data.contentHash) {
+          rows.push({ label: 'Content hash', value: String(data.contentHash) });
+        }
+        const period = [data.periodStart, data.periodEnd]
+          .filter(Boolean)
+          .map((v) => fmtDateYMD(v));
+        if (period.length) rows.push({ label: 'Contract period', value: period.join(' - ') });
+      } else {
+        rows.push({ label: 'Verification scope', value: 'Parent contract (pre-versioned print)' });
+      }
+      return {
+        docTypeLabel,
+        rows,
+        total: null,
+        statusLabel: isVersion ? 'Version status' : 'Contract status',
+        statusValue,
+        statusTone: tone,
+      };
+    }
+    case 'printing-contract-completion-receipt': {
+      // A completion receipt verifies as ITS OWN issued receipt, never as the
+      // parent contract. Legacy prints (contract-token QR, before per-version
+      // documents) are reported as contract-scope.
+      const isVersion = data.verificationScope === 'version';
+      const rows: StubRow[] = [
+        { label: 'Document number', value: str(data.receiptNumber) },
+        { label: 'Customer', value: str(data.customerName) },
+      ];
+      if (isVersion) {
+        rows.push({ label: 'Document ID', value: str(data.documentId) });
+        rows.push({ label: 'Issued', value: fmtDateYMD(data.issuedAt) });
+        if (data.contractNumber) rows.push({ label: 'Contract', value: str(data.contractNumber) });
+        if (data.schoolName) rows.push({ label: 'School', value: str(data.schoolName) });
+        // The assessment this receipt closed (a flat label, so every consumer
+        // — including the Portal's generic renderer — shows it readably).
+        const assessmentLabel = str(data.assessmentName);
+        if (assessmentLabel) rows.push({ label: 'Assessment', value: assessmentLabel });
+        rows.push({ label: 'Completed to date', value: str(data.completedToDate) });
+        rows.push({ label: 'Total assessments', value: str(data.totalAssessments) });
+        rows.push({ label: 'Remaining assessments', value: str(data.remainingAssessments) });
+        if (data.remainingReservedFunds !== undefined) {
+          rows.push({ label: 'Remaining reserved funds', value: fmtTotal(currency, data.remainingReservedFunds) });
+        }
+        if (data.unallocatedFunds !== undefined) {
+          rows.push({ label: 'Unallocated funds', value: fmtTotal(currency, data.unallocatedFunds) });
+        }
+        if (data.integrity === 'sha256-verified') {
+          rows.push({ label: 'Content integrity', value: 'SHA-256 verified' });
+        }
+        if (data.contentHash) {
+          rows.push({ label: 'Content hash', value: String(data.contentHash) });
+        }
+      } else {
+        rows.push({ label: 'Verification scope', value: 'Parent contract (pre-versioned print)' });
+      }
+      return {
+        docTypeLabel,
+        rows,
+        total: {
+          label: 'Amount debited',
+          value: fmtTotal(currency, data.amountDebited ?? 0),
+        },
+        statusLabel: isVersion ? 'Version status' : 'Contract status',
         statusValue,
         statusTone: tone,
       };

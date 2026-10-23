@@ -415,9 +415,11 @@ export const ContractScheduleSchema = z.object({
     unitPrice: z.number(),
   }).passthrough()),
   totalAssessments: z.number(),
+  activeAssessments: z.number().optional(),
   scheduleComplete: z.boolean(),
   missingDateSequences: z.array(z.number()),
   scheduledCount: z.number(),
+  undatedCount: z.number().optional(),
   consumedCount: z.number(),
   releasedCount: z.number(),
   cancelledCount: z.number(),
@@ -425,13 +427,43 @@ export const ContractScheduleSchema = z.object({
   reservedAmount: z.number(),
   consumedAmount: z.number(),
   availableFunds: z.number(),
+  availableFundsSource: z.enum(['generated', 'derived']).optional(),
+  fundPositionConsistent: z.boolean().optional(),
+  fundInconsistencies: z.array(z.string()).optional(),
   totalValue: z.number(),
+  cancelledValue: z.number().optional(),
+  hashVersion: z.number().optional(),
   totalCandidature: z.number().optional(),
   assessmentSpec: z.string().optional(),
   chargePerCandidate: z.number().optional(),
   assessmentSittings: z.string().optional(),
   terms: z.string().optional(),
   notes: z.string().optional(),
+  /**
+   * Assessments scheduled outside the contract period — disclosed on the
+   * document, never corrected. Absent when every dated assessment is inside.
+   */
+  outOfPeriodRows: z.array(z.object({
+    sequence: z.number(),
+    assessmentName: z.string(),
+    assessmentDate: z.string(),
+    reason: z.enum(['before_period_start', 'after_period_end']),
+  })).optional(),
+  /**
+   * Rows whose recorded price disagrees with the per-candidate pricing basis.
+   */
+  pricingMismatches: z.array(z.object({
+    sequence: z.number(),
+    assessmentName: z.string(),
+    expected: z.number(),
+    recorded: z.number(),
+  })).optional(),
+  /** Value of the released assessments (returned to the available balance). */
+  releasedAmount: z.number().optional(),
+  /** The issued version's own identity — excluded from the content hash. */
+  documentId: z.string().optional(),
+  /** The issued version's own version number — excluded from the content hash. */
+  documentVersion: z.number().optional(),
   contentHash: z.string(),
 });
 
@@ -448,6 +480,7 @@ export const ContractCompletionReceiptSchema = z.object({
   status: z.string(),
   customerName: z.string(),
   schoolName: z.string().optional(),
+  academicYear: z.string().optional(),
   item: z.object({
     assessmentName: z.string(),
     grade: z.string().optional(),

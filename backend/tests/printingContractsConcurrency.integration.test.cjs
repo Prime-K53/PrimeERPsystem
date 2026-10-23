@@ -92,6 +92,10 @@ const ENVELOPE_TABLES = [
   'customers',
   'financial_years',
   'idempotency_keys',
+  // 0048 enforces the settings-backed closed-PERIOD registry.
+  'settings',
+  // 0048 resolves the posting accounts (21300 / 41100) from the COA.
+  'accounts',
 ];
 
 describeLive('printing-contracts live concurrency (disposable PostgreSQL)', () => {
@@ -114,27 +118,53 @@ describeLive('printing-contracts live concurrency (disposable PostgreSQL)', () =
     q(`INSERT INTO customers(id,data,version) VALUES($1, jsonb_build_object('walletBalance',$2::numeric,'name','T'),1)
        ON CONFLICT (id) DO UPDATE SET data=EXCLUDED.data`, [id, balance]);
   const seedContract = (id, cust, status, reserved, consumed, maxN = 10) =>
-    q(`INSERT INTO assessment_contracts(id,data,version) VALUES($1, jsonb_build_object(
-        'customer_id',$2,'contract_number',$3,'status',$4,'reserved_amount',$5::numeric,
-        'consumed_amount',$6::numeric,'max_assessments',$7,'company_id','CO-1','school_id','S-1',
+    // Every jsonb_build_object parameter needs an explicit cast: the function
+    // is variadic "any", so PostgreSQL cannot infer an untyped parameter.
+    q(`INSERT INTO assessment_contracts(id,data,version) VALUES($1::text, jsonb_build_object(
+        'customer_id',$2::text,'contract_number',$3::text,'status',$4::text,'reserved_amount',$5::numeric,
+        'consumed_amount',$6::numeric,'max_assessments',$7::int,'company_id','CO-1','school_id','S-1',
         'assessment_type','examination','assessment_count',0),1)
        ON CONFLICT (id) DO UPDATE SET data=EXCLUDED.data`,
     [id, cust, `PC-${id}`, status, reserved, consumed, maxN]);
   const seedItem = (id, contractId, price, status = 'reserved') =>
-    q(`INSERT INTO assessment_contract_items(id,data,version) VALUES($1, jsonb_build_object(
-        'contract_id',$2,'company_id','CO-1','customer_id','C-1','school_id','S-1',
-        'assessment_name',$1,'assessment_type','examination',
-        'assessment_date','2026-03-15','item_price',$3::numeric,'status',$4),1)
+    q(`INSERT INTO assessment_contract_items(id,data,version) VALUES($1::text, jsonb_build_object(
+        'contract_id',$2::text,'company_id','CO-1','customer_id','C-1','school_id','S-1',
+        'assessment_name',$1::text,'assessment_type','examination',
+        'assessment_date','2026-03-15','item_price',$3::numeric,'status',$4::text),1)
        ON CONFLICT (id) DO UPDATE SET data=EXCLUDED.data`,
     [id, contractId, price, status]);
   const seedOpenYear = () =>
     q(`INSERT INTO financial_years(id,data,version) VALUES('FY-OPEN', jsonb_build_object(
         'name','FY26','is_closed',0,'start_date','2026-01-01','end_date','2026-12-31'),1)
        ON CONFLICT (id) DO UPDATE SET data=EXCLUDED.data`);
+  // The chart of accounts. The deployed database prefixes the account id
+  // ('ACC-21300') and keeps the code in the envelope, so the migration must
+  // resolve the code rather than post it.
+  const seedAccounts = async () => {
+    for (const [id, code, name, type, group, normal] of [
+      ['ACC-21300', '21300', 'Customer Deposits', 'LIABILITY', 'CURRENT_LIABILITY', 'CREDIT'],
+      ['ACC-41100', '41100', 'Product Sales', 'INCOME', 'REVENUE', 'CREDIT'],
+    ]) {
+      // eslint-disable-next-line no-await-in-loop
+      await q(`INSERT INTO accounts(id,data,version) VALUES($1::text, jsonb_build_object(
+          'id',$1::text,'code',$2::text,'account_number',$2::text,'name',$3::text,
+          'type',$4::text,'account_type',$4::text,'account_group',$5::text,
+          'normal_balance',$6::text,'is_active',true,'allow_posting',true),1)
+        ON CONFLICT (id) DO UPDATE SET data=EXCLUDED.data`, [id, code, name, type, group, normal]);
+    }
+  };
 
   beforeAll(async () => {
     pool = new pg.Pool({ connectionString: TEST_URL, max: 12 });
     admin = await pool.connect();
+    // Supabase's baseline roles. A vanilla PostgreSQL has none of them and
+    // 0048 grants EXECUTE to service_role only, so the disposable database
+    // must mirror the target environment.
+    for (const role of ['anon', 'authenticated', 'service_role']) {
+      await admin.query(
+        `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='${role}') THEN CREATE ROLE ${role} NOLOGIN; END IF; END $$;`,
+      );
+    }
     // Minimal envelope tables (same shape as the baseline), then the REAL files.
     for (const t of ENVELOPE_TABLES) {
       const idType = t === 'idempotency_keys' ? 'UUID' : 'TEXT';
@@ -143,6 +173,20 @@ describeLive('printing-contracts live concurrency (disposable PostgreSQL)', () =
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), version INTEGER NOT NULL DEFAULT 0)`);
     }
+    // The baseline's updated_at trigger helper (0001 §0). 0049 attaches a
+    // trigger that calls it, so the disposable schema needs it too.
+    await admin.query(`CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+      RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = NOW(); RETURN NEW; END; $$ LANGUAGE plpgsql`);
+    // Drop any 0048 definitions left by an earlier run before applying: a
+    // function whose return type changed cannot be replaced (42P13), so a
+    // stale definition would survive and silently change behaviour.
+    await admin.query(`
+      DROP FUNCTION IF EXISTS public.consume_contract_assessment_atomic(TEXT,TEXT,TEXT,DATE);
+      DROP FUNCTION IF EXISTS public.reserve_contract_assessment_atomic(TEXT,TEXT,JSONB,NUMERIC,DATE);
+      DROP FUNCTION IF EXISTS public.resolve_posting_account(TEXT);
+      DROP FUNCTION IF EXISTS public.is_contract_date_in_closed_period(DATE);
+      DROP FUNCTION IF EXISTS public.is_contract_date_in_closed_fy(DATE);
+      DROP FUNCTION IF EXISTS public.current_erp_rpc_role();`);
     await admin.query(m48);
     await admin.query(m49);
     await seedOpenYear();
@@ -154,9 +198,12 @@ describeLive('printing-contracts live concurrency (disposable PostgreSQL)', () =
     await admin.query('DROP FUNCTION public.consume_contract_assessment_atomic(TEXT,TEXT,TEXT,DATE)');
     await admin.query('DROP FUNCTION public.reserve_contract_assessment_atomic(TEXT,TEXT,JSONB,NUMERIC,DATE)');
     await admin.query('DROP FUNCTION public.is_contract_date_in_closed_fy(DATE)');
+    await admin.query('DROP FUNCTION public.is_contract_date_in_closed_period(DATE)');
+    await admin.query('DROP FUNCTION public.current_erp_rpc_role()');
     await admin.query('DROP TABLE IF EXISTS public.contract_documents');
     const gone = await admin.query(`SELECT COUNT(*)::int AS n FROM pg_proc WHERE proname IN
-      ('consume_contract_assessment_atomic','reserve_contract_assessment_atomic','is_contract_date_in_closed_fy')`);
+      ('consume_contract_assessment_atomic','reserve_contract_assessment_atomic',
+       'is_contract_date_in_closed_fy','is_contract_date_in_closed_period','current_erp_rpc_role')`);
     expect(gone.rows[0].n).toBe(0);
     await admin.query(m48);
     await admin.query(m49);
@@ -171,9 +218,10 @@ beforeEach(async () => {
     // Closed years are per-test fixtures; never leak one into another test.
     await admin.query(`DELETE FROM public.financial_years WHERE id <> 'FY-OPEN'`);
     await seedOpenYear();
+    await seedAccounts();
   });
 
-  test('same assessment twice concurrently -> exactly one success, one debit', async () => {
+  test('same assessment twice concurrently -> one debit, both callers see the same result', async () => {
     await seedCustomer('C-1', 1000000);
     await seedContract('K-1', 'C-1', 'active', 100000, 0, 10);
     await seedItem('A-1', 'K-1', 100000);
@@ -184,8 +232,19 @@ beforeEach(async () => {
         callConsume(c1, ['K-1', 'A-1', 'key-same-1', '2026-03-20']),
         callConsume(c2, ['K-1', 'A-1', 'key-same-1', '2026-03-20']),
       ]);
+      // Both callers are satisfied: one performed the work, the other replayed
+      // the original result. Exactly ONE debit exists.
       const ok = [r1, r2].filter((r) => r.status === 'fulfilled').length;
-      expect(ok).toBe(1);
+      expect(ok).toBe(2);
+      const results = [r1, r2].filter((r) => r.status === 'fulfilled').map((r) => r.value.rows[0].r);
+      expect(results[0].success).toBe(true);
+      expect(results[1].success).toBe(true);
+      expect(results[0].walletTransactionId).toBe(results[1].walletTransactionId);
+      expect(results[0].ledgerEntryId).toBe(results[1].ledgerEntryId);
+      expect(results[0].newBalance).toBe(results[1].newBalance);
+      // Exactly one of them is flagged as a replay.
+      expect([results[0].replayed, results[1].replayed].filter((v) => v === true)).toHaveLength(1);
+
       expect(await walletOf('C-1')).toBe(900000);
       expect(await itemStatus('A-1')).toBe('consumed');
       expect(await countWhere('wallet_transactions', 'id=$1', ['WTX-A-1-CONSUMED'])).toBe(1);
@@ -261,15 +320,130 @@ beforeEach(async () => {
     expect(Number(c.consumed_amount)).toBe(0);
   });
 
-  test('replay of an accepted op returns the duplicate marker with no second debit', async () => {
+  test('replay of an accepted op returns the ORIGINAL result with no second debit', async () => {
     await seedCustomer('C-1', 1000000);
     await seedContract('K-1', 'C-1', 'active', 100000, 0, 10);
     await seedItem('A-1', 'K-1', 100000);
     const first = await callConsume(admin, ['K-1', 'A-1', 'key-replay-1', '2026-03-20']);
     expect(first.rows[0].r.success).toBe(true);
-    await expect(callConsume(admin, ['K-1', 'A-1', 'key-replay-1', '2026-03-20'])).rejects.toThrow(/DUPLICATE/);
+    expect(first.rows[0].r.replayed).toBe(false);
+
+    // The repeat is a replay, NOT a second operation and NOT an error: the
+    // client already treats a successful body as "accepted".
+    const replay = await callConsume(admin, ['K-1', 'A-1', 'key-replay-1', '2026-03-20']);
+    expect(replay.rows[0].r.success).toBe(true);
+    expect(replay.rows[0].r.replayed).toBe(true);
+    expect(replay.rows[0].r.walletTransactionId).toBe(first.rows[0].r.walletTransactionId);
+    expect(replay.rows[0].r.ledgerEntryId).toBe(first.rows[0].r.ledgerEntryId);
+    expect(replay.rows[0].r.newBalance).toBe(first.rows[0].r.newBalance);
+
     expect(await walletOf('C-1')).toBe(900000);
     expect(await countWhere('wallet_transactions', 'id=$1', ['WTX-A-1-CONSUMED'])).toBe(1);
+    expect(await countWhere('ledger_entries', 'id=$1', ['LG-WTX-A-1-CONSUMED'])).toBe(1);
+  });
+
+  test('a conflicting key on an already-consumed assessment is refused, not replayed', async () => {
+    await seedCustomer('C-1', 1000000);
+    await seedContract('K-1', 'C-1', 'active', 100000, 0, 10);
+    await seedItem('A-1', 'K-1', 100000);
+    await callConsume(admin, ['K-1', 'A-1', 'key-first-1', '2026-03-20']);
+
+    // A different key is a different operation key: it must not be treated
+    // as a successful new operation. The assessment already carries its
+    // consumption transaction, so it is refused as a DUPLICATE.
+    await expect(
+      callConsume(admin, ['K-1', 'A-1', 'key-second-1', '2026-03-20']),
+    ).rejects.toThrow(/DUPLICATE/);
+
+    expect(await walletOf('C-1')).toBe(900000);
+    expect(await countWhere('wallet_transactions', 'id=$1', ['WTX-A-1-CONSUMED'])).toBe(1);
+  });
+
+  test('the idempotency key and the business writes roll back together', async () => {
+    await seedCustomer('C-1', 10000);
+    await seedContract('K-1', 'C-1', 'active', 100000, 0, 10);
+    await seedItem('A-1', 'K-1', 100000);
+    await expect(callConsume(admin, ['K-1', 'A-1', 'key-rollback-1', '2026-03-20'])).rejects.toThrow(/INSUFFICIENT/);
+
+    // The key row was inserted BEFORE the failure — it must be gone, so the
+    // retry is a fresh attempt and not a phantom replay.
+    const keys = Number(
+      (await q(`SELECT COUNT(*)::int AS n FROM idempotency_keys WHERE data->>'idempotency_key' = $1`, [
+        'key-rollback-1',
+      ])).rows[0].n,
+    );
+    expect(keys).toBe(0);
+
+    // …and the retry after funding succeeds normally.
+    await seedCustomer('C-1', 1000000);
+    const retry = await callConsume(admin, ['K-1', 'A-1', 'key-rollback-1', '2026-03-20']);
+    expect(retry.rows[0].r.success).toBe(true);
+    expect(retry.rows[0].r.replayed).toBe(false);
+  });
+
+  test('authorization: only a service_role caller may mutate financial records', async () => {
+    await seedCustomer('C-1', 1000000);
+    await seedContract('K-1', 'C-1', 'active', 100000, 0, 10);
+    await seedItem('A-1', 'K-1', 100000);
+
+    const c = await pool.connect();
+    try {
+      // A portal customer (role authenticated) must be refused outright.
+      await c.query(`SET request.jwt.claims = '{"role":"authenticated","sub":"portal-user"}'`);
+      await expect(callConsume(c, ['K-1', 'A-1', 'key-auth-1', '2026-03-20'])).rejects.toThrow(/UNAUTHORIZED/);
+      await expect(
+        c.query('SELECT public.reserve_contract_assessment_atomic($1,$2,$3,$4,$5)', [
+          'K-1', 'A-9', { assessment_name: 'X' }, 100000, '2026-03-15',
+        ]),
+      ).rejects.toThrow(/UNAUTHORIZED/);
+
+      // anon is refused as well.
+      await c.query(`SET request.jwt.claims = '{"role":"anon"}'`);
+      await expect(callConsume(c, ['K-1', 'A-1', 'key-auth-2', '2026-03-20'])).rejects.toThrow(/UNAUTHORIZED/);
+
+      // Nothing was written by any refused call.
+      expect(await walletOf('C-1')).toBe(1000000);
+      expect(await countWhere('wallet_transactions', `id LIKE 'WTX-A-%-CONSUMED'`)).toBe(0);
+      expect(await itemStatus('A-1')).toBe('reserved');
+
+      // The service role the backend gateway uses is accepted.
+      await c.query(`SET request.jwt.claims = '{"role":"service_role"}'`);
+      const ok = await callConsume(c, ['K-1', 'A-1', 'key-auth-3', '2026-03-20']);
+      expect(ok.rows[0].r.success).toBe(true);
+    } finally {
+      await c.query('RESET request.jwt.claims');
+      c.release();
+    }
+  });
+
+  test('ledger and wallet reconcile after a consumption', async () => {
+    await seedCustomer('C-1', 1000000);
+    await seedContract('K-1', 'C-1', 'active', 200000, 0, 10);
+    await seedItem('A-1', 'K-1', 100000);
+    await seedItem('A-2', 'K-1', 100000);
+
+    const before = await walletOf('C-1');
+    await callConsume(admin, ['K-1', 'A-1', 'key-recon-1', '2026-03-20']);
+
+    // One wallet deduction, one ledger posting, same amount, same item.
+    const wt = (await q(`SELECT data FROM wallet_transactions WHERE id = 'WTX-A-1-CONSUMED'`)).rows[0];
+    const lg = (await q(`SELECT data FROM ledger_entries WHERE id = 'LG-WTX-A-1-CONSUMED'`)).rows[0];
+    expect(Number(wt.data.amount)).toBe(100000);
+    expect(Number(lg.data.amount)).toBe(100000);
+    expect(wt.data.type).toBe('Deduction');
+    expect(wt.data.data.type).toBe('ASSESSMENT_CONSUMPTION');
+    expect(lg.data.debitAccountId).toBe('ACC-21300');
+    expect(lg.data.creditAccountId).toBe('ACC-41100');
+    expect(lg.data.reconciled).toBe(true);
+    expect(lg.data.referenceId).toBe('A-1');
+
+    // The wallet moved by exactly the consumed amount.
+    expect(await walletOf('C-1')).toBe(before - 100000);
+
+    // The contract bucket moved by exactly the consumed amount.
+    const c = await contractOf('K-1');
+    expect(Number(c.reserved_amount)).toBe(100000);
+    expect(Number(c.consumed_amount)).toBe(100000);
   });
 
   test('closed period rejects on the business date, not the sync date', async () => {
@@ -287,6 +461,11 @@ beforeEach(async () => {
   });
 
   test('reserve enforces the same FY gate and entitlement atomically', async () => {
+    // Closed years are per-test fixtures (the beforeEach clears them), so this
+    // test must create the one it needs rather than rely on a leaked row.
+    await admin.query(`INSERT INTO financial_years(id,data,version) VALUES('FY-CLOSED', jsonb_build_object(
+      'name','FY25','is_closed',1,'start_date','2025-01-01','end_date','2025-12-31'),1)
+      ON CONFLICT (id) DO UPDATE SET data=EXCLUDED.data`);
     await seedCustomer('C-1', 1000000);
     await seedContract('K-1', 'C-1', 'active', 0, 0, 1);
     await expect(
@@ -304,6 +483,31 @@ beforeEach(async () => {
       ]),
     ).rejects.toThrow(/entitlement/);
     expect(Number((await contractOf('K-1')).reserved_amount)).toBe(100000);
+  });
+
+  test('the settings-backed closed-period registry rejects on the business date', async () => {
+    // The canonical closure record is the settings entry
+    // `financial_closed_periods` — the same registry the local canonical op
+    // enforces, and the one the server must see too.
+    await admin.query(`INSERT INTO settings(id,data,version) VALUES('financial_closed_periods',
+      jsonb_build_object('value', jsonb_build_array(jsonb_build_object(
+        'id','P-1','from','2025-01-01','to','2025-12-31','reason','audit lock','closedAt','2025-12-31','closedBy','admin'))),
+      1)
+      ON CONFLICT (id) DO UPDATE SET data=EXCLUDED.data`);
+    await seedCustomer('C-1', 1000000);
+    await seedContract('K-1', 'C-1', 'active', 100000, 0, 10);
+    await seedItem('A-1', 'K-1', 100000);
+
+    await expect(callConsume(admin, ['K-1', 'A-1', 'key-registry-1', '2025-06-15'])).rejects.toThrow(/CLOSED_PERIOD/);
+    await expect(
+      admin.query('SELECT public.reserve_contract_assessment_atomic($1,$2,$3,$4,$5)', [
+        'K-1', 'A-9', { assessment_name: 'X' }, 100000, '2025-06-15',
+      ]),
+    ).rejects.toThrow(/CLOSED_PERIOD/);
+
+    // The same operation dated outside the closed period is accepted.
+    const ok = await callConsume(admin, ['K-1', 'A-1', 'key-registry-2', '2026-03-20']);
+    expect(ok.rows[0].r.success).toBe(true);
   });
 
   test('contract_documents keeps versions immutable with one receipt per item', async () => {

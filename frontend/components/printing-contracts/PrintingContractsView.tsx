@@ -66,6 +66,7 @@ import {
   contractIconTileStyle, contractPageTitleStyle, contractPageSubtitleStyle,
   contractFilterControlStyle, contractFilterSelectStyle,
 } from './contractModalChrome';
+import { SearchableSelect } from '../../components/ui/SearchableSelect';
 
 /**
  * Printing Contracts hub (formerly "Subscriptions").
@@ -158,9 +159,9 @@ const fundsOf = (c: AssessmentContract) => ({
   prepaid: num(c.prepaid_amount),
   consumed: num(c.consumed_amount),
   reserved: num(c.reserved_amount),
-  available: c.available_funds != null
-    ? num(c.available_funds)
-    : num(c.prepaid_amount) - num(c.consumed_amount) - num(c.reserved_amount),
+  // always derive from the live bucket figures — `available_funds` is a
+  // generated column that can be stale (0) when the envelope holds the truth (§3 fund model).
+  available: num(c.prepaid_amount) - num(c.consumed_amount) - num(c.reserved_amount),
 });
 
 const emptyContractDraft = () => ({
@@ -243,10 +244,7 @@ const PrintingContractsView: React.FC = () => {
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | ContractStatus>('All');
   const [partyFilter, setPartyFilter] = useState('');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
   const [metricFilter, setMetricFilter] = useState<'All' | 'Active' | 'Pending' | 'Funds'>('All');
-  const [sortBy, setSortBy] = useState<'contract_number' | 'starts_at' | 'prepaid'>('contract_number');
   const [showLegacy, setShowLegacy] = useState(false);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -340,7 +338,7 @@ const PrintingContractsView: React.FC = () => {
       legacyCustomerName: customer.name ?? null,
     });
     if (!displayName) return id || '—';
-    return `${displayName} (${id})`;
+    return displayName;
   };
   const schoolNameOf = (id?: string) =>
     schools.find(s => String(s.id) === String(id))?.name
@@ -387,8 +385,6 @@ const PrintingContractsView: React.FC = () => {
     if (partyFilter) {
       list = list.filter(c => String(c.customer_id) === partyFilter || String(c.school_id) === partyFilter);
     }
-    if (fromDate) list = list.filter(c => !c.starts_at || c.starts_at.slice(0, 10) >= fromDate);
-    if (toDate) list = list.filter(c => !c.starts_at || c.starts_at.slice(0, 10) <= toDate);
     if (searchText) {
       const q = searchText.toLowerCase();
       list = list.filter(c =>
@@ -398,14 +394,9 @@ const PrintingContractsView: React.FC = () => {
         || schoolNameOf(c.school_id).toLowerCase().includes(q),
       );
     }
-    list.sort((a, b) => {
-      if (sortBy === 'starts_at') return String(b.starts_at || '').localeCompare(String(a.starts_at || ''));
-      if (sortBy === 'prepaid') return num(b.prepaid_amount) - num(a.prepaid_amount);
-      return String(a.contract_number || '').localeCompare(String(b.contract_number || ''));
-    });
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assessmentContracts, metricFilter, statusFilter, partyFilter, fromDate, toDate, searchText, sortBy, customers, schools]);
+  }, [assessmentContracts, metricFilter, statusFilter, partyFilter, searchText, customers, schools]);
 
   const selected = useMemo(
     () => (assessmentContracts || []).find(c => c.id === selectedId) || null,
@@ -1328,22 +1319,39 @@ const PrintingContractsView: React.FC = () => {
   const handleGenerateScheduleDocument = async () => {
     if (!selected) return;
     try {
-      let source = selected;
-      if (!String(selected.verificationToken || '').trim()) {
-        const token = generateVerificationToken();
-        await updateAssessmentContract({
-          ...selected,
-          verificationToken: token,
-          updated_at: new Date().toISOString(),
-          version: num(selected.version) + 1,
-        } as AssessmentContract);
-        source = { ...selected, verificationToken: token };
+      // An ACTIVE contract prints its ISSUED VERSION, never a fresh live
+      // snapshot: the persisted issue date, the version's own verification
+      // token and the frozen content are what the QR and the integrity hash
+      // refer to, so paper and the verifiable record can never disagree.
+      //
+      // The contract row is NOT mutated by printing. The old behaviour minted a
+      // contract token and bumped the contract version as a side effect of
+      // previewing — which is exactly what let a printed schedule verify as the
+      // parent contract and let item edits leave a stale VALID version in place.
+      if (String(selected.status || '') === 'active') {
+        const version = await contractDocumentService.issueScheduleVersion({
+          contract: selected,
+          items: selectedItems,
+          customerName: customerNameOf(selected.customer_id),
+          schoolName: schoolNameOf(selected.school_id),
+        });
+        const parsed = ContractScheduleSchema.parse({
+          ...version.content,
+          verificationToken: version.verificationToken,
+        });
+        const secured = await attachDocumentSecurity(parsed, companyConfig?.companyName);
+        setDocPreview({ type: 'CONTRACT_SCHEDULE', data: secured });
+        return;
       }
+
+      // Not yet issued (draft / pending payment): preview only. No issue date
+      // and no verification token, so an unissued schedule never claims to be a
+      // verifiable issued document.
       const doc = await buildContractScheduleDoc({
-        contract: source,
+        contract: selected,
         items: selectedItems,
-        customerName: customerNameOf(source.customer_id),
-        schoolName: schoolNameOf(source.school_id),
+        customerName: customerNameOf(selected.customer_id),
+        schoolName: schoolNameOf(selected.school_id),
       });
       const parsed = ContractScheduleSchema.parse(doc);
       const secured = await attachDocumentSecurity(parsed, companyConfig?.companyName);
@@ -1447,16 +1455,6 @@ const PrintingContractsView: React.FC = () => {
             <option value="">All clients / schools</option>
             {partyOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
-          <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
-            style={contractFilterControlStyle} title="From start date" />
-          <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
-            style={contractFilterControlStyle} title="To start date" />
-          <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)}
-            style={contractFilterSelectStyle}>
-            <option value="contract_number">Sort: Contract №</option>
-            <option value="starts_at">Sort: Start date</option>
-            <option value="prepaid">Sort: Prepaid</option>
-          </select>
           <ContractGhostButton compact onClick={() => { setIsLoading(true); Promise.all([fetchFinanceData().catch(() => {}), fetchSalesData(true).catch(() => {})]).finally(() => setIsLoading(false)); }}>
             <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} /> Refresh
           </ContractGhostButton>
@@ -1537,7 +1535,7 @@ const PrintingContractsView: React.FC = () => {
             <tbody>
               {filtered.map(c => {
                 const f = fundsOf(c);
-                const used = (contractAssessments || []).filter(a => a.contract_id === c.id).length;
+                const used = (contractAssessments || []).filter(a => a.contract_id === c.id && a.status === 'consumed').length;
                 const isSelected = selectedId === c.id;
                 return (
                   <tr key={c.id}
@@ -1556,13 +1554,17 @@ const PrintingContractsView: React.FC = () => {
                     <td style={{ padding: '10px 16px' }}>
                       <p style={{ fontWeight: 600, color: contractInk, margin: 0 }}>
                         {(() => {
-                          const stored = c.customerName;
                           const id = c.customer_id;
-                          if (stored && stored !== id) return stored;
                           const cust = customers.find((cust: Customer) => String(cust.id) === String(id));
-                          const label = cust ? getCustomerOptionLabel(cust) : undefined;
-                          const displayName = (label && label !== String(cust!.id || '').trim()) ? label : undefined;
-                          return displayName || stored || id || '—';
+                          if (cust) {
+                            const label = getCustomerOptionLabel(cust);
+                            if (label && label !== String(cust.id || '').trim()) return label;
+                          }
+                          const stored = c.customerName;
+                          if (stored && stored !== id) {
+                            return stored.replace(/\s*\([^)]+\)\s*$/, '').trim();
+                          }
+                          return id || '—';
                         })()}
                       </p>
                       <p style={{ color: contractInkSoft, fontSize: 11, margin: '2px 0 0' }}>{schoolNameOf(c.school_id)}</p>
@@ -1665,22 +1667,60 @@ const PrintingContractsView: React.FC = () => {
               <label style={contractLabelStyle}>
                 Customer <ContractRequiredMark />
               </label>
-              <select value={formDraft.customer_id} onChange={e => setFormDraft({ ...formDraft, customer_id: e.target.value })}
-                style={contractSelectStyle}>
-                <option value="">Select customer…</option>
-                {(customers || []).map((c: Customer) => <option key={c.id} value={c.id}>{getCustomerOptionLabel(c)}</option>)}
-              </select>
+              <SearchableSelect
+                label="Customer"
+                placeholder="Select customer…"
+                value={formDraft.customer_id}
+                onChange={(v) => setFormDraft({ ...formDraft, customer_id: v })}
+                options={(customers || []).map((c: Customer) => ({
+                  value: String(c.id),
+                  label: getCustomerOptionLabel(c as unknown as Parameters<typeof getCustomerOptionLabel>[0]),
+                }))}
+                optionItemStyle={{
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  borderBottom: '1px solid #e4ddd1',
+                }}
+                optionSelectedStyle={{
+                  fontWeight: 700,
+                  color: '#0f544c',
+                  background: '#eef7f6',
+                }}
+              />
             </div>
             <div>
               <label style={contractLabelStyle}>
                 School <ContractRequiredMark />
               </label>
-              <select value={formDraft.school_id} onChange={e => setFormDraft({ ...formDraft, school_id: e.target.value })}
-                style={contractSelectStyle}>
-                <option value="">Select school…</option>
-                {schools.map(s => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
-                {(customers || []).map((c: Customer) => <option key={`c-${c.id}`} value={c.id}>{getCustomerOptionLabel(c)} (client)</option>)}
-              </select>
+              <SearchableSelect
+                label="School"
+                placeholder="Select school…"
+                value={formDraft.school_id}
+                onChange={(v) => setFormDraft({ ...formDraft, school_id: v })}
+                options={[
+                  { value: '', label: 'Select school…' },
+                  ...(schools || []).map((s) => ({
+                    value: String(s.id),
+                    label: s.name,
+                  })),
+                ]}
+                optionItemStyle={{
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  borderBottom: '1px solid #e4ddd1',
+                }}
+                optionSelectedStyle={{
+                  fontWeight: 700,
+                  color: '#0f544c',
+                  background: '#eef7f6',
+                }}
+              />
             </div>
             <div>
               <label style={contractLabelStyle}>Contract type</label>

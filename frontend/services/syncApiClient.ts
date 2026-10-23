@@ -17,6 +17,23 @@ import { isSessionExpired, getStoredUserSession } from './authSession';
 
 export type SyncOpOperation = 'upsert' | 'delete';
 
+/**
+ * The contract-document write protocol this client implements.
+ *
+ * 1 = the legacy protocol: the predecessor is superseded BEFORE the successor
+ *     is published (the database refuses that order once migrations 0052/0053
+ *     are applied).
+ * 2 = the current protocol: the successor is published first and the
+ *     predecessor is superseded afterwards, and every write carries the
+ *     client-side guard.
+ *
+ * The sync gateway refuses document writes from a client that declares less
+ * than the capability the server requires (the `required_client_capability`
+ * setting), so an out-of-date device is told to upgrade instead of silently
+ * producing a failed write.
+ */
+export const DOCUMENT_CLIENT_CAPABILITY = 2;
+
 export interface SyncOp {
   operationId?: string;
   table: string;
@@ -24,6 +41,8 @@ export interface SyncOp {
   operation: SyncOpOperation;
   payload: unknown;
   syncGeneration?: number;
+  /** The document write protocol this client implements (see above). */
+  clientCapabilityVersion?: number;
 }
 
 export interface SyncOpResultServer {

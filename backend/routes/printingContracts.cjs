@@ -36,7 +36,13 @@ async function callRpc(fn, args) {
     err.adjustmentRequired = /CLOSED_PERIOD/i.test(msg);
     err.duplicate = /DUPLICATE/i.test(msg);
     err.insufficient = /INSUFFICIENT/i.test(msg);
-    err.status = /CLOSED_PERIOD|DUPLICATE|INSUFFICIENT|entitlement|closed|not found|belongs|active only|reserved only|invalid price/i.test(msg) ? 409 : 500;
+    // The RPC re-checks the caller's role at the database boundary (defence in
+    // depth behind this route's own requireRole gate). An UNAUTHORIZED refusal
+    // from the database is an authorization failure, not a server fault.
+    err.unauthorized = /UNAUTHORIZED/i.test(msg);
+    err.status = err.unauthorized
+      ? 403
+      : (/CLOSED_PERIOD|DUPLICATE|INSUFFICIENT|entitlement|closed|not found|belongs|active only|reserved only|invalid price/i.test(msg) ? 409 : 500);
     throw err;
   }
   return data;
@@ -60,6 +66,7 @@ router.post('/reserve', requireRole('Admin', 'Accountant', 'Editor'), async (req
       error: String(e.message || 'reserve failed').slice(0, 300),
       adjustmentRequired: Boolean(e.adjustmentRequired),
       duplicate: Boolean(e.duplicate),
+      unauthorized: Boolean(e.unauthorized),
       retryable: false,
     });
   }
@@ -82,6 +89,7 @@ router.post('/consume', requireRole('Admin', 'Accountant', 'Editor'), async (req
       error: String(e.message || 'consume failed').slice(0, 300),
       adjustmentRequired: Boolean(e.adjustmentRequired),
       duplicate: Boolean(e.duplicate),
+      unauthorized: Boolean(e.unauthorized),
       retryable: false,
     });
   }

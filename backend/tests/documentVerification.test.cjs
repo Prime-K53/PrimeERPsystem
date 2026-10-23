@@ -6,7 +6,7 @@
  * statuses, allow-list, read-only, no-auth) plus invoice compatibility
  * (old endpoint + old service delegate byte-identical behavior).
  *
- * Local stub HTTP store — no network, no credentials, no writes.
+ * Local stub HTTP store â€” no network, no credentials, no writes.
  */
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -16,6 +16,15 @@ const request = require('supertest');
 
 const TOK = 'd'.repeat(64);
 const BAD = 'e'.repeat(64);
+// Per-version schedule tokens (distinct from the parent contract token TOK).
+const S1 = '1'.repeat(64);
+const S2 = '2'.repeat(64);
+const S3 = '3'.repeat(64);
+const S5 = '5'.repeat(64);
+const S4 = '4'.repeat(64);
+// Tables toggled to return a PostgREST 404 (missing table) during a test.
+const MISSING_TABLES = new Set();
+const integrity = require('../services/documentIntegrity.cjs');
 
 const TABLES = {
   invoices: [
@@ -84,25 +93,115 @@ const TABLES = {
     { id: 'i-g006-1', data: { id: 'i-g006-1', contract_id: 'c-g006', status: 'consumed' } },
     { id: 'i-g007-1', data: { id: 'i-g007-1', contract_id: 'c-g007', status: 'consumed' } },
   ],
+  // Immutable per-version schedule snapshots (Phase 3 Â§4). One row per issue,
+  // each with its OWN token/status â€” the token alone identifies the version.
+  // PC-G001 also exists in assessment_contracts above, which is exactly the
+  // legacy-fallback case the verifier must distinguish.
+  contract_documents: [
+    {
+      id: 'SCH-PC-G001-v1',
+      data: {
+        id: 'SCH-PC-G001-v1', documentType: 'printing_contract_schedule', documentNumber: 'PC-G001',
+        documentVersion: 1, contractVersion: 1, contentHash: 'a'.repeat(64), hashVersion: 2,
+        verificationToken: S1, issuedAt: '2026-01-05T08:00:00.000Z', status: 'SUPERSEDED',
+        content: { contractNumber: 'PC-G001', customerName: 'Contract School', currency: 'MWK', periodStart: '2026-01-05', periodEnd: '2026-12-31', schedule: [{ sequence: 1 }] },
+      },
+    },
+    {
+      id: 'SCH-PC-G001-v2',
+      data: {
+        id: 'SCH-PC-G001-v2', documentType: 'printing_contract_schedule', documentNumber: 'PC-G001',
+        documentVersion: 2, contractVersion: 2, contentHash: 'b'.repeat(64), hashVersion: 2,
+        verificationToken: S2, issuedAt: '2026-02-10T09:30:00.000Z', status: 'VALID',
+        content: { contractNumber: 'PC-G001', customerName: 'Contract School', currency: 'MWK', periodStart: '2026-01-05', periodEnd: '2026-12-31', schedule: [{ sequence: 1 }, { sequence: 2 }] },
+      },
+    },
+    {
+      id: 'SCH-PC-G001-v3',
+      data: {
+        id: 'SCH-PC-G001-v3', documentType: 'printing_contract_schedule', documentNumber: 'PC-G001',
+        documentVersion: 3, contractVersion: 3, contentHash: 'c'.repeat(64), hashVersion: 2,
+        verificationToken: S3, issuedAt: '2026-03-01T10:00:00.000Z', status: 'VOID',
+        content: { contractNumber: 'PC-G001', customerName: 'Contract School', currency: 'MWK', periodStart: '2026-01-05', periodEnd: '2026-12-31', schedule: [{ sequence: 1 }] },
+      },
+    },
+    // Integrity failure fixture: contentHash is deliberately wrong (set in
+    // before()). A row whose frozen content no longer matches its digest must
+    // never verify or download.
+    {
+      id: 'SCH-PC-G001-tampered',
+      data: {
+        id: 'SCH-PC-G001-tampered', documentType: 'printing_contract_schedule', documentNumber: 'PC-TAMPER',
+        documentVersion: 1, contractVersion: 1, contentHash: '', hashVersion: 2,
+        verificationToken: S4, issuedAt: '2026-04-01T10:00:00.000Z', status: 'VALID',
+        content: { contractNumber: 'PC-TAMPER', customerName: 'Contract School', currency: 'MWK', schedule: [{ sequence: 1 }] },
+      },
+    },
+    // A schedule whose content ALSO carries the issued version's identity
+    // (`documentId` / `documentVersion`). A client injects the identity into
+    // the content after hashing it, so the digest excludes it - the server must
+    // accept that shape, or every schedule issued by a newer client fails its
+    // integrity check and reads as "document not found".
+    {
+      id: 'SCH-PC-G001-v3',
+      data: {
+        id: 'SCH-PC-G001-v3', documentType: 'printing_contract_schedule', documentNumber: 'PC-G001',
+        documentVersion: 3, contractVersion: 3, contentHash: 'c'.repeat(64), hashVersion: 2,
+        verificationToken: S3, issuedAt: '2026-03-01T09:00:00.000Z', status: 'VALID',
+        content: {
+          documentId: 'SCH-PC-G001-v3', documentVersion: 3,
+          contractNumber: 'PC-G001', customerName: 'Contract School', currency: 'MWK',
+          periodStart: '2026-01-05', periodEnd: '2026-12-31', schedule: [{ sequence: 1 }],
+        },
+      },
+    },
+    // A completion receipt is its OWN issued version: its own number, token,
+    // hash and frozen content. The receipt must verify as the receipt, never
+    // as the parent contract.
+    {
+      id: 'PCR-PC-G001-v1',
+      data: {
+        id: 'PCR-PC-G001-v1', documentType: 'printing_contract_completion_receipt',
+        documentNumber: 'PCR-PC-G001', contractNumber: 'PC-G001', assessmentItemId: 'A-G001-1',
+        documentVersion: 1, contentHash: 'e'.repeat(64),
+        verificationToken: S5, issuedAt: '2026-03-05T07:45:00.000Z', status: 'VALID',
+        content: {
+          receiptNumber: 'PCR-PC-G001', contractNumber: 'PC-G001', customerName: 'Contract School',
+          schoolName: 'Contract School', date: '2026-03-05', currency: 'MWK',
+          item: { assessmentName: 'Assessment', grade: 'Standard 8', subject: 'All', unitPrice: 5000 },
+          amountDebited: 5000, completedToDate: 1, totalConsumedToDate: 5000, totalAssessments: 2,
+          remainingAssessments: 1, contractValue: 10000, remainingReservedFunds: 5000,
+          unallocatedFunds: 0, walletBalanceAfter: 5000, status: 'VALID',
+        },
+      },
+    },
+  ],
 };
 
 function startStub() {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://stub');
     const table = url.pathname.split('/').pop();
-    if (req.method !== 'GET' || !TABLES[table]) {
+    if (req.method !== 'GET' || !TABLES[table] || MISSING_TABLES.has(table)) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end('{}');
+      res.end('{"code":"PGRST205","message":"Could not find the table in the schema cache"}');
       return;
     }
+    // PostgREST `or` grammar: `(a.eq."1",b.eq."2")` â€” EVERY item in the list
+    // counts, and a row matches when ANY of its fields equals ANY of the
+    // values. The stub honours the whole list (a document may be reachable
+    // under more than one number form).
     const or = url.searchParams.get('or') || '';
     const directContractId = url.searchParams.get('data->>contract_id') || '';
-    const m = or.match(/eq\.([^,)]+)/) || directContractId.match(/^eq\.(.+)$/);
-    let wanted = m ? decodeURIComponent(m[1]) : '';
-    if (wanted.startsWith('"') && wanted.endsWith('"')) wanted = wanted.slice(1, -1);
+    const wanted = Array.from(or.matchAll(/eq\."([^"]*)"/g)).map((m) => m[1]);
+    const wantedUnquoted = wanted.length
+      ? wanted
+      : Array.from(or.matchAll(/eq\.([^,)]+)/g)).map((m) => decodeURIComponent(m[1]));
+    const direct = directContractId.match(/^eq\.(.+)$/);
+    if (direct) wantedUnquoted.push(decodeURIComponent(direct[1]));
     const rows = TABLES[table].filter((r) => {
       const d = r.data || r;
-      return Object.values(d).some((v) => String(v ?? '') === wanted);
+      return Object.values(d).some((v) => wantedUnquoted.includes(String(v ?? '')));
     });
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(rows));
@@ -115,6 +214,22 @@ let app;
 const good = (type, n, t) => `/api/public/documents/verify/${type}/${encodeURIComponent(n)}?t=${t}`;
 
 before(async () => {
+  // Give every versioned schedule fixture a REAL digest, and leave the tampered
+  // fixture with a digest that does not match its content.
+  for (const row of TABLES.contract_documents) {
+    const d = row.data;
+    if (d.documentType === 'printing_contract_schedule') {
+      d.contentHash = integrity.hashScheduleV2(d.content);
+      d.content.contentHash = d.contentHash;
+    }
+    if (d.documentType === 'printing_contract_completion_receipt') {
+      d.contentHash = integrity.hashReceiptContent(d.content);
+      d.content.contentHash = d.contentHash;
+    }
+  }
+  const tampered = TABLES.contract_documents.find((r) => r.data.id === 'SCH-PC-G001-tampered');
+  if (tampered) tampered.data.contentHash = 'f'.repeat(64);
+
   stub = await startStub();
   const port = stub.address().port;
   process.env.SUPABASE_URL = `http://127.0.0.1:${port}`;
@@ -246,36 +361,176 @@ describe('generic document verification', () => {
     assert.equal(so.body.orderNumber, 'SO-G001');
   });
 
-  it('contract schedule + completion receipt verify against the parent contract', async () => {
-    const schedule = await request(app).get(good('printing_contract_schedule', 'PC-G001', TOK));
-    assert.equal(schedule.status, 200);
-    assert.equal(schedule.body.verified, true);
-    assert.equal(schedule.body.documentType, 'printing_contract_schedule');
-    assert.equal(schedule.body.contractNumber, 'PC-G001');
-    assert.equal(schedule.body.status, 'ACTIVE');
+  it('contract schedule verifies as the EXACT issued version, not the parent contract', async () => {
+    // The QR token identifies the version. v2 is the current one.
+    const current = await request(app).get(good('printing_contract_schedule', 'PC-G001', S2));
+    assert.equal(current.status, 200);
+    assert.equal(current.body.verified, true);
+    assert.equal(current.body.documentType, 'printing_contract_schedule');
+    assert.equal(current.body.verificationScope, 'version');
+    assert.equal(current.body.contractNumber, 'PC-G001');
+    assert.equal(current.body.scheduleVersion, 2);
+    assert.equal(current.body.status, 'VALID');
+    assert.equal(current.body.integrity, 'sha256-verified');
+    // The scan result carries the version's OWN identity and the digest of
+    // its frozen content: the document id is NOT printed on the schedule, so
+    // this is where the customer reads it, and the digest is what the printed
+    // "Content hash" can be compared against.
+    assert.equal(current.body.documentId, 'SCH-PC-G001-v2');
+    assert.match(String(current.body.contentHash || ''), /^[0-9a-f]{64}$/);
 
-    // Receipt official number is PCR-<contract number>; the lookup
-    // normalizes the prefix away before matching the contract row.
+    // Same number, different token â†’ a DIFFERENT version, reported honestly.
+    const superseded = await request(app).get(good('printing_contract_schedule', 'PC-G001', S1));
+    assert.equal(superseded.status, 200);
+    assert.equal(superseded.body.scheduleVersion, 1);
+    assert.equal(superseded.body.status, 'SUPERSEDED');
+
+    const voided = await request(app).get(good('printing_contract_schedule', 'PC-G001', S3));
+    assert.equal(voided.status, 200);
+    assert.equal(voided.body.scheduleVersion, 3);
+    assert.equal(voided.body.status, 'VOID');
+
+    // Hyphenated QR slug (what the printed QR actually encodes).
+    const hyphenSchedule = await request(app).get(good('printing-contract-schedule', 'PC-G001', S2));
+    assert.equal(hyphenSchedule.status, 200);
+    assert.equal(hyphenSchedule.body.documentType, 'printing_contract_schedule');
+    assert.equal(hyphenSchedule.body.scheduleVersion, 2);
+  });
+
+  it('legacy contract-token schedule QR resolves as contract-scope, never as a version', async () => {
+    // Schedules printed before per-version documents encoded the CONTRACT token.
+    // They must still verify â€” but they must not claim to be a version match.
+    const legacy = await request(app).get(good('printing_contract_schedule', 'PC-G001', TOK));
+    assert.equal(legacy.status, 200);
+    assert.equal(legacy.body.verified, true);
+    assert.equal(legacy.body.verificationScope, 'contract');
+    assert.equal(legacy.body.contractNumber, 'PC-G001');
+    assert.equal(legacy.body.status, 'ACTIVE');
+    assert.equal(legacy.body.scheduleVersion, undefined);
+    // No fund amounts are disclosed to an unauthenticated caller.
+    assert.equal(legacy.body.prepaidTotal, undefined);
+    assert.equal(legacy.body.totalAssessments, undefined);
+  });
+
+  it('rejects a version whose frozen content no longer matches its digest', async () => {
+    // The row's token is valid and its status is VALID, but the content hash is
+    // wrong: integrity fails closed rather than reporting a tampered document.
+    const res = await request(app).get(good('printing_contract_schedule', 'PC-TAMPER', S4));
+    assert.equal(res.status, 404);
+    assert.equal(res.body.verified, false);
+    assert.ok(!JSON.stringify(res.body).includes(S4));
+  });
+
+  it('keeps legacy verification working when contract_documents is not deployed', async () => {
+    MISSING_TABLES.add('contract_documents');
+    try {
+      // The contract still verifies at contract scope from assessment_contracts.
+      const legacy = await request(app).get(good('printing_contract_schedule', 'PC-G001', TOK));
+      assert.equal(legacy.status, 200);
+      assert.equal(legacy.body.verificationScope, 'contract');
+      assert.equal(legacy.body.status, 'ACTIVE');
+
+      // A per-version token cannot resolve without the version table: fail
+      // closed, never fall back to presenting live contract data as a version.
+      const version = await request(app).get(good('printing_contract_schedule', 'PC-G001', S2));
+      assert.equal(version.status, 404);
+      assert.equal(version.body.verified, false);
+    } finally {
+      MISSING_TABLES.delete('contract_documents');
+    }
+  });
+
+  it('distinguishes a missing schema from an invalid token internally', async () => {
+    // Direct service call (the public route intentionally collapses both into a
+    // generic 404). `reason` is internal diagnostics only.
+    const { verifyDocument } = require('../services/documentVerificationService.cjs');
+    const missingGet = async () => {
+      const err = new Error('missing');
+      err.response = { status: 404, data: { code: 'PGRST205' } };
+      throw err;
+    };
+    const missing = await verifyDocument('printing_contract_schedule', 'PC-G001', S2, { httpGet: missingGet });
+    assert.equal(missing.ok, false);
+    assert.equal(missing.reason, 'table_missing');
+
+    // Schema present, rows found, token wrong â†’ token_mismatch, not table_missing.
+    const stubGet = async (url, config) => {
+      const table = String(url).split('/').pop();
+      return { data: (TABLES[table] || []).filter((r) => {
+        const d = r.data || r;
+        return Object.values(d).some((v) => String(v ?? '').includes('PC-G001'));
+      }) };
+    };
+    const mismatch = await verifyDocument('printing_contract_schedule', 'PC-G001', BAD, { httpGet: stubGet });
+    assert.equal(mismatch.ok, false);
+    assert.equal(mismatch.reason, 'token_mismatch');
+  });
+
+  it('contract schedule rejects a wrong token or a mismatched number', async () => {
+    const badTok = await request(app).get(good('printing_contract_schedule', 'PC-G001', BAD));
+    assert.equal(badTok.status, 404);
+    // A valid version token presented against a different number must not leak.
+    const mismatched = await request(app).get(good('printing_contract_schedule', 'PC-9999', S2));
+    assert.equal(mismatched.status, 404);
+    for (const r of [badTok, mismatched]) {
+      assert.equal(r.body.verified, false);
+      assert.ok(!JSON.stringify(r.body).includes(S2));
+    }
+  });
+
+  it('a schedule whose content carries the issued identity still verifies', async () => {
+    // The client injects `documentId` / `documentVersion` into the content
+    // AFTER hashing it (the version number is allocated once the digest is
+    // known), so the digest EXCLUDES them. The server must accept that shape:
+    // otherwise every schedule issued by a newer client fails its integrity
+    // check and a scanner is told "document not found".
+    const res = await request(app).get(good('printing_contract_schedule', 'PC-G001', S3));
+    assert.equal(res.status, 200);
+    assert.equal(res.body.verified, true);
+    assert.equal(res.body.documentId, 'SCH-PC-G001-v3');
+    assert.equal(res.body.scheduleVersion, 3);
+    assert.equal(res.body.integrity, 'sha256-verified');
+  });
+
+  it('completion receipt verifies as ITS OWN issued receipt, not as the contract', async () => {
+    const res = await request(app).get(good('printing_contract_completion_receipt', 'PCR-PC-G001', S5));
+    assert.equal(res.status, 200);
+    assert.equal(res.body.verified, true);
+    assert.equal(res.body.documentType, 'printing_contract_completion_receipt');
+    assert.equal(res.body.verificationScope, 'version');
+    assert.equal(res.body.documentId, 'PCR-PC-G001-v1');
+    assert.equal(res.body.receiptNumber, 'PCR-PC-G001');
+    assert.equal(res.body.contractNumber, 'PC-G001');
+    assert.equal(res.body.integrity, 'sha256-verified');
+    // The RECEIPT's own facts, not the parent contract's.
+    assert.equal(res.body.amountDebited, 5000);
+    assert.equal(res.body.completedToDate, 1);
+    assert.equal(res.body.remainingAssessments, 1);
+    assert.equal(res.body.remainingReservedFunds, 5000);
+    assert.equal(res.body.assessmentName, 'Assessment - Standard 8 - All');
+    // The parent contract's prepaid total is NOT the receipt's story.
+    assert.equal(res.body.prepaidTotal, undefined);
+  });
+
+  it('completion receipt verifies against the parent contract', async () => {
+    // The LEGACY shape: a receipt printed before per-version documents existed
+    // encoded the contract's number and token, so the contract is affirmed and
+    // no receipt version is claimed.
     const receipt = await request(app).get(good('printing_contract_completion_receipt', 'PCR-PC-G001', TOK));
     assert.equal(receipt.status, 200);
     assert.equal(receipt.body.verified, true);
     assert.equal(receipt.body.documentType, 'printing_contract_completion_receipt');
     assert.equal(receipt.body.receiptNumber, 'PCR-PC-G001');
     assert.equal(receipt.body.contractNumber, 'PC-G001');
+    assert.equal(receipt.body.verificationScope, 'contract');
 
-    // Hyphenated QR slugs (what the printed QR actually encodes).
-    const hyphenSchedule = await request(app).get(good('printing-contract-schedule', 'PC-G001', TOK));
-    assert.equal(hyphenSchedule.status, 200);
-    assert.equal(hyphenSchedule.body.documentType, 'printing_contract_schedule');
     const hyphenReceipt = await request(app).get(good('printing-contract-completion-receipt', 'PCR-PC-G001', TOK));
     assert.equal(hyphenReceipt.status, 200);
     assert.equal(hyphenReceipt.body.documentType, 'printing_contract_completion_receipt');
 
-    // Wrong token / wrong number stay generic 404s.
+    // Wrong token stays a generic 404.
     const badTok = await request(app).get(good('printing_contract_completion_receipt', 'PCR-PC-G001', BAD));
     assert.equal(badTok.status, 404);
-    const badNum = await request(app).get(good('printing_contract_schedule', 'PC-9999', TOK));
-    assert.equal(badNum.status, 404);
   });
 
   it('completion receipt reports 1 / 4 completed and 3 remaining from assessment records', async () => {
@@ -397,6 +652,22 @@ describe('generic document verification', () => {
       'currency', 'subtotal', 'tax', 'total', 'amount', 'amountPaid', 'balanceDue',
       'openingBalance', 'totalInvoiced', 'totalReceived', 'closingBalance',
       'paymentMethod', 'reference', 'validUntil', 'status',
+      // Schedule version identity: which issued version the QR points at, and
+      // whether that reference is a version or a legacy parent-contract link.
+      'verificationScope', 'scheduleVersion', 'issuedAt', 'periodStart', 'periodEnd',
+      // The issued version's own identity and the digest of its frozen
+      // content. Both are what the customer reads AFTER scanning the QR (they
+      // are deliberately not printed on the schedule), and the digest is the
+      // one printed on the document, so the two can be compared.
+      'documentId', 'contentHash',
+      // Completion receipt: what the receipt closed and the position it left
+      // behind. The receipt is its own issued version, never the parent
+      // contract.
+      'assessmentName', 'amountDebited', 'completedToDate', 'totalConsumedToDate',
+      'remainingAssessments', 'remainingReservedFunds', 'unallocatedFunds',
+      'contractValue', 'walletBalanceAfter', 'schoolName', 'receiptNumber',
+      // Server-side content integrity of the exact frozen version.
+      'integrity',
       // Statement account scope (branch isolation). These three keys let a
       // verifier distinguish a BRANCH statement from the Main statement. The
       // stable branch id travels inside `branchKey` (`id:<branchId>`), so no
@@ -408,10 +679,11 @@ describe('generic document verification', () => {
       ['invoice', 'INV-G001'], ['receipt', 'PAY-G001'], ['quotation', 'QTN-G001'],
       ['sales_order', 'SO-G001'], ['purchase_order', 'PO-G001'], ['delivery_note', 'DN-G001'],
       ['supplier_payment', 'SPAY-G001'], ['statement', 'STMT-G001'], ['statement', 'STMT-G003'], ['printing_contract', 'PC-G001'],
-      ['printing_contract_schedule', 'PC-G001'], ['printing_contract_completion_receipt', 'PCR-PC-G001'],
+      ['printing_contract_schedule', 'PC-G001'], ['printing_contract_schedule', 'PC-G001', S2],
+      ['printing_contract_completion_receipt', 'PCR-PC-G001'],
     ];
-    for (const [type, num] of cases) {
-      const res = await request(app).get(good(type, num, TOK));
+    for (const [type, num, tok = TOK] of cases) {
+      const res = await request(app).get(good(type, num, tok));
       assert.equal(res.status, 200, type);
       for (const key of Object.keys(res.body)) assert.ok(allowed.has(key), `${type}: unexpected key ${key}`);
       const blob = JSON.stringify(res.body).toLowerCase();

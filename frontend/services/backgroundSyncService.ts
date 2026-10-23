@@ -1,5 +1,5 @@
 import { durableSyncQueue, quarantineOperationsMissingGeneration, classifyError, QueuedOperation, QueueMetrics, releaseSendClaim, releaseAllSendClaims, BACKGROUND_SEND_OWNER } from './durableSyncQueue';
-import { sendSyncOps, SyncOp, SyncOpResult, SyncAuthError } from './syncApiClient';
+import { sendSyncOps, SyncOp, SyncOpResult, SyncAuthError, DOCUMENT_CLIENT_CAPABILITY } from './syncApiClient';
 import { traceExamInvoice } from '../utils/examinationInvoiceDiag';
 import { resolvePushConflict } from './syncConflictResolver';
 import { cloudDb } from './cloudDb';
@@ -463,6 +463,11 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
           operation: item.operation === 'delete' ? 'delete' : 'upsert',
           payload: item.payload,
           syncGeneration: item.syncGeneration,
+          // The document write protocol this client implements. The gateway
+          // refuses contract-document writes from a client below the
+          // capability the server requires, so an out-of-date device is told
+          // to upgrade instead of failing opaquely in the database.
+          clientCapabilityVersion: DOCUMENT_CLIENT_CAPABILITY,
         },
       });
     }
