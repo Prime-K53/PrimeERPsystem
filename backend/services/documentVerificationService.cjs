@@ -51,6 +51,69 @@ function sanitizeDocumentNumber(value) {
   return v;
 }
 
+/**
+ * Completion progress for a printing contract.
+ *
+ * Completed means a genuinely consumed assessment. Reserved (not yet
+ * completed), cancelled, released/reversed, voided, pending and soft-deleted
+ * rows do not count. Rows are de-duplicated by their canonical item id so a
+ * duplicate delivery cannot inflate the count. The contractual total is
+ * `max_assessments`; a zero/missing total is valid and resolves to 0 / 0.
+ *
+ * The count is derived from assessment_contract_items (the authoritative
+ * assessment records), never from prepaid/consumed monetary amounts, payment
+ * status, invoice counts or receipt counts.
+ */
+async function assessmentProgress(contract, httpGet) {
+  const total = Math.max(0, Math.floor(Number(contract.max_assessments) || 0));
+  const contractId = String(contract.id || '').trim();
+  if (!contractId) return null;
+
+  const { base, key } = getConfig();
+  if (!base || !key) return null;
+
+  const get = httpGet || axios;
+  let rows;
+  try {
+    const { data } = await get(`${base}/rest/v1/assessment_contract_items`, {
+      params: {
+        select: 'id,data',
+        'data->>contract_id': `eq.${contractId}`,
+        limit: 1000,
+      },
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+      timeout: 15000,
+    });
+    if (!Array.isArray(data)) return null;
+    rows = data;
+  } catch {
+    // Verification must still work if the progress roll-up is unavailable.
+    // The public view omits the progress rows rather than inventing a count.
+    return null;
+  }
+
+  const seen = new Set();
+  let consumed = 0;
+  for (const row of rows) {
+    const item = (row && row.data) || row || {};
+    if (String(item.contract_id || '') !== contractId) continue;
+    if (item.deleted === true || item.deleted === 'true' || item.deleted_at || item.deletedAt) continue;
+    const itemId = String((row && row.id) || item.id || '');
+    if (itemId) {
+      if (seen.has(itemId)) continue;
+      seen.add(itemId);
+    }
+    if (String(item.status || '').trim().toLowerCase() === 'consumed') consumed += 1;
+  }
+
+  const completed = total === 0 ? 0 : Math.min(consumed, total);
+  return {
+    totalAssessments: total,
+    completedToDate: completed,
+    remainingAssessments: Math.max(0, total - completed),
+  };
+}
+
 function timingSafeEqualHex(a, b) {
   try {
     const da = crypto.createHash('sha256').update(String(a || ''), 'utf8').digest();
@@ -381,19 +444,23 @@ const REGISTRY = {
       return s.toUpperCase();
     },
     terminalInvalid: (status) => status === 'CANCELLED',
-    toSafe: (c, company, status) => ({
-      verified: true,
-      documentType: 'printing_contract_completion_receipt',
-      receiptNumber: `PCR-${String(c.contract_number || '')}`,
-      contractNumber: String(c.contract_number || ''),
-      contractDate: String(c.starts_at || c.created_at || ''),
-      companyName: String(c.companyName || company),
-      customerName: customerNameOf(c),
-      currency: String(c.currency || 'MWK'),
-      prepaidTotal: Number(c.prepaid_amount ?? 0),
-      totalAssessments: Number(c.max_assessments ?? 0),
-      status,
-    }),
+    toSafe: async (c, company, status, deps) => {
+      const progress = await assessmentProgress(c, deps && deps.httpGet);
+      return {
+        verified: true,
+        documentType: 'printing_contract_completion_receipt',
+        receiptNumber: `PCR-${String(c.contract_number || '')}`,
+        contractNumber: String(c.contract_number || ''),
+        contractDate: String(c.starts_at || c.created_at || ''),
+        companyName: String(c.companyName || company),
+        customerName: customerNameOf(c),
+        currency: String(c.currency || 'MWK'),
+        // The prepaid amount is an accounting figure, not completion
+        // progress. It is deliberately absent from this safe shape.
+        ...(progress || {}),
+        status,
+      };
+    },
   },
 };
 
@@ -474,7 +541,7 @@ async function verifyDocument(documentType, documentNumber, token, deps) {
   }
   const match = matchRow(documentType, clean, rows, supplied);
   if (!match) return { ok: false };
-  return { ok: true, data: entry.toSafe(match, getConfig().company, entry.statusOf(match)) };
+  return { ok: true, data: await entry.toSafe(match, getConfig().company, entry.statusOf(match), deps) };
 }
 
 /**

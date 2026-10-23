@@ -54,8 +54,35 @@ const TABLES = {
     { id: 'STMT-G003', data: { id: 'STMT-G003', statementNumber: 'STMT-G003', statementDate: '2026-09-12', periodStart: '2026-08-01', periodEnd: '2026-08-31', customerId: 'CUST-1', customerName: 'Stmt School', currency: 'MWK', openingBalance: 0, transactions: [], totalInvoiced: 10, totalReceived: 0, closingBalance: 10, branchKey: 'id:SUB-A', branchLabel: 'Exam Centre', status: 'VALID', verificationToken: TOK } },
   ],
   assessment_contracts: [
-    { data: { id: 'c-g001', contract_number: 'PC-G001', starts_at: '2026-01-05', customer_id: 'CUST-1', customerName: 'Contract School', currency: 'MWK', prepaid_amount: 5000, status: 'active', verificationToken: TOK } },
-    { data: { id: 'c-g002', contract_number: 'PC-G002', starts_at: '2026-01-05', customer_id: 'CUST-1', customerName: 'Void School', currency: 'MWK', prepaid_amount: 1000, status: 'cancelled', verificationToken: TOK } },
+    { data: { id: 'c-g001', contract_number: 'PC-G001', starts_at: '2026-01-05', customer_id: 'CUST-1', customerName: 'Contract School', currency: 'MWK', prepaid_amount: 5000, max_assessments: 4, status: 'active', verificationToken: TOK } },
+    { data: { id: 'c-g002', contract_number: 'PC-G002', starts_at: '2026-01-05', customer_id: 'CUST-1', customerName: 'Void School', currency: 'MWK', prepaid_amount: 1000, max_assessments: 4, status: 'cancelled', verificationToken: TOK } },
+    { data: { id: 'c-g003', contract_number: 'PC-G003', starts_at: '2026-01-05', customer_id: 'CUST-1', customerName: 'Complete School', currency: 'MWK', prepaid_amount: 8000, max_assessments: 4, status: 'active', verificationToken: TOK } },
+    { data: { id: 'c-g004', contract_number: 'PC-G004', starts_at: '2026-01-05', customer_id: 'CUST-1', customerName: 'New School', currency: 'MWK', prepaid_amount: 8000, max_assessments: 4, status: 'active', verificationToken: TOK } },
+    { data: { id: 'c-g005', contract_number: 'PC-G005', starts_at: '2026-01-05', customer_id: 'CUST-1', customerName: 'Mixed School', currency: 'MWK', prepaid_amount: 8000, max_assessments: 4, status: 'active', verificationToken: TOK } },
+    { data: { id: 'c-g006', contract_number: 'PC-G006', starts_at: '2026-01-05', customer_id: 'CUST-1', customerName: 'Zero School', currency: 'MWK', prepaid_amount: 0, max_assessments: 0, status: 'active', verificationToken: TOK } },
+    { data: { id: 'c-g007', contract_number: 'PC-G007', starts_at: '2026-01-05', customer_id: 'CUST-1', customerName: 'Missing Total School', currency: 'MWK', prepaid_amount: 0, status: 'active', verificationToken: TOK } },
+  ],
+  assessment_contract_items: [
+    { id: 'i-g001-1', data: { id: 'i-g001-1', contract_id: 'c-g001', status: 'consumed', item_price: 1250 } },
+    { id: 'i-g001-2', data: { id: 'i-g001-2', contract_id: 'c-g001', status: 'reserved', item_price: 1250 } },
+    { id: 'i-g001-3', data: { id: 'i-g001-3', contract_id: 'c-g001', status: 'reserved', item_price: 1250 } },
+    { id: 'i-g001-4', data: { id: 'i-g001-4', contract_id: 'c-g001', status: 'reserved', item_price: 1250 } },
+    { id: 'i-g002-1', data: { id: 'i-g002-1', contract_id: 'c-g002', status: 'consumed', item_price: 250 } },
+    { id: 'i-g003-1', data: { id: 'i-g003-1', contract_id: 'c-g003', status: 'consumed' } },
+    { id: 'i-g003-2', data: { id: 'i-g003-2', contract_id: 'c-g003', status: 'CONSUMED' } },
+    { id: 'i-g003-3', data: { id: 'i-g003-3', contract_id: 'c-g003', status: 'consumed' } },
+    { id: 'i-g003-4', data: { id: 'i-g003-4', contract_id: 'c-g003', status: 'consumed' } },
+    { id: 'i-g005-1', data: { id: 'i-g005-1', contract_id: 'c-g005', status: 'consumed' } },
+    // Duplicate delivery of the same canonical item must not be counted twice.
+    { id: 'i-g005-1', data: { id: 'i-g005-1', contract_id: 'c-g005', status: 'consumed' } },
+    { id: 'i-g005-2', data: { id: 'i-g005-2', contract_id: 'c-g005', status: 'reserved' } },
+    { id: 'i-g005-3', data: { id: 'i-g005-3', contract_id: 'c-g005', status: 'cancelled' } },
+    { id: 'i-g005-4', data: { id: 'i-g005-4', contract_id: 'c-g005', status: 'reversed' } },
+    { id: 'i-g005-5', data: { id: 'i-g005-5', contract_id: 'c-g005', status: 'released' } },
+    { id: 'i-g005-6', data: { id: 'i-g005-6', contract_id: 'c-g005', status: 'pending' } },
+    { id: 'i-g005-7', data: { id: 'i-g005-7', contract_id: 'c-g005', status: 'consumed', deleted: true } },
+    { id: 'i-g006-1', data: { id: 'i-g006-1', contract_id: 'c-g006', status: 'consumed' } },
+    { id: 'i-g007-1', data: { id: 'i-g007-1', contract_id: 'c-g007', status: 'consumed' } },
   ],
 };
 
@@ -69,7 +96,8 @@ function startStub() {
       return;
     }
     const or = url.searchParams.get('or') || '';
-    const m = or.match(/eq\.([^,)]+)/);
+    const directContractId = url.searchParams.get('data->>contract_id') || '';
+    const m = or.match(/eq\.([^,)]+)/) || directContractId.match(/^eq\.(.+)$/);
     let wanted = m ? decodeURIComponent(m[1]) : '';
     if (wanted.startsWith('"') && wanted.endsWith('"')) wanted = wanted.slice(1, -1);
     const rows = TABLES[table].filter((r) => {
@@ -250,6 +278,61 @@ describe('generic document verification', () => {
     assert.equal(badNum.status, 404);
   });
 
+  it('completion receipt reports 1 / 4 completed and 3 remaining from assessment records', async () => {
+    const res = await request(app).get(good('printing_contract_completion_receipt', 'PCR-PC-G001', TOK));
+    assert.equal(res.status, 200);
+    assert.equal(res.body.totalAssessments, 4);
+    assert.equal(res.body.completedToDate, 1);
+    assert.equal(res.body.remainingAssessments, 3);
+    assert.equal(res.body.prepaidTotal, undefined);
+  });
+
+  it('completion receipt reports 4 / 4 and 0 remaining when every assessment is consumed', async () => {
+    const res = await request(app).get(good('printing_contract_completion_receipt', 'PCR-PC-G003', TOK));
+    assert.equal(res.status, 200);
+    assert.equal(res.body.totalAssessments, 4);
+    assert.equal(res.body.completedToDate, 4);
+    assert.equal(res.body.remainingAssessments, 0);
+    assert.equal(res.body.prepaidTotal, undefined);
+  });
+
+  it('completion receipt reports 0 / 4 and 4 remaining when nothing is consumed', async () => {
+    const res = await request(app).get(good('printing_contract_completion_receipt', 'PCR-PC-G004', TOK));
+    assert.equal(res.status, 200);
+    assert.equal(res.body.totalAssessments, 4);
+    assert.equal(res.body.completedToDate, 0);
+    assert.equal(res.body.remainingAssessments, 4);
+    assert.equal(res.body.prepaidTotal, undefined);
+  });
+
+  it('completion progress excludes cancelled, reversed, released, pending, deleted and duplicate rows', async () => {
+    const res = await request(app).get(good('printing_contract_completion_receipt', 'PCR-PC-G005', TOK));
+    assert.equal(res.status, 200);
+    assert.equal(res.body.totalAssessments, 4);
+    assert.equal(res.body.completedToDate, 1);
+    assert.equal(res.body.remainingAssessments, 3);
+    assert.equal(res.body.prepaidTotal, undefined);
+  });
+
+  it('completion progress handles a zero or missing contractual total safely', async () => {
+    for (const number of ['PCR-PC-G006', 'PCR-PC-G007']) {
+      const res = await request(app).get(good('printing_contract_completion_receipt', number, TOK));
+      assert.equal(res.status, 200, number);
+      assert.equal(res.body.totalAssessments, 0, number);
+      assert.equal(res.body.completedToDate, 0, number);
+      assert.equal(res.body.remainingAssessments, 0, number);
+      assert.ok(!/NaN|Infinity/i.test(JSON.stringify(res.body)), number);
+      assert.equal(res.body.prepaidTotal, undefined, number);
+    }
+  });
+
+  it('ordinary printing contract keeps its prepaid total', async () => {
+    const res = await request(app).get(good('printing_contract', 'PC-G001', TOK));
+    assert.equal(res.status, 200);
+    assert.equal(res.body.prepaidTotal, 5000);
+    assert.equal(res.body.totalAssessments, 4);
+  });
+
   it('cancelled printing contract verifies as authentic with CANCELLED status', async () => {
     const res = await request(app).get(good('printing_contract', 'PC-G002', TOK));
     assert.equal(res.status, 200);
@@ -309,6 +392,7 @@ describe('generic document verification', () => {
       'deliveryNoteNumber', 'deliveryDate', 'paymentNumber', 'paymentDate',
       'statementNumber', 'statementDate', 'statementPeriodStart', 'statementPeriodEnd',
       'contractNumber', 'contractDate', 'prepaidTotal', 'totalAssessments',
+      'completedToDate', 'remainingAssessments',
       'companyName', 'customerName', 'supplierName',
       'currency', 'subtotal', 'tax', 'total', 'amount', 'amountPaid', 'balanceDue',
       'openingBalance', 'totalInvoiced', 'totalReceived', 'closingBalance',
