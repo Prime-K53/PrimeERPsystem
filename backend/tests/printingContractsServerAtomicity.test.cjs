@@ -29,9 +29,9 @@ describe('migration 0048 server atomicity', () => {
     expect(sql).toMatch(/is_contract_date_in_closed_fy/);
   });
 
-  test('documents rollback and non-application to production', () => {
+  test('documents rollback and applied status', () => {
     expect(sql).toMatch(/Rollback/i);
-    expect(sql).toMatch(/NOT APPLIED TO PRODUCTION/i);
+    expect(sql).toMatch(/STATUS:\s*APPLIED/i);
   });
 });
 
@@ -46,9 +46,9 @@ describe('migration 0049 immutable contract documents', () => {
     expect(sql).toMatch(/uq_contract_documents_receipt_item/);
   });
 
-  test('documents rollback and non-application to production', () => {
+  test('documents rollback and applied status', () => {
     expect(sql).toMatch(/Rollback/i);
-    expect(sql).toMatch(/NOT APPLIED TO PRODUCTION/i);
+    expect(sql).toMatch(/STATUS:\s*APPLIED/i);
   });
 });
 

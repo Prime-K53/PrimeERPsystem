@@ -1,6 +1,28 @@
 -- ============================================================
 -- 0019_printing_contracts.sql
 --
+-- STATUS: SUPERSEDED / PARTIALLY OBSOLETE — DO NOT RE-RUN (2026-10-23).
+--
+-- The parts of this migration that the application actually depends on are
+-- already satisfied live:
+--   * assessment_contract_items.job_order_id and
+--     examination_printing_batch_id exist, with their indexes and FKs.
+--   * The assessment_contract_items updated_at trigger exists.
+--   * RLS is enabled on the contract tables.
+--
+-- The remaining DDL is obsolete under the deployed envelope model:
+--   * public.job_orders is envelope-only (id, data, version, ...). Its flat
+--     contract_assessment_id column, idx_job_orders_contract_assessment index
+--     and fk_job_orders_contract_assessment FK are unused: the app links job
+--     orders to contracts through the JSONB payload.
+--   * The "tenant_isolation_policy" block conflicts with the live
+--     allow_all_job_orders policy set (superseded RLS approach). Re-adding it
+--     would make job_orders reads return nothing for direct REST clients.
+--
+-- Superseded by: 0039_printing_contracts_envelope_sync.sql,
+--                0048_printing_contracts_server_atomicity.sql,
+--                0049_contract_documents.sql, 0052-0056.
+--
 -- Prime ERP Phase 3: Printing Contracts Integration
 -- Integrates existing assessment_contracts tables into the
 -- frontend, sync gateway, and application layer.

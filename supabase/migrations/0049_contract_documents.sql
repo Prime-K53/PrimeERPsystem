@@ -8,7 +8,9 @@
 --
 -- Each issue is a NEW row (never an overwrite). Superseded schedules stay
 -- verifiable as SUPERSEDED under their own number/version/token/hash.
--- NOT APPLIED TO PRODUCTION by this change — prepared and tested locally only.
+-- STATUS: APPLIED to the live project rdtuzuzehfbwvfdzqliw.
+-- Its number-keyed identity index and permissive RLS policy were later
+-- replaced by 0052 and 0054 respectively; both replacements are applied.
 -- Rollback: DROP TABLE IF EXISTS public.contract_documents;
 -- ============================================================================
 

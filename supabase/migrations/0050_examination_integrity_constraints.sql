@@ -5,7 +5,7 @@
 -- idempotent (IF NOT EXISTS), so it is safe to run against a live database that
 -- already carries examination data.
 --
--- NOT APPLIED TO PRODUCTION by this change — apply during a maintenance window.
+-- APPLIED to live project rdtuzuzehfbwvfdzqliw (verified 2026-10-23).
 -- Rollback: drop the three indexes created below (see the ROLLBACK footer).
 --
 -- Context

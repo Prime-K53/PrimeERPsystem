@@ -1,7 +1,10 @@
 -- ============================================================================
 -- 0054_contract_documents_rls_hardening.sql
 --
--- The RLS half of migration 0052, applied on its own and NOW.
+-- APPLIED to live project rdtuzuzehfbwvfdzqliw on 2026-10-23.
+--
+-- The RLS half of migration 0052, applied on its own first so the direct
+-- write path was closed before the identity/immutability work landed.
 --
 -- WHY IT IS SPLIT OUT
 --   0052 bundles four changes. Three of them — the identity index swap, the
@@ -21,14 +24,20 @@
 --              not exist yet (id=SCH-...-v1)
 --
 --   Reproduced against a real PostgreSQL with 0049 + 0052 + 0053 applied: the
---   deployed client's write sequence is REJECTED, the Phase 2D (insert-first)
---   sequence is ACCEPTED. Applying 0052 before the client is deployed would
---   break every schedule re-issue. 0052 and 0053 therefore stay unapplied
---   until the client and the backend guard are deployed, in their prescribed
---   order: client -> backend -> required_client_capability -> 0052 -> 0053.
+--   supersede-first client's write sequence is REJECTED, the Phase 2D
+--   (insert-first) sequence is ACCEPTED. Applying 0052 before the client is
+--   deployed would break every schedule re-issue. 0052 and 0053 therefore
+--   stayed unapplied until the client and the backend guard were deployed, in
+--   their prescribed order: client -> backend -> required_client_capability
+--   -> 0052 -> 0053.
+--
+--   That precondition is now met: frontend/services/contractDocumentService.ts
+--   inserts the replacement before superseding the previous version, and the
+--   live preflight was clean, so 0052 and 0053 were applied on 2026-10-23
+--   immediately after this migration.
 --
 --   The RLS change does NOT depend on the client protocol, and it closes a
---   live integrity hole. It is safe on its own, so it lands now.
+--   live integrity hole. It is safe on its own, so it landed first.
 --
 -- THE HOLE THIS CLOSES
 --   0049 created, on public.contract_documents:

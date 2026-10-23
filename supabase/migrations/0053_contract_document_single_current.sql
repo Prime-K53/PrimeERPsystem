@@ -1,7 +1,9 @@
 -- ============================================================================
 -- 0053_contract_document_single_current.sql
 --
--- PROPOSED — NOT APPLIED. Prepared for review only (Phase 2F).
+-- APPLIED to live project rdtuzuzehfbwvfdzqliw on 2026-10-23, immediately
+-- after 0052. The insert-first client ordering required by 0052 is already
+-- present in frontend/services/contractDocumentService.ts.
 --
 -- WHY THIS IS A SEPARATE MIGRATION
 --   The "at most one current schedule per contract" rule depends on the ORDER

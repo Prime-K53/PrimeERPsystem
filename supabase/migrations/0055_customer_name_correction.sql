@@ -1,4 +1,5 @@
 -- 0055_customer_name_correction.sql
+-- APPLIED to live project rdtuzuzehfbwvfdzqliw on 2026-10-23.
 -- Two fixes in one migration:
 --   1. Normalise the customer display name for CUST-0072 to "Nadzikhale
 --      Primary School" across name / businessName / companyName in the

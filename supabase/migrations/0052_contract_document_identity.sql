@@ -1,9 +1,11 @@
 -- ============================================================================
 -- 0052_contract_document_identity.sql
 --
--- PROPOSED — NOT APPLIED. Prepared for review only (Phase 2F). Do NOT run this
--- against production without the deployment sequence in the report and the
--- preflight queries passing.
+-- APPLIED to live project rdtuzuzehfbwvfdzqliw on 2026-10-23.
+-- The insert-first client (frontend/services/contractDocumentService.ts) was
+-- confirmed deployed and the live preflight passed: 5 rows, 0 duplicate
+-- schedule identities, 0 non-canonical rows, 0 contracts with multiple VALID
+-- schedules. 0053 was applied immediately after this migration.
 --
 -- SCOPE
 --   This migration does FOUR things and nothing else:

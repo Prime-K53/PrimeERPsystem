@@ -5,9 +5,7 @@
 -- Additive only, idempotent (IF NOT EXISTS / OR REPLACE), wrapped in BEGIN/COMMIT
 -- so a failure leaves nothing half-written.
 --
--- NOT APPLIED TO PRODUCTION by this change. Apply only after running the
--- PRE-FLIGHT block in 0050 against a disposable copy of production-shaped data
--- and after the integration suite passes against real PostgreSQL.
+-- APPLIED to live project rdtuzuzehfbwvfdzqliw (verified 2026-10-23).
 --
 -- Why this exists
 -- ---------------

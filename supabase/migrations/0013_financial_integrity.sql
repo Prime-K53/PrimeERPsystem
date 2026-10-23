@@ -1,5 +1,34 @@
 -- =============================================================================
 -- 0013_financial_integrity.sql
+--
+-- ###########################################################################
+-- #  DO NOT APPLY — OBSOLETE AGAINST THE LIVE DATA MODEL (verified 2026-10-23)
+-- #
+-- #  This migration was written against an assumed schema that the deployed
+-- #  application does not use. It is kept for provenance only.
+-- #
+-- #  Why it must not be applied:
+-- #    1. fn_invoice_recompute_paid() derives invoices.paidAmount from
+-- #       payment_allocation_lines JOIN payment_allocations. BOTH TABLES ARE
+-- #       EMPTY live (0 rows), while invoices holds 104 rows with real
+-- #       paidAmount values. Any INSERT/UPDATE on invoices would therefore
+-- #       recompute paidAmount to 0 and corrupt every invoice balance.
+-- #    2. fn_coa_recompute_balance() targets public.chart_of_accounts, which is
+-- #       EMPTY live (0 rows). The application's chart of accounts is
+-- #       public.accounts (71 rows). The trigger would never see real data.
+-- #    3. The ledger triggers assume ledger_entries.data->>'accountId'. Live
+-- #       ledger_entries (330 rows) use debitAccountId / creditAccountId, so
+-- #       the triggers would read NULL and no-op or mis-post.
+-- #    4. The application does not write payment_allocations or
+-- #       payment_allocation_lines at all (no references in frontend/services).
+-- #       Its financial invariants are enforced client-side by the accounting
+-- #       services, and the cached amounts are authoritative.
+-- #
+-- #  Consequence: applying this file would silently zero invoice balances and
+-- #  install triggers that can never fire correctly. Do not run it on the live
+-- #  project (rdtuzuzehfbwvfdzqliw) or any database derived from it.
+-- ###########################################################################
+--
 -- Prime ERP — Financial integrity hardening (audit fixes F-12, F-21, F-25, F-26).
 --
 -- CONTEXT

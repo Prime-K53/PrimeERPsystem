@@ -1,28 +1,25 @@
 -- =============================================================================
--- Apply 0054_contract_documents_rls_hardening.sql
--- Replace the overly-broad wallet_access_policy with role-scoped policies.
+-- SUPERSEDED — DO NOT USE THIS FILE TO APPLY 0054.
+--
+-- This script was an early draft written for a different table (it drops a
+-- non-existent `wallet_access_policy` and creates wallet_read/wallet_write
+-- policies). It does NOT describe the real 0054 change.
+--
+-- The authoritative migration is:
+--     supabase/migrations/0054_contract_documents_rls_hardening.sql
+--
+-- It was APPLIED to live project rdtuzuzehfbwvfdzqliw on 2026-10-23, and its
+-- post-apply verification is:
+--     supabase/ops/verify_0054_deployment.sql
+--
+-- Apply from the repository root with:
+--     node supabase/ops/run-sql.mjs supabase/migrations/0054_contract_documents_rls_hardening.sql
+--
+-- (SUPABASE_ACCESS_TOKEN must be set in the environment; never commit it.)
+--
+-- Running this file on a database would create the wrong policies (including
+-- an INSERT/UPDATE/DELETE policy for service_role, which already bypasses RLS)
+-- and leave the documented SELECT-only policy set in place only by accident.
 -- =============================================================================
-SET search_path = public;
 
--- 1. Drop the over-broad wallet_access_policy
-DROP POLICY IF EXISTS wallet_access_policy ON public.contract_documents;
-
--- 2. Create scoped policies
---    read: authenticated (dashboard pages)
---    write : service_role (payment-settlement only)
-CREATE POLICY wallet_read
-  ON public.contract_documents
-  FOR SELECT
-  TO authenticated;
-
-CREATE POLICY wallet_write
-  ON public.contract_documents
-  FOR INSERT, UPDATE, DELETE
-  TO service_role
-  WITH CHECK (true);
-
--- 3. Verification: list resulting policies
-SELECT polname, cmd, roles::text AS roles, qual::text AS using_clause
-FROM pg_policies
-WHERE schemaname = 'public' AND tablename = 'contract_documents'
-ORDER BY polname;
+SELECT 'SUPERSEDED: run supabase/migrations/0054_contract_documents_rls_hardening.sql instead' AS notice;

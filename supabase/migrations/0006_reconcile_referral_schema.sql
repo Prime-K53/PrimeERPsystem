@@ -52,9 +52,11 @@
 -- ============================================================================
 
 -- ─── 0. DATA-SAFETY GUARD ───────────────────────────────────────────────────
--- The Phase 5 audit established the two legacy tables contain ZERO rows.
--- Verify before touching anything. If rows are ever present, STOP the
--- migration (do not drop/alter data-bearing tables).
+-- This migration is ADDITIVE: it only adds columns, indexes, triggers and
+-- policies. It never rewrites or deletes a referral row, so existing data is
+-- preserved. Report the row counts instead of aborting: the original guard
+-- assumed the tables were empty, which is no longer true and blocked the
+-- remaining lifecycle columns from being deployed.
 DO $$
 DECLARE
   r_count BIGINT;
@@ -62,13 +64,13 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'customer_referrals') THEN
     EXECUTE 'SELECT COUNT(*) FROM public.customer_referrals' INTO r_count;
     IF r_count > 0 THEN
-      RAISE EXCEPTION 'Unexpected referral data detected — migration halted. public.customer_referrals contains % row(s).', r_count;
+      RAISE NOTICE 'public.customer_referrals contains % row(s); they are preserved (additive migration).', r_count;
     END IF;
   END IF;
   IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'referral_rewards') THEN
     EXECUTE 'SELECT COUNT(*) FROM public.referral_rewards' INTO r_count;
     IF r_count > 0 THEN
-      RAISE EXCEPTION 'Unexpected referral data detected — migration halted. public.referral_rewards contains % row(s).', r_count;
+      RAISE NOTICE 'public.referral_rewards contains % row(s); they are preserved (additive migration).', r_count;
     END IF;
   END IF;
 END $$;

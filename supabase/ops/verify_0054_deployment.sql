@@ -1,6 +1,9 @@
 -- =============================================================================
 -- Post-apply verification for 0054_contract_documents_rls_hardening.sql
--- READ-ONLY. Nothing here writes.
+-- READ-ONLY overall, but sections 3 and 6 deliberately attempt a forbidden
+-- write inside BEGIN … ROLLBACK. RUN THIS FILE AS ONE psql SCRIPT.
+-- Do NOT run it with `run-sql.mjs --each`: splitting the statements would
+-- autocommit the probe UPDATE/INSERT instead of rolling it back.
 -- =============================================================================
 
 \echo '--- 1. the policy set (must be exactly one row) ---'
@@ -65,18 +68,29 @@ WHERE id <> 'SCH-VERIFY-PROBE'
 ORDER BY id;
 -- EXPECTED: the same rows, statuses and versions as before the migration.
 
-\echo '--- 8. the remaining migrations that are still pending ---'
+\echo '--- 8. related contract-document migrations (0052 + 0053) are applied ---'
 -- 0052 (identity index + immutability trigger) and 0053 (single current
--- schedule) are NOT applied: the DEPLOYED client supersedes the previous
--- version BEFORE inserting the replacement, and 0052's trigger refuses a
--- supersede whose target does not exist yet. They require the Phase 2D
--- client and the backend guard to be deployed first.
+-- schedule) were applied on 2026-10-23, immediately after 0054, once the
+-- insert-first client in frontend/services/contractDocumentService.ts was
+-- confirmed deployed. All three triggers must now be present.
 SELECT p.proname AS trigger_name
 FROM pg_trigger t
 JOIN pg_proc p ON p.oid = t.tgfoid
 WHERE t.tgrelid = 'public.contract_documents'::regclass
   AND NOT t.tgisinternal
 ORDER BY 1;
--- EXPECTED: trg_contract_documents_update_updated_at only.
---            trg_contract_documents_immutable and
---            trg_contract_documents_single_current must be ABSENT.
+-- EXPECTED:
+--   enforce_contract_document_immutability
+--   enforce_contract_document_single_current
+--   update_updated_at_column
+-- (i.e. trg_contract_documents_immutable and
+--  trg_contract_documents_single_current must both be PRESENT).
+
+\echo '--- 9. the 0052 identity index replaced the old number-keyed index ---'
+SELECT indexname, indexdef
+FROM pg_indexes
+WHERE schemaname = 'public' AND tablename = 'contract_documents'
+ORDER BY indexname;
+-- EXPECTED: uq_contract_documents_schedule_identity and
+--            uq_contract_documents_receipt_item are PRESENT;
+--            uq_contract_documents_number_version is ABSENT.

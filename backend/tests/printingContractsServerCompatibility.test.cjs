@@ -234,11 +234,11 @@ describe('0048 stays additive and reversible', () => {
     expect(m48).not.toMatch(/DELETE FROM/);
   });
 
-  it('documents rollback and that it is not applied to production', () => {
+  it('documents rollback and its applied status', () => {
     expect(m48).toMatch(/Rollback/i);
-    expect(m48).toMatch(/NOT APPLIED TO PRODUCTION/i);
+    expect(m48).toMatch(/STATUS:\s*APPLIED/i);
     expect(m49).toMatch(/Rollback/i);
-    expect(m49).toMatch(/NOT APPLIED TO PRODUCTION/i);
+    expect(m49).toMatch(/STATUS:\s*APPLIED/i);
   });
 
   it('is ordered after the tables it depends on (0048 > 0006/0019/0039)', () => {
