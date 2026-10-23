@@ -127,4 +127,23 @@ describe('contract completion receipt layout', () => {
     // it once (the continuation header of a later page repeats it by design).
     expect(norm(pages[0]).match(/MTAKATAKACCAPSCHOOL/g)?.length).toBe(1);
   });
+
+  it.each([
+    ['the bare id', 'CUST-0033'],
+    ['an id-prefixed line', 'CUST-0033\nMtakataka CCAP School'],
+    ['an id prefix', 'CUST-0033 Mtakataka CCAP School'],
+  ])('prints the school name when the stored customer name is %s', async (_label, storedName) => {
+    const pages = await renderPages({
+      ...receipt,
+      customerName: storedName,
+      schoolName: 'Mtakataka CCAP School',
+    });
+    const text = norm(pages.join(' '));
+
+    expect(text).toContain('CUSTOMERNAME:MTAKATAKACCAPSCHOOL');
+    expect(text).not.toContain('CUST-0033');
+    // The school name is stated once, not as both the customer and the
+    // party descriptor beneath it.
+    expect(norm(pages[0]).match(/MTAKATAKACCAPSCHOOL/g)?.length).toBe(1);
+  });
 });

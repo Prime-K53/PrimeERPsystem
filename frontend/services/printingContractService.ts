@@ -386,18 +386,48 @@ const toDisplayDateOrEmpty = (iso?: string): string | undefined => {
 };
 
 /**
- * Customer display names are assembled with the customer id appended by the
- * contract screens ("Mtakataka CCAP School (CUST-0033)"). The id is an
- * internal key and must never appear on a customer-facing schedule, so the
- * trailing " (ID)" is stripped here — the one funnel every caller (ERP
- * preview, auto-issued documents, portal) passes through.
+ * Normalise a customer display name before it reaches a customer-facing
+ * document. The contract screens assemble names in a few different ways:
  *
- * Only a trailing bracketed token that looks like an id is removed: it must
- * be upper-case/digits/dashes AND contain a digit, so a genuine qualifier
- * such as "St Mary's (Blantyre)" survives untouched.
+ *   "Mtakataka CCAP School (CUST-0033)"  → "Mtakataka CCAP School"
+ *   "CUST-0033\nMtakataka CCAP School"   → "Mtakataka CCAP School"
+ *   "CUST-0033 Mtakataka CCAP School"    → "Mtakataka CCAP School"
+ *   "CUST-0033"                          → "" (an id is not a name)
+ *
+ * The customer id is an internal key and must never appear on a document, so
+ * every caller (ERP preview, auto-issued documents, portal) passes through
+ * this one funnel. Only a bracketed trailing token that looks like an id is
+ * removed — it must be upper-case/digits/dashes AND contain a digit — so a
+ * genuine qualifier such as "St Mary's (Blantyre)" survives untouched.
  */
-export const stripCustomerIdSuffix = (name: string): string =>
-  String(name || '').replace(/\s*\((?=[A-Z0-9-]*\d)[A-Z0-9-]{2,}\)\s*$/i, '').trim();
+export const stripCustomerIdSuffix = (name: string): string => {
+  let out = String(name || '').trim();
+  if (!out) return '';
+  // "Name (CUST-0033)" / "Name (ABC-123)" — trailing bracketed id.
+  out = out.replace(/\s*\((?=[A-Z0-9-]*\d)[A-Z0-9-]{2,}\)\s*$/i, '').trim();
+  // "CUST-0033\nName" / "CUST-0033 - Name" — leading id line or prefix.
+  out = out.replace(/^CUST-\d{3,}\s*(?:[\r\n]+|[-–—:|]\s*|\s+)/i, '').trim();
+  // "Name\nCUST-0033" / "Name - CUST-0033" / "Name CUST-0033" — trailing id.
+  out = out.replace(/(?:[\r\n]+|[-–—:|]\s*|\s+)CUST-\d{3,}\s*$/i, '').trim();
+  // A value that is only the id carries no display name at all.
+  if (/^CUST-\d{3,}$/i.test(out)) return '';
+  // Display names print on one line: fold any leftover line breaks.
+  return out.replace(/\s*\r?\n\s*/g, ' ').replace(/\s+/g, ' ').trim();
+};
+
+/**
+ * Resolve the customer name printed on a contract document, falling back to
+ * the school name when the denormalised customer name is missing or is only
+ * the internal id. This is the resolver both the document builders and the
+ * renderer use, so an already-issued document whose stored name is just
+ * "CUST-0033" still prints the school name without mutating hashed content.
+ */
+export const resolveCustomerDisplayName = (
+  customerName?: string | null,
+  schoolName?: string | null,
+): string =>
+  stripCustomerIdSuffix(String(customerName || ''))
+  || stripCustomerIdSuffix(String(schoolName || ''));
 
 /** Label printed when the contract is billed to the customer's main account. */
 const BILLED_BRANCH_MAIN = 'Main Account';
@@ -640,8 +670,8 @@ export const buildContractScheduleDoc = async (
     date: toIsoDateOnlyOrEmpty(input.issuedAtIso),
     version: Number(contract.version) || 1,
     status: String(contract.status || 'draft'),
-    customerName: stripCustomerIdSuffix(String(input.customerName || '').trim()) || 'Customer',
-    schoolName: String(input.schoolName || '').trim() || undefined,
+    customerName: resolveCustomerDisplayName(input.customerName, input.schoolName) || 'Customer',
+    schoolName: stripCustomerIdSuffix(String(input.schoolName || '')) || undefined,
     schoolZone: String((contract as any)?.data?.school_zone || (contract as any)?.data?.zone || '').trim() || undefined,
     customerPhone: String((contract as any)?.data?.customer_phone || (contract as any)?.data?.phone || '').trim() || undefined,
     billedBranch: resolveBilledBranch(profile),
@@ -898,11 +928,12 @@ export const buildAssessmentCompletionReceiptDoc = async (
     date: toDisplayDate(input.issuedAtIso),
     version: Number(contract.version) || 1,
     status: String(contract.status || 'draft'),
-    // The customer id is an internal key: the contract screens assemble the
-    // display name as "Mtakataka CCAP School (CUST-0033)" and that id must
-    // never reach a customer-facing receipt.
-    customerName: stripCustomerIdSuffix(String(input.customerName || '').trim()) || 'Customer',
-    schoolName: String(input.schoolName || '').trim() || undefined,
+    // The customer id is an internal key: the contract screens may assemble
+    // the display name as "Mtakataka CCAP School (CUST-0033)" or fall back to
+    // the bare id. That id must never reach a customer-facing receipt, so
+    // resolve the name (falling back to the school) before hashing.
+    customerName: resolveCustomerDisplayName(input.customerName, input.schoolName) || 'Customer',
+    schoolName: stripCustomerIdSuffix(String(input.schoolName || '')) || undefined,
     // Academic year of the engagement — recorded on the contract, else derived
     // from its window (same rule as the schedule). ALWAYS a defined string:
     // this field is covered by the content hash and JSONB drops undefined

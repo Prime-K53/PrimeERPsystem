@@ -2,9 +2,10 @@
  * completionReceiptDoc.test.ts — the completion-receipt document builder.
  *
  * Two customer-facing rules are locked here:
- *  - the internal customer id ("Mtakataka CCAP School (CUST-0033)") must
- *    never reach a customer-facing receipt, while a genuine qualifier
- *    ("St Mary's (Blantyre)") must survive;
+ *  - the internal customer id ("Mtakataka CCAP School (CUST-0033)", the bare
+ *    "CUST-0033", or an id-prefixed line) must never reach a customer-facing
+ *    receipt — the school name is used when the stored name is only the id —
+ *    while a genuine qualifier ("St Mary's (Blantyre)") must survive;
  *  - the academic year of the engagement is always recorded as a DEFINED
  *    string: the field is covered by the content hash and JSONB drops
  *    undefined keys, so an absent key would re-hash differently from the
@@ -56,6 +57,21 @@ const build = (overrides: any = {}) =>
 describe('completion receipt document', () => {
   it('never carries the internal customer id', async () => {
     const doc = await build();
+    expect(doc.customerName).toBe('Mtakataka CCAP School');
+  });
+
+  it('falls back to the school name when the customer name is only the id', async () => {
+    const doc = await build({ customerName: 'CUST-0033' });
+    expect(doc.customerName).toBe('Mtakataka CCAP School');
+  });
+
+  it('strips a leading id line from the customer name', async () => {
+    const doc = await build({ customerName: 'CUST-0033\nMtakataka CCAP School' });
+    expect(doc.customerName).toBe('Mtakataka CCAP School');
+  });
+
+  it('strips an id prefix from the customer name', async () => {
+    const doc = await build({ customerName: 'CUST-0033 Mtakataka CCAP School' });
     expect(doc.customerName).toBe('Mtakataka CCAP School');
   });
 

@@ -233773,7 +233773,16 @@ var getDefaultPaymentTermsLabel = (companyConfig) => {
 };
 
 // services/printingContractService.ts
-var stripCustomerIdSuffix = (name) => String(name || "").replace(/\s*\((?=[A-Z0-9-]*\d)[A-Z0-9-]{2,}\)\s*$/i, "").trim();
+var stripCustomerIdSuffix = (name) => {
+  let out = String(name || "").trim();
+  if (!out) return "";
+  out = out.replace(/\s*\((?=[A-Z0-9-]*\d)[A-Z0-9-]{2,}\)\s*$/i, "").trim();
+  out = out.replace(/^CUST-\d{3,}\s*(?:[\r\n]+|[-–—:|]\s*|\s+)/i, "").trim();
+  out = out.replace(/(?:[\r\n]+|[-–—:|]\s*|\s+)CUST-\d{3,}\s*$/i, "").trim();
+  if (/^CUST-\d{3,}$/i.test(out)) return "";
+  return out.replace(/\s*\r?\n\s*/g, " ").replace(/\s+/g, " ").trim();
+};
+var resolveCustomerDisplayName = (customerName, schoolName) => stripCustomerIdSuffix(String(customerName || "")) || stripCustomerIdSuffix(String(schoolName || ""));
 
 // views/shared/components/PDF/documentPagination.tsx
 var import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
@@ -235582,6 +235591,13 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
     fontSize: 27.75 * fontScale
   };
   const scaledFont = (size) => Number((size * fontScale).toFixed(2));
+  const contractPreambleTitleFontSize = scaledFont(18);
+  const contractPreambleNameGutter = !!logo ? templateSettings.logoWidth + 12 : 0;
+  const contractPreambleNameAvailWidth = RECEIPT_CONTENT_WIDTH - (!!logo ? (templateSettings.logoWidth + 12) * 2 : 24);
+  const contractPreambleNameFontSize = Math.max(
+    8.5,
+    Math.min(templateSettings.companyNameFontSize, contractPreambleNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6))
+  );
   const renderBrandMark = (alignment = "right") => !!logo ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
     Image,
     {
@@ -236090,24 +236106,23 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
     const cancelled = isCancelledStatus(String(cs2.status || ""), cs2);
     const scheduleCurrency = config2?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || "K";
     const preambleFontSize = 12;
-    const preambleTitleFontSize = scaledFont(18);
+    const preambleTitleFontSize = contractPreambleTitleFontSize;
     const preambleMetaRightIndent = Math.min(RECEIPT_META_INDENT * fontScale, 128);
-    const preambleNameGutter = !!logo ? templateSettings.logoWidth + 12 : 0;
-    const preambleNameAvailWidth = RECEIPT_CONTENT_WIDTH - (!!logo ? (templateSettings.logoWidth + 12) * 2 : 24);
-    const preambleNameFontSize = Math.max(
-      8.5,
-      Math.min(templateSettings.companyNameFontSize, preambleNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6))
-    );
+    const preambleNameGutter = contractPreambleNameGutter;
+    const preambleNameFontSize = contractPreambleNameFontSize;
     const customerNameLabel = "Customer Name: ";
-    const rawCustomerName = String(cs2.customerName || "");
-    const customerNameText = rawCustomerName.split(/\r?\n/)[0].trim() || "N/A";
+    const customerNameText = resolveCustomerDisplayName(cs2.customerName, cs2.schoolName) || "N/A";
     const customerNameFontSize = fitFontSize(
       customerNameText,
       Math.max(24, RECEIPT_CONTENT_WIDTH - measureTextWidth(customerNameLabel, preambleFontSize, true)),
       { maxSize: preambleFontSize, minSize: 7 }
     );
     const partySeen = /* @__PURE__ */ new Set([customerNameText.trim().toLowerCase()]);
-    const customerSubline = [cs2.schoolName, cs2.schoolZone, cs2.customerPhone].map((value2) => String(value2 || "").trim()).filter((value2) => {
+    const customerSubline = [
+      stripCustomerIdSuffix(String(cs2.schoolName || "")),
+      cs2.schoolZone,
+      cs2.customerPhone
+    ].map((value2) => String(value2 || "").trim()).filter((value2) => {
       const key = value2.toLowerCase();
       if (!key || partySeen.has(key)) return false;
       partySeen.add(key);
@@ -236410,23 +236425,19 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
     const cancelled = isCancelledStatus(String(cr.status || ""), cr);
     const crCurrency = config2?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || "K";
     const crBodyFontSize = 12;
-    const crTitleFontSize = 20 * fontScale;
+    const crTitleFontSize = contractPreambleTitleFontSize;
     const crMetaRightIndent = Math.min(RECEIPT_META_INDENT * fontScale, 128);
-    const crNameGutter = !!logo ? templateSettings.logoWidth + 12 : 0;
-    const crNameAvailWidth = RECEIPT_CONTENT_WIDTH - (!!logo ? (templateSettings.logoWidth + 12) * 2 : 24);
-    const crNameFontSize = Math.max(
-      8.5,
-      Math.min(templateSettings.companyNameFontSize, crNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6))
-    );
+    const crNameGutter = contractPreambleNameGutter;
+    const crNameFontSize = contractPreambleNameFontSize;
     const crCustomerNameLabel = "Customer Name: ";
-    const crCustomerName = stripCustomerIdSuffix(String(cr.customerName || "").trim()) || "Customer";
+    const crCustomerName = resolveCustomerDisplayName(cr.customerName, cr.schoolName) || "Customer";
     const crCustomerFontSize = fitFontSize(
       crCustomerName,
       Math.max(24, RECEIPT_CONTENT_WIDTH - measureTextWidth(crCustomerNameLabel, crBodyFontSize, true)),
       { maxSize: crBodyFontSize, minSize: 7 }
     );
     const crCustomerKey = crCustomerName.trim().toLowerCase();
-    const crCustomerSubline = String(cr.schoolName || "").trim();
+    const crCustomerSubline = stripCustomerIdSuffix(String(cr.schoolName || ""));
     const crShowSubline = !!crCustomerSubline && crCustomerSubline.toLowerCase() !== crCustomerKey;
     const crInk = (hex3) => monoText(mode, hex3);
     const crHairline = monoLine(mode, "#cbd5e1");

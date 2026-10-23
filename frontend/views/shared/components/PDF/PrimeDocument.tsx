@@ -32,7 +32,7 @@ import {
 import { generateAccountSummary } from '../../../../utils/pdfMapper.ts';
 import { currencyService } from '../../../../services/currencyService';
 import { resolveReceiptPaymentBadge, buildReceiptAcknowledgement } from '../../../../services/receiptCalculationService';
-import { stripCustomerIdSuffix } from '../../../../services/printingContractService';
+import { resolveCustomerDisplayName, stripCustomerIdSuffix } from '../../../../services/printingContractService';
 import {
   PaginationFurniture,
   VerificationLabel,
@@ -1603,6 +1603,16 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     fontSize: 27.75 * fontScale,
   };
   const scaledFont = (size: number) => Number((size * fontScale).toFixed(2));
+  // Contract documents (schedule + completion receipt) share ONE preamble
+  // geometry: the same company-name shrink-to-fit and the same 18pt title
+  // scale, so the two documents read as a matched pair.
+  const contractPreambleTitleFontSize = scaledFont(18);
+  const contractPreambleNameGutter = !!logo ? templateSettings.logoWidth + 12 : 0;
+  const contractPreambleNameAvailWidth = RECEIPT_CONTENT_WIDTH - (!!logo ? (templateSettings.logoWidth + 12) * 2 : 24);
+  const contractPreambleNameFontSize = Math.max(
+    8.5,
+    Math.min(templateSettings.companyNameFontSize, contractPreambleNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6))
+  );
   const renderBrandMark = (alignment: 'left' | 'right' = 'right') => (
     !!logo
       ? (
@@ -2282,17 +2292,14 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     // geometry — and its shrink-to-fit / hard one-line guarantees — so a long
     // school or company name can neither wrap nor slide under the logo.
     const preambleFontSize = 12;
-    const preambleTitleFontSize = scaledFont(18);
+    const preambleTitleFontSize = contractPreambleTitleFontSize;
     const preambleMetaRightIndent = Math.min(RECEIPT_META_INDENT * fontScale, 128);
-    const preambleNameGutter = !!logo ? templateSettings.logoWidth + 12 : 0;
-    const preambleNameAvailWidth = RECEIPT_CONTENT_WIDTH - (!!logo ? (templateSettings.logoWidth + 12) * 2 : 24);
-    const preambleNameFontSize = Math.max(
-      8.5,
-      Math.min(templateSettings.companyNameFontSize, preambleNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6))
-    );
+    const preambleNameGutter = contractPreambleNameGutter;
+    const preambleNameFontSize = contractPreambleNameFontSize;
     const customerNameLabel = 'Customer Name: ';
-    const rawCustomerName = String(cs.customerName || '');
-    const customerNameText = rawCustomerName.split(/\r?\n/)[0].trim() || 'N/A';
+    // Resolve against the school name so a stored value that is only the
+    // internal id (or an id-prefixed line) still prints the customer.
+    const customerNameText = resolveCustomerDisplayName(cs.customerName, cs.schoolName) || 'N/A';
     const customerNameFontSize = fitFontSize(
       customerNameText,
       Math.max(24, RECEIPT_CONTENT_WIDTH - measureTextWidth(customerNameLabel, preambleFontSize, true)),
@@ -2303,7 +2310,11 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     // customer) so the identity block never states the same thing twice, and
     // repeated values collapse to one.
     const partySeen = new Set([customerNameText.trim().toLowerCase()]);
-    const customerSubline = [cs.schoolName, cs.schoolZone, cs.customerPhone]
+    const customerSubline = [
+      stripCustomerIdSuffix(String(cs.schoolName || '')),
+      cs.schoolZone,
+      cs.customerPhone,
+    ]
       .map((value) => String(value || '').trim())
       .filter((value) => {
         const key = value.toLowerCase();
@@ -2778,23 +2789,21 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     // stops. The same shrink-to-fit + hard one-line guarantees apply, so a
     // long school or company name can neither wrap nor slide under the logo.
     const crBodyFontSize = 12;
-    const crTitleFontSize = 20 * fontScale;
+    // Same title + company-name scale as the assessment schedule.
+    const crTitleFontSize = contractPreambleTitleFontSize;
     const crMetaRightIndent = Math.min(RECEIPT_META_INDENT * fontScale, 128);
-    const crNameGutter = !!logo ? templateSettings.logoWidth + 12 : 0;
-    const crNameAvailWidth = RECEIPT_CONTENT_WIDTH - (!!logo ? (templateSettings.logoWidth + 12) * 2 : 24);
-    const crNameFontSize = Math.max(
-      8.5,
-      Math.min(templateSettings.companyNameFontSize, crNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6))
-    );
+    const crNameGutter = contractPreambleNameGutter;
+    const crNameFontSize = contractPreambleNameFontSize;
 
-    // Customer identity. The contract screens assemble the display name with
-    // the internal customer id ("Mtakataka CCAP School (CUST-0033)"); that id
-    // never reaches a customer-facing receipt — the same funnel the document
-    // builder uses. The name takes the full content width and prints on ONE
-    // row (shrink-to-fit plus a hard clamp), so it never breaks the header's
-    // rhythm however long the registered school name is.
+    // Customer identity. Older documents can carry only the internal customer
+    // id ("CUST-0033") or an id-prefixed name ("CUST-0033\nMtakataka CCAP
+    // School"); resolve against the school name so the receipt prints the
+    // customer, never the id, without mutating already-hashed content. The
+    // name takes the full content width and prints on ONE row (shrink-to-fit
+    // plus a hard clamp), so it never breaks the header's rhythm however long
+    // the registered school name is.
     const crCustomerNameLabel = 'Customer Name: ';
-    const crCustomerName = stripCustomerIdSuffix(String(cr.customerName || '').trim()) || 'Customer';
+    const crCustomerName = resolveCustomerDisplayName(cr.customerName, cr.schoolName) || 'Customer';
     const crCustomerFontSize = fitFontSize(
       crCustomerName,
       Math.max(24, RECEIPT_CONTENT_WIDTH - measureTextWidth(crCustomerNameLabel, crBodyFontSize, true)),
@@ -2804,7 +2813,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     // customer name is dropped (the common case: the school IS the customer)
     // so the identity block never states the same thing twice.
     const crCustomerKey = crCustomerName.trim().toLowerCase();
-    const crCustomerSubline = String(cr.schoolName || '').trim();
+    const crCustomerSubline = stripCustomerIdSuffix(String(cr.schoolName || ''));
     const crShowSubline = !!crCustomerSubline && crCustomerSubline.toLowerCase() !== crCustomerKey;
 
     // Palette indirection: every colour goes through the print-mode helpers so
