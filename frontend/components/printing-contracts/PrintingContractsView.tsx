@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   FileText, Plus, Search, RefreshCw, Calendar, Wallet, Printer,
-  Play, Pause, Edit2, Trash2, Eye, CheckCircle, Ban,
+  Play, Pause, Edit2, Trash2, Eye, CheckCircle, Ban, XCircle,
   ClipboardList, History, Landmark, ChevronRight, PenLine,
 } from 'lucide-react';
 import type {
@@ -27,6 +27,7 @@ import {
   applySignatureVoid,
   generateNextContractNumber,
   isAllowedContractTransition,
+  isContractVoided,
   isFullySigned,
   isSignableContractStatus,
   matchContractWalletTx,
@@ -66,7 +67,6 @@ import {
   contractIconTileStyle, contractPageTitleStyle, contractPageSubtitleStyle,
   contractFilterControlStyle, contractFilterSelectStyle,
 } from './contractModalChrome';
-import { SearchableSelect } from '../../components/ui/SearchableSelect';
 
 /**
  * Printing Contracts hub (formerly "Subscriptions").
@@ -94,7 +94,7 @@ type ContractStatus = AssessmentContract['status'];
 type ItemStatus = AssessmentContractItem['status'];
 
 const CONTRACT_STATUSES: ContractStatus[] = [
-  'draft', 'pending_payment', 'active', 'suspended', 'completed', 'expired', 'cancelled',
+  'draft', 'pending_payment', 'active', 'suspended', 'completed', 'expired', 'cancelled', 'voided',
 ];
 
 const CONTRACT_STATUS_LABEL: Record<ContractStatus, string> = {
@@ -105,6 +105,7 @@ const CONTRACT_STATUS_LABEL: Record<ContractStatus, string> = {
   completed: 'Completed',
   expired: 'Expired',
   cancelled: 'Cancelled',
+  voided: 'Voided',
 };
 
 const CONTRACT_STATUS_STYLE: Record<ContractStatus, string> = {
@@ -115,6 +116,7 @@ const CONTRACT_STATUS_STYLE: Record<ContractStatus, string> = {
   completed: 'bg-blue-50 text-blue-700 border-blue-200',
   expired: 'bg-stone-100 text-stone-500 border-stone-200',
   cancelled: 'bg-red-50 text-red-700 border-red-200',
+  voided: 'bg-red-100 text-red-800 border-red-300',
 };
 
 const ITEM_STATUS_LABEL: Record<ItemStatus, string> = {
@@ -122,6 +124,7 @@ const ITEM_STATUS_LABEL: Record<ItemStatus, string> = {
   consumed: 'Consumed',
   released: 'Released',
   cancelled: 'Cancelled',
+  voided: 'Voided',
 };
 
 const ITEM_STATUS_STYLE: Record<ItemStatus, string> = {
@@ -129,6 +132,7 @@ const ITEM_STATUS_STYLE: Record<ItemStatus, string> = {
   consumed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   released: 'bg-slate-100 text-slate-600 border-slate-200',
   cancelled: 'bg-red-50 text-red-700 border-red-200',
+  voided: 'bg-red-100 text-red-800 border-red-300',
 };
 
 /** Lifecycle edges live in utils/contractLifecycle so the finance store
@@ -231,6 +235,8 @@ const PrintingContractsView: React.FC = () => {
   const updateContractAmendment = useFinanceStore(s => s.updateContractAmendment);
   const addWalletTransaction = useFinanceStore(s => s.addWalletTransaction);
   const consumeContractAssessment = useFinanceStore(s => s.consumeContractAssessment);
+  const cancelPrintingContract = useFinanceStore(s => s.cancelPrintingContract);
+  const voidPrintingContract = useFinanceStore(s => s.voidPrintingContract);
 
   const customers = useSalesStore(s => s.customers);
   const jobOrders = useSalesStore(s => s.jobOrders);
@@ -243,7 +249,6 @@ const PrintingContractsView: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | ContractStatus>('All');
-  const [partyFilter, setPartyFilter] = useState('');
   const [metricFilter, setMetricFilter] = useState<'All' | 'Active' | 'Pending' | 'Funds'>('All');
   const [showLegacy, setShowLegacy] = useState(false);
 
@@ -251,6 +256,32 @@ const PrintingContractsView: React.FC = () => {
   const [editingContract, setEditingContract] = useState<AssessmentContract | null>(null);
   const [formDraft, setFormDraft] = useState(emptyContractDraft());
   const [isSaving, setIsSaving] = useState(false);
+  const [customerDisplay, setCustomerDisplay] = useState('');
+  const [customerSuggestOpen, setCustomerSuggestOpen] = useState(false);
+  const customerInputRef = useRef<HTMLInputElement>(null);
+
+  const customerSuggestions = useMemo(() => {
+    const text = customerDisplay || formDraft.customer_id;
+    if (!text.trim()) return (customers || []).slice(0, 10);
+    const q = text.toLowerCase();
+    return (customers || [])
+      .filter((c: Customer) =>
+        getCustomerOptionLabel(c).toLowerCase().includes(q)
+        || String(c.id).toLowerCase().includes(q)
+      )
+      .slice(0, 10);
+  }, [customerDisplay, formDraft.customer_id, customers]);
+
+  useEffect(() => {
+    if (!customerSuggestOpen) return;
+    function onOutsideClick(e: MouseEvent) {
+      if (customerInputRef.current && !customerInputRef.current.contains(e.target as Node)) {
+        setCustomerSuggestOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onOutsideClick);
+    return () => document.removeEventListener('mousedown', onOutsideClick);
+  }, [customerSuggestOpen]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('overview');
@@ -274,6 +305,10 @@ const PrintingContractsView: React.FC = () => {
   // Activation without payment evidence requires a recorded reason —
   // the button promises "Verify & activate" and must not fabricate it.
   const [activateOverride, setActivateOverride] = useState<{ contract: AssessmentContract; reason: string } | null>(null);
+
+  // Void is a compensating reversal of ALL consumed money. It requires an
+  // explicit reason before the destructive action can be confirmed.
+  const [voidTarget, setVoidTarget] = useState<{ contract: AssessmentContract; reason: string } | null>(null);
 
   // Same-device sequential signing ceremony: company first, customer second.
   const [signingParty, setSigningParty] = useState<SignatureParty | null>(null);
@@ -382,9 +417,6 @@ const PrintingContractsView: React.FC = () => {
     if (metricFilter === 'Pending') list = list.filter(c => c.status === 'draft' || c.status === 'pending_payment');
     if (metricFilter === 'Funds') list = list.filter(c => fundsOf(c).available > 0);
     if (statusFilter !== 'All') list = list.filter(c => c.status === statusFilter);
-    if (partyFilter) {
-      list = list.filter(c => String(c.customer_id) === partyFilter || String(c.school_id) === partyFilter);
-    }
     if (searchText) {
       const q = searchText.toLowerCase();
       list = list.filter(c =>
@@ -396,7 +428,7 @@ const PrintingContractsView: React.FC = () => {
     }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assessmentContracts, metricFilter, statusFilter, partyFilter, searchText, customers, schools]);
+  }, [assessmentContracts, metricFilter, statusFilter, searchText, customers, schools]);
 
   const selected = useMemo(
     () => (assessmentContracts || []).find(c => c.id === selectedId) || null,
@@ -434,6 +466,7 @@ const PrintingContractsView: React.FC = () => {
   const openCreate = () => {
     setEditingContract(null);
     setFormDraft(emptyContractDraft());
+    setCustomerDisplay('');
     setIsFormOpen(true);
   };
   const openEdit = (c: AssessmentContract) => {
@@ -462,13 +495,13 @@ const PrintingContractsView: React.FC = () => {
       // the Assessments tab / amendments so consumed history is protected.
       lines: [] as ContractFormLine[],
     });
+    setCustomerDisplay(c.customer_id ? customerNameOf(c.customer_id) : '');
     setIsFormOpen(true);
   };
 
   const validateContractDraft = (issueInvoice = false) => {
     if (!formDraft.title.trim()) return 'Contract title is required.';
-    if (!formDraft.customer_id) return 'Select a customer for this contract.';
-    if (!formDraft.school_id) return 'Select a school for this contract.';
+    if (!formDraft.customer_id.trim()) return 'Enter a customer name for this contract.';
     if (!editingContract) {
       const validLines = (formDraft.lines || []).filter(isValidContractLine);
       if (validLines.length === 0) return 'Add at least one billable item (name, quantity and unit price).';
@@ -520,6 +553,10 @@ const PrintingContractsView: React.FC = () => {
     try {
       const now = new Date().toISOString();
       if (editingContract) {
+        if (isContractVoided(editingContract.status)) {
+          notify('Voided contracts are terminal and cannot be edited.', 'error');
+          return;
+        }
         if (['completed', 'cancelled', 'expired'].includes(editingContract.status)) {
           notify('Historical contracts are protected and cannot be edited. Create an amendment instead.', 'error');
           return;
@@ -689,6 +726,10 @@ const PrintingContractsView: React.FC = () => {
   const handleIssueInvoiceForSelected = async () => {
     if (!requireManageContracts()) return;
     if (!selected || isSaving) return;
+    if (isContractVoided(selected.status)) {
+      notify('A voided contract cannot be invoiced.', 'error');
+      return;
+    }
     const data = (selected.data || {}) as any;
     if (data.issued_invoice_id) {
       notify(`Invoice ${data.issued_invoice_id} is already issued for this contract.`, 'info');
@@ -731,6 +772,69 @@ const PrintingContractsView: React.FC = () => {
       notify(`Failed to issue invoice: ${e.message}`, 'error');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const performCancellation = async (c: AssessmentContract, actor: string) => {
+    try {
+      const res: any = await cancelPrintingContract({
+        contractId: c.id,
+        performedBy: actor,
+        reason: 'Cancelled from Printing Contracts',
+      });
+      const released = Number(res?.releasedValue || 0);
+      notify(
+        released > 0
+          ? `Contract cancelled. Remaining reservation ${currency}${released.toLocaleString()} released — now available for unrelated spending. Consumed assessments were NOT reversed; use Void to return that money.`
+          : 'Contract cancelled. No remaining reservation. Consumed assessments were NOT reversed.',
+        'success',
+      );
+    } catch (e: any) {
+      notify(`Cancellation failed: ${e.message}`, 'error');
+    }
+  };
+
+  const handleVoidContract = (c: AssessmentContract) => {
+    if (!requireManageContracts()) return;
+    if (isContractVoided(c.status)) {
+      notify('This contract is already voided — nothing remains to reverse.', 'info');
+      return;
+    }
+    setVoidTarget({ contract: c, reason: '' });
+  };
+
+  const confirmVoidContract = async () => {
+    if (!voidTarget) return;
+    if (!requireManageContracts()) { setVoidTarget(null); return; }
+    const reason = voidTarget.reason.trim();
+    if (!reason) {
+      notify('A reason is required to void a printing contract.', 'error');
+      return;
+    }
+    const target = voidTarget.contract;
+    const actor = (user as any)?.id || (user as any)?.username || 'system';
+    setVoidTarget(null);
+    try {
+      const res: any = await voidPrintingContract({
+        contractId: target.id,
+        reason,
+        performedBy: actor,
+      });
+      if (res?.already) {
+        notify('This contract is already voided — nothing further was reversed.', 'info');
+        return;
+      }
+      const reversed = Number(res?.reversedValue || 0);
+      const released = Number(res?.releasedValue || 0);
+      const balanceSuffix = res?.newBalance !== undefined && res?.newBalance !== null
+        ? ` New wallet balance: ${currency}${Number(res.newBalance).toLocaleString()}.`
+        : '';
+      notify(
+        `Contract voided — ${currency}${reversed.toLocaleString()} returned to the customer wallet; ${currency}${released.toLocaleString()} remaining reservation released.${balanceSuffix}`,
+        'success',
+      );
+    } catch (e: any) {
+      notify(`Void failed: ${e.message}`, 'error');
     }
   };
 
@@ -816,10 +920,25 @@ const PrintingContractsView: React.FC = () => {
       return;
     }
 
+    // Cancel is NOT a refund. It stops the contract and releases only the
+    // remaining reservation; consumed assessments and the money already
+    // charged stay exactly where they are. Void is the compensating reversal.
+    if (next === 'cancelled') {
+      setConfirmState({
+        open: true,
+        title: 'Cancel printing contract',
+        message: `Cancel ${c.contract_number} — ${c.title}?\n\nThis stops the contract and releases only the remaining reservation (${currency}${num(c.reserved_amount).toLocaleString()}). Consumed assessments (${currency}${num(c.consumed_amount).toLocaleString()}) and the money already charged are NOT returned.\n\nTo return consumed money to the customer wallet, use Void instead.`,
+        confirmText: 'Cancel contract',
+        type: 'warning',
+        onConfirm: () => { void performCancellation(c, actor); },
+      });
+      return;
+    }
+
     // Phase 1 §2.4: explicit closure — releases remaining reservation without
     // fabricating an automatic refund. Any cash refund requires a separate
     // auditable refundContractBalance call with a policy reference.
-    if (next === 'cancelled' || next === 'expired' || next === 'completed') {
+    if (next === 'expired' || next === 'completed') {
       try {
         const res: any = await (transactionService as any).resolveContractClosure({
           contractId: c.id,
@@ -828,16 +947,7 @@ const PrintingContractsView: React.FC = () => {
         });
         await fetchFinanceData().catch(() => {});
         const released = Number(res?.releasedValue || 0);
-        if (next === 'cancelled') {
-          notify(
-            released > 0
-              ? `Contract cancelled. Remaining reservation ${currency}${released.toLocaleString()} released — now available for unrelated spending. Refunds require an explicit policy-approved refund.`
-              : 'Contract cancelled. No remaining reservation.',
-            'success',
-          );
-        } else {
-          notify(`Contract ${CONTRACT_STATUS_LABEL[next].toLowerCase()}${released > 0 ? ` — ${currency}${released.toLocaleString()} released` : ''}`, 'success');
-        }
+        notify(`Contract ${CONTRACT_STATUS_LABEL[next].toLowerCase()}${released > 0 ? ` — ${currency}${released.toLocaleString()} released` : ''}`, 'success');
       } catch (e: any) {
         notify(`Closure failed: ${e.message}`, 'error');
       }
@@ -858,6 +968,10 @@ const PrintingContractsView: React.FC = () => {
     if (!requireDeleteContracts()) return;
     const linkedItems = (contractAssessments || []).filter(a => a.contract_id === c.id);
     const hasConsumed = linkedItems.some(a => a.status === 'consumed');
+    if (isContractVoided(c.status)) {
+      notify('Voided contracts are terminal historical records and cannot be deleted. Their wallet credits and reversing ledger entries are preserved.', 'error');
+      return;
+    }
     if (c.status === 'active' || c.status === 'suspended') {
       notify('Active contracts cannot be deleted. Cancel or complete the contract first.', 'error');
       return;
@@ -916,6 +1030,10 @@ const PrintingContractsView: React.FC = () => {
   const handleSaveItem = async () => {
     if (!requireManageContracts()) return;
     if (!selected) return;
+    if (isContractVoided(selected.status)) {
+      notify('Voided contracts are terminal — assessments cannot be added or edited.', 'error');
+      return;
+    }
     if (!itemDraft.assessment_name.trim()) { notify('Assessment name is required.', 'error'); return; }
     if (Number(itemDraft.item_price) < 0) { notify('Assessment price cannot be negative.', 'error'); return; }
     const siblings = (contractAssessments || []).filter(a => a.contract_id === selected.id && a.id !== editingItem?.id);
@@ -927,6 +1045,7 @@ const PrintingContractsView: React.FC = () => {
     try {
       if (editingItem) {
         if (editingItem.status === 'consumed') { notify('Consumed assessments are historical and cannot be edited.', 'error'); return; }
+        if (editingItem.status === 'voided') { notify('Voided assessments are terminal and cannot be edited.', 'error'); return; }
         await updateContractAssessment({
           ...editingItem,
           assessment_name: itemDraft.assessment_name.trim(),
@@ -971,12 +1090,20 @@ const PrintingContractsView: React.FC = () => {
   const transitionItem = async (a: AssessmentContractItem, next: ItemStatus) => {
     const contract = (assessmentContracts || []).find(c => c.id === a.contract_id);
     if (!contract) { notify('Parent contract not found.', 'error'); return; }
+    if (isContractVoided(contract.status)) {
+      notify('This contract was voided — its assessments are terminal.', 'error');
+      return;
+    }
+    if (String(a.status || '') === 'voided') {
+      notify('This assessment was reversed by a contract void and is terminal.', 'error');
+      return;
+    }
     // Financial guard: a consumed assessment already has exactly one wallet
     // debit behind it. It must never be reverted by silent status flip
-    // (that would orphan real money); value recovery goes through explicit
-    // compensating reversal (tracked separately).
+    // (that would orphan real money); value recovery goes through the
+    // canonical contract void, which posts the compensating reversal.
     if (String(a.status || '') === 'consumed') {
-      notify('This assessment was already consumed and charged to the wallet. It cannot be reverted by status change — use contract cancellation/refund for value recovery.', 'error');
+      notify('This assessment was already consumed and charged to the wallet. It cannot be reverted by status change — use Void contract to return the consumed money, or cancel the contract to preserve history.', 'error');
       return;
     }
     // Canonical wallet-first path: reserved → consumed executes exactly one
@@ -1062,6 +1189,15 @@ const PrintingContractsView: React.FC = () => {
   const handleSaveJobLink = async () => {
     if (!requireManageContracts()) return;
     if (!jobLinkItem) return;
+    const parentContract = (assessmentContracts || []).find(c => c.id === jobLinkItem.contract_id);
+    if (!parentContract || isContractVoided(parentContract.status)) {
+      notify('A voided contract is terminal — printing jobs cannot be linked to its assessments.', 'error');
+      return;
+    }
+    if (jobLinkItem.status === 'voided') {
+      notify('A voided assessment is terminal — printing jobs cannot be linked.', 'error');
+      return;
+    }
     const batchId = (examBatchId || '').trim();
     if (batchId && !examBatches.some(b => b.id === batchId || b.batch_number === batchId)) {
       notify(`Examination batch "${batchId}" was not found.`, 'error');
@@ -1101,6 +1237,10 @@ const PrintingContractsView: React.FC = () => {
     if (!requireManageContracts()) return;
     const contract = (assessmentContracts || []).find(c => c.id === a.contract_id);
     if (!contract) return;
+    if (isContractVoided(contract.status) || a.status === 'voided') {
+      notify('Voided contracts and assessments are terminal — no printing job can be created.', 'error');
+      return;
+    }
     if (a.job_order_id) { notify('This assessment already has a linked job order.', 'info'); return; }
     try {
       const job: JobOrder = {
@@ -1125,6 +1265,10 @@ const PrintingContractsView: React.FC = () => {
   const handleSaveAmendment = async () => {
     if (!requireManageContracts()) return;
     if (!selected) return;
+    if (isContractVoided(selected.status)) {
+      notify('A voided contract is terminal — no amendment can be requested.', 'error');
+      return;
+    }
     if (!amendDraft.description.trim()) { notify('Amendment description is required.', 'error'); return; }
     const boundsError = validateAmendmentAdjustments(selected, {
       prepaid_amount_adjustment: amendDraft.prepaid_amount_adjustment,
@@ -1153,6 +1297,10 @@ const PrintingContractsView: React.FC = () => {
     if (!requireManageContracts()) return;
     const contract = (assessmentContracts || []).find(c => c.id === am.contract_id);
     if (!contract) return;
+    if (isContractVoided(contract.status)) {
+      notify('A voided contract is terminal — its amendments can no longer be approved.', 'error');
+      return;
+    }
     const now = new Date().toISOString();
     const actor = (user as any)?.id || (user as any)?.username || 'system';
     try {
@@ -1405,15 +1553,8 @@ const PrintingContractsView: React.FC = () => {
     }
   };
 
-  const money = (v: number) => `${currency}${num(v).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-  const partyOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const c of customers || []) map.set(String(c.id), getCustomerOptionLabel(c as Customer));
-    for (const s of schools || []) if (!map.has(String(s.id))) map.set(String(s.id), s.name || String(s.id));
-    return [...map.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [customers, schools]);
-
-  const metricCards = [
+   const money = (v: number) => `${currency}${num(v).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+   const metricCards = [
     { key: 'Active', label: 'Active Contracts', value: String(stats.active), icon: <CheckCircle size={20} />, accent: contractTeal[500], tileBg: contractTeal[50], tileColor: contractTeal[600] },
     { key: 'Pending', label: 'Draft / Pending Payment', value: String(stats.pending), icon: <ClipboardList size={20} />, accent: contractAmber[500], tileBg: contractAmber[100], tileColor: contractAmber[600] },
     { key: 'Funds', label: 'Available Funds', value: money(stats.available), icon: <Wallet size={20} />, accent: contractTeal[700], tileBg: contractTeal[100], tileColor: contractTeal[700] },
@@ -1449,11 +1590,6 @@ const PrintingContractsView: React.FC = () => {
             style={contractFilterSelectStyle}>
             <option value="All">All statuses</option>
             {CONTRACT_STATUSES.map(s => <option key={s} value={s}>{CONTRACT_STATUS_LABEL[s]}</option>)}
-          </select>
-          <select value={partyFilter} onChange={e => setPartyFilter(e.target.value)}
-            style={{ ...contractFilterSelectStyle, maxWidth: 180 }}>
-            <option value="">All clients / schools</option>
-            {partyOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
           <ContractGhostButton compact onClick={() => { setIsLoading(true); Promise.all([fetchFinanceData().catch(() => {}), fetchSalesData(true).catch(() => {})]).finally(() => setIsLoading(false)); }}>
             <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} /> Refresh
@@ -1586,8 +1722,10 @@ const PrintingContractsView: React.FC = () => {
                     <td style={{ padding: '10px 16px' }}>
                       <div className="flex justify-end gap-1" onClick={e => e.stopPropagation()}>
                         <button title="Open details" onClick={() => { setSelectedId(c.id); setDetailTab('overview'); }} className="p-1.5 rounded-lg border border-[#e4ddd1] text-[#5c6567] hover:text-[#0f544c] hover:bg-[#eef7f6]"><Eye size={14} /></button>
-                        <button title="Edit" onClick={() => openEdit(c)} className="p-1.5 rounded-lg border border-[#e4ddd1] text-[#5c6567] hover:text-[#0f544c] hover:bg-[#eef7f6]"><Edit2 size={14} /></button>
-                        {canDeleteContracts && (<button title="Delete" onClick={() => handleDeleteContract(c)} className="p-1.5 rounded-lg border border-[#e4ddd1] text-[#5c6567] hover:text-[#b5493f] hover:bg-[#b5493f15]"><Trash2 size={14} /></button>)}
+                        {!isContractVoided(c.status) && (
+                          <button title="Edit" onClick={() => openEdit(c)} className="p-1.5 rounded-lg border border-[#e4ddd1] text-[#5c6567] hover:text-[#0f544c] hover:bg-[#eef7f6]"><Edit2 size={14} /></button>
+                        )}
+                        {canDeleteContracts && !isContractVoided(c.status) && (<button title="Delete" onClick={() => handleDeleteContract(c)} className="p-1.5 rounded-lg border border-[#e4ddd1] text-[#5c6567] hover:text-[#b5493f] hover:bg-[#b5493f15]"><Trash2 size={14} /></button>)}
                       </div>
                     </td>
                   </tr>
@@ -1629,7 +1767,7 @@ const PrintingContractsView: React.FC = () => {
           icon={<FileText size={19} color="#fff" />}
           title={editingContract ? `Edit Contract: ${editingContract.contract_number}` : 'New Printing Contract'}
           subtitle={editingContract
-            ? `${customerNameOf(editingContract.customer_id)} · ${schoolNameOf(editingContract.school_id)}`
+            ? `${customerNameOf(editingContract.customer_id)}`
             : 'New commercial agreement — draft until verified & activated'}
           onClose={() => { setIsFormOpen(false); setEditingContract(null); }}
           footerHint={editingContract ? `Contract ${editingContract.contract_number} — historical records are protected` : 'Prepaid is the commercial figure — wallet moves only at payment time'}
@@ -1663,65 +1801,68 @@ const PrintingContractsView: React.FC = () => {
 
           <ContractSectionLabel>Parties &amp; Type</ContractSectionLabel>
           <div style={contractGridStyle}>
-            <div>
-              <label style={contractLabelStyle}>
-                Customer <ContractRequiredMark />
-              </label>
-              <SearchableSelect
-                label="Customer"
-                placeholder="Select customer…"
-                value={formDraft.customer_id}
-                onChange={(v) => setFormDraft({ ...formDraft, customer_id: v })}
-                options={(customers || []).map((c: Customer) => ({
-                  value: String(c.id),
-                  label: getCustomerOptionLabel(c as unknown as Parameters<typeof getCustomerOptionLabel>[0]),
-                }))}
-                optionItemStyle={{
-                  padding: '8px 12px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  borderBottom: '1px solid #e4ddd1',
+          <div>
+            <label style={contractLabelStyle}>
+              Customer <ContractRequiredMark />
+            </label>
+            <div ref={customerInputRef} style={{ position: 'relative', width: '100%' }}>
+              <input
+                value={customerDisplay}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setCustomerDisplay(val);
+                  setFormDraft({ ...formDraft, customer_id: val });
+                  setCustomerSuggestOpen(true);
                 }}
-                optionSelectedStyle={{
-                  fontWeight: 700,
-                  color: '#0f544c',
-                  background: '#eef7f6',
-                }}
+                onFocus={() => setCustomerSuggestOpen(true)}
+                placeholder="Enter customer name"
+                style={contractInputStyle}
               />
+              {customerSuggestOpen && customerSuggestions.length > 0 && (
+                <div style={{
+                  position: 'absolute',
+                  zIndex: 50,
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  maxHeight: 200,
+                  overflowY: 'auto',
+                  background: '#FEFdfb',
+                  border: '1.4px solid #e4ddd1',
+                  borderRadius: 9,
+                  boxShadow: '0 8px 24px -6px rgba(0,0,0,.15)',
+                  marginTop: 4,
+                }}>
+                  {customerSuggestions.map((c: Customer) => {
+                    const label = getCustomerOptionLabel(c);
+                    return (
+                      <div
+                        key={String(c.id)}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setFormDraft({ ...formDraft, customer_id: String(c.id) });
+                          setCustomerDisplay(label);
+                          setCustomerSuggestOpen(false);
+                        }}
+                        style={{
+                          padding: '8px 12px',
+                          cursor: 'pointer',
+                          fontSize: 13,
+                          color: '#0f172a',
+                          borderBottom: '1px solid #f0ebe8',
+                          display: 'flex',
+                          flexDirection: 'column',
+                        }}
+                      >
+                        <span style={{ fontWeight: 600 }}>{label}</span>
+                        <span style={{ fontSize: 11, color: '#64748b' }}>{c.id}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-            <div>
-              <label style={contractLabelStyle}>
-                School <ContractRequiredMark />
-              </label>
-              <SearchableSelect
-                label="School"
-                placeholder="Select school…"
-                value={formDraft.school_id}
-                onChange={(v) => setFormDraft({ ...formDraft, school_id: v })}
-                options={[
-                  { value: '', label: 'Select school…' },
-                  ...(schools || []).map((s) => ({
-                    value: String(s.id),
-                    label: s.name,
-                  })),
-                ]}
-                optionItemStyle={{
-                  padding: '8px 12px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  borderBottom: '1px solid #e4ddd1',
-                }}
-                optionSelectedStyle={{
-                  fontWeight: 700,
-                  color: '#0f544c',
-                  background: '#eef7f6',
-                }}
-              />
-            </div>
+          </div>
             <div>
               <label style={contractLabelStyle}>Contract type</label>
               <select value={formDraft.assessment_type} onChange={e => setFormDraft({ ...formDraft, assessment_type: e.target.value })}
@@ -2202,7 +2343,7 @@ const PrintingContractsView: React.FC = () => {
             footerActions={
               <>
                 <ContractGhostButton onClick={() => setSelectedId(null)}>Close</ContractGhostButton>
-                {canManageContracts && (<ContractPrimaryButton onClick={() => openEdit(selected)}>Edit Contract</ContractPrimaryButton>)}
+                {canManageContracts && !isContractVoided(selected.status) && (<ContractPrimaryButton onClick={() => openEdit(selected)}>Edit Contract</ContractPrimaryButton>)}
               </>
             }
         >
@@ -2230,8 +2371,9 @@ const PrintingContractsView: React.FC = () => {
             })}
           </div>
 
-          {/* Lifecycle transitions */}
-          {canManageContracts && CONTRACT_TRANSITIONS[selected.status].length > 0 && (
+          {/* Lifecycle transitions. Void is deliberately separate: it is a
+              compensating reversal, not an ordinary status edge. */}
+          {canManageContracts && !isContractVoided(selected.status) && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
               {CONTRACT_TRANSITIONS[selected.status].map(next => (
                 <ContractGhostButton key={next} onClick={() => transitionContract(selected, next)}>
@@ -2239,8 +2381,43 @@ const PrintingContractsView: React.FC = () => {
                   {next === 'pending_payment' ? 'Submit for payment' : next === 'active' ? 'Verify & activate' : next === 'suspended' ? 'Suspend' : CONTRACT_STATUS_LABEL[next]}
                 </ContractGhostButton>
               ))}
+              <button
+                onClick={() => handleVoidContract(selected)}
+                title="Reverse every consumed assessment, return the money to the customer wallet, release remaining reservations and mark the contract voided."
+                style={{
+                  fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600,
+                  padding: '9px 18px', borderRadius: 9, cursor: 'pointer',
+                  background: '#fdf2f1', border: '1.4px solid #e5b8b2', color: '#b5493f',
+                  display: 'flex', alignItems: 'center', gap: 7, transition: 'all .15s ease',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <XCircle size={13} /> Void contract
+              </button>
             </div>
           )}
+
+          {isContractVoided(selected.status) && (() => {
+            const voidInfo = ((selected.data as any)?.void || {}) as Record<string, any>;
+            return (
+              <div style={{ background: '#fdf2f1', border: '1px solid #f0c9c4', borderRadius: 12, padding: 14, marginBottom: 18 }}>
+                <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: '#8f2f27', textTransform: 'uppercase', letterSpacing: 0.06 }}>
+                  Contract voided — terminal
+                </p>
+                <p style={{ margin: '6px 0 0', fontSize: 12, color: contractInk }}>
+                  Every consumed assessment was reversed and the money returned to the customer wallet. Remaining reservations were released; this contract can no longer be edited, invoiced, amended or deleted.
+                </p>
+                <p className="finance-nums" style={{ margin: '6px 0 0', fontSize: 12, color: contractInkSoft, fontVariantNumeric: 'tabular-nums' }}>
+                  Returned to wallet {money(num(voidInfo.reversedAmount))} · released {money(num(voidInfo.releasedAmount))}
+                  {voidInfo.at ? ` · ${new Date(voidInfo.at).toLocaleString()}` : ''}
+                  {voidInfo.by ? ` · by ${voidInfo.by}` : ''}
+                </p>
+                {voidInfo.reason && (
+                  <p style={{ margin: '6px 0 0', fontSize: 12, color: contractInkSoft }}>Reason: {voidInfo.reason}</p>
+                )}
+              </div>
+            );
+          })()}
               {detailTab === 'overview' && (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -2257,7 +2434,7 @@ const PrintingContractsView: React.FC = () => {
                     ))}
                   </div>
                   <p style={{ fontSize: 11, color: contractInkSoft, margin: 0 }}>
-                    Assessments: total {selected.max_assessments} · completed {selectedItems.filter((a) => String(a.status) === 'consumed').length} · remaining {Math.max(0, num(selected.max_assessments) - selectedItems.filter((a) => String(a.status) === 'consumed').length)} · reserved {selectedItems.filter((a) => String(a.status) === 'reserved').length} · released {selectedItems.filter((a) => String(a.status) === 'released' || String(a.status) === 'cancelled').length}.
+                    Assessments: total {selected.max_assessments} · completed {selectedItems.filter((a) => String(a.status) === 'consumed').length} · remaining {Math.max(0, num(selected.max_assessments) - selectedItems.filter((a) => String(a.status) === 'consumed').length)} · reserved {selectedItems.filter((a) => String(a.status) === 'reserved').length} · released/voided {selectedItems.filter((a) => ['released', 'cancelled', 'voided'].includes(String(a.status))).length}.
                     {' '}Reserved money is allocated, not spent. Available for unrelated spending is wallet balance minus protected reservations (see Reconciliation).
                   </p>
                   <div style={{ background: contractPaper, borderRadius: 12, border: `1px solid ${contractHairline}`, padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
@@ -2267,7 +2444,7 @@ const PrintingContractsView: React.FC = () => {
                         {(selected.data as any)?.issued_invoice_id || 'Not yet issued'}
                       </p>
                     </div>
-                    {!(selected.data as any)?.issued_invoice_id && canManageContracts && (
+                    {!(selected.data as any)?.issued_invoice_id && canManageContracts && !isContractVoided(selected.status) && (
                       <ContractPrimaryButton compact chevron={false} onClick={handleIssueInvoiceForSelected}>
                         <FileText size={13} /> Issue invoice
                       </ContractPrimaryButton>
@@ -2430,9 +2607,11 @@ const PrintingContractsView: React.FC = () => {
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.08, color: contractInkSoft, margin: 0 }}>Schedule ({selectedItems.length}/{selected.max_assessments})</p>
-                    <ContractPrimaryButton compact chevron={false} onClick={openItemCreate}>
-                      <Plus size={13} /> Schedule Assessment
-                    </ContractPrimaryButton>
+                    {!isContractVoided(selected.status) && (
+                      <ContractPrimaryButton compact chevron={false} onClick={openItemCreate}>
+                        <Plus size={13} /> Schedule Assessment
+                      </ContractPrimaryButton>
+                    )}
                   </div>
                   {selectedItems.length === 0
                     ? <p style={{ fontSize: 12, color: contractInkSoft, fontStyle: 'italic', background: contractPaper, borderRadius: 12, border: `2px dashed ${contractTeal[100]}`, padding: 24, textAlign: 'center', margin: 0 }}>No assessments scheduled yet.</p>
@@ -2450,17 +2629,21 @@ const PrintingContractsView: React.FC = () => {
                           </div>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${ITEM_STATUS_STYLE[a.status]}`}>{ITEM_STATUS_LABEL[a.status]}</span>
-                            {a.status === 'reserved' && (
+                            {!isContractVoided(selected.status) && a.status === 'reserved' && (
                               <>
                                 <button onClick={() => transitionItem(a, 'consumed')} title="Mark consumed" className="p-1.5 rounded-lg border border-[#e4ddd1] text-[#146b60] hover:bg-[#eef7f6]"><CheckCircle size={14} /></button>
                                 <button onClick={() => transitionItem(a, 'released')} title="Release reservation" className="p-1.5 rounded-lg border border-[#e4ddd1] text-[#5c6567] hover:bg-[#eef7f6]"><History size={14} /></button>
                                 <button onClick={() => handleCreateJobFromAssessment(a)} title="Create printing job" className="p-1.5 rounded-lg border border-[#e4ddd1] text-[#146b60] hover:bg-[#eef7f6]"><Printer size={14} /></button>
                               </>
                             )}
-                            <button onClick={() => openJobLink(a)} title="Link job / exam batch" className="p-1.5 rounded-lg border border-[#e4ddd1] text-[#5c6567] hover:bg-[#eef7f6]"><ClipboardList size={14} /></button>
-                            <button onClick={() => openItemEdit(a)} className="p-1.5 rounded-lg border border-[#e4ddd1] text-[#5c6567] hover:bg-[#eef7f6]"><Edit2 size={14} /></button>
-                            {a.status !== 'consumed' && (
-                              <button onClick={() => transitionItem(a, 'cancelled')} title="Cancel assessment" className="p-1.5 rounded-lg border border-[#e4ddd1] text-[#b5493f] hover:bg-[#b5493f15]"><Ban size={14} /></button>
+                            {!isContractVoided(selected.status) && a.status !== 'voided' && (
+                              <>
+                                <button onClick={() => openJobLink(a)} title="Link job / exam batch" className="p-1.5 rounded-lg border border-[#e4ddd1] text-[#5c6567] hover:bg-[#eef7f6]"><ClipboardList size={14} /></button>
+                                <button onClick={() => openItemEdit(a)} className="p-1.5 rounded-lg border border-[#e4ddd1] text-[#5c6567] hover:bg-[#eef7f6]"><Edit2 size={14} /></button>
+                                {a.status !== 'consumed' && (
+                                  <button onClick={() => transitionItem(a, 'cancelled')} title="Cancel assessment" className="p-1.5 rounded-lg border border-[#e4ddd1] text-[#b5493f] hover:bg-[#b5493f15]"><Ban size={14} /></button>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>
@@ -2511,7 +2694,7 @@ const PrintingContractsView: React.FC = () => {
                     <div style={{ padding: 10, background: contractTeal[50], color: contractTeal[600], borderRadius: 8 }}><Landmark size={18} /></div>
                     <div style={{ fontSize: 12, color: contractInkSoft }}>
                       <p style={{ margin: 0 }}><b style={{ color: contractInk }}>Prepaid (commercial):</b> {money(fundsOf(selected).prepaid)} — recorded on the contract.</p>
-                      <p style={{ margin: '4px 0 0' }}><b style={{ color: contractInk }}>Wallet (financial truth):</b> moves at payment time — Deposit on activation, automatic Deduction when an assessment is consumed, Credit on cancellation refund. The contract authorizes assessment printing under the agreed scope and pricing; charges for executed assessments are automatically deducted from the customer's available wallet balance.</p>
+                      <p style={{ margin: '4px 0 0' }}><b style={{ color: contractInk }}>Wallet (financial truth):</b> moves at payment time — Deposit on activation, automatic Deduction when an assessment is consumed, Credit when a contract is voided (consumed money returned), Credit on a policy-approved refund. The contract authorizes assessment printing under the agreed scope and pricing; charges for executed assessments are automatically deducted from the customer's available wallet balance.</p>
                     </div>
                   </div>
                   {selectedWalletTx.length === 0
@@ -2535,7 +2718,7 @@ const PrintingContractsView: React.FC = () => {
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <p style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.08, color: contractInkSoft, margin: 0 }}>Amendments ({selectedAmendments.length})</p>
-                    {canManageContracts && (
+                    {canManageContracts && !isContractVoided(selected.status) && (
                       <ContractGhostButton compact onClick={() => setIsAmendOpen(true)}>
                         <Plus size={13} /> Request Amendment
                       </ContractGhostButton>
@@ -2555,7 +2738,7 @@ const PrintingContractsView: React.FC = () => {
                               requested {am.created_at ? new Date(am.created_at).toLocaleDateString() : ''}
                             </p>
                           </div>
-                          {am.status === 'pending' && canManageContracts && (
+                          {am.status === 'pending' && canManageContracts && !isContractVoided(selected.status) && (
                             <div className="flex gap-1.5 shrink-0">
                               <ContractPrimaryButton compact chevron={false} onClick={() => handleApproveAmendment(am, true)}>Approve</ContractPrimaryButton>
                               <ContractGhostButton compact onClick={() => handleApproveAmendment(am, false)}>Reject</ContractGhostButton>
@@ -2752,6 +2935,48 @@ const PrintingContractsView: React.FC = () => {
               onChange={e => setActivateOverride({ ...activateOverride, reason: e.target.value })}
               rows={3}
               placeholder="e.g. Government LPO received — payment follows in 30 days"
+              style={contractTextareaStyle}
+            />
+          </div>
+        </ContractModalShell>
+      )}
+
+      {/* ── Void contract (compensating reversal, reason required) ── */}
+      {voidTarget && (
+        <ContractModalShell
+          width={600}
+          zIndex={9200}
+          icon={<XCircle size={19} color="#fff" />}
+          title="Void printing contract"
+          subtitle={`${voidTarget.contract.contract_number} — ${voidTarget.contract.title}`}
+          onClose={() => setVoidTarget(null)}
+          footerHint="The void, its reason and every reversal transaction are recorded on the contract audit trail. This action cannot be undone."
+          submitLabel="Void contract — reverse consumed money"
+          onSubmit={() => { void confirmVoidContract(); }}
+        >
+          <div style={{ background: '#fdf2f1', border: '1px solid #f0c9c4', borderRadius: 10, padding: 14, marginBottom: 18 }}>
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#8f2f27' }}>
+              Void is stronger than Cancel.
+            </p>
+            <p style={{ margin: '6px 0 0', fontSize: 12, color: contractInk }}>
+              It will reverse every consumed assessment and return the money actually charged to the customer wallet, with reversing ledger postings. Remaining reservations are released. The contract becomes terminal <b>Voided</b> and cannot be edited, invoiced, amended or deleted afterwards.
+            </p>
+            <p className="finance-nums" style={{ margin: '8px 0 0', fontSize: 12, color: contractInkSoft, fontVariantNumeric: 'tabular-nums' }}>
+              Consumed to reverse: {money(num(voidTarget.contract.consumed_amount))}
+              {' · '}Consumed assessments: {(contractAssessments || []).filter(a => a.contract_id === voidTarget.contract.id && a.status === 'consumed').length}
+              {' · '}Remaining reservation to release: {money(num(voidTarget.contract.reserved_amount))}
+            </p>
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            <label style={contractLabelStyle}>
+              Reason <ContractRequiredMark />
+            </label>
+            <textarea
+              autoFocus
+              value={voidTarget.reason}
+              onChange={e => setVoidTarget({ ...voidTarget, reason: e.target.value })}
+              rows={3}
+              placeholder="e.g. Contract signed in error — customer requested full reversal"
               style={contractTextareaStyle}
             />
           </div>

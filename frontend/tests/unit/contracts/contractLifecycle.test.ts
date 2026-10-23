@@ -8,6 +8,7 @@ import {
   generateNextContractNumber,
   isAllowedContractTransition,
   isAllowedItemTransition,
+  isContractVoided,
   isFullySigned,
   isSignableContractStatus,
   matchContractWalletTx,
@@ -40,17 +41,31 @@ describe('contract lifecycle transitions', () => {
   it('guards item transitions', () => {
     expect(isAllowedItemTransition('reserved', 'consumed')).toBe(true);
     expect(isAllowedItemTransition('consumed', 'cancelled')).toBe(true);
+    expect(isAllowedItemTransition('consumed', 'voided')).toBe(true);
     expect(isAllowedItemTransition('consumed', 'reserved')).toBe(false);
     expect(isAllowedItemTransition('released', 'consumed')).toBe(false);
+    expect(isAllowedItemTransition('voided', 'released')).toBe(false);
   });
 
   it('terminal states never return to active (or anywhere)', () => {
-    for (const terminal of ['completed', 'expired', 'cancelled']) {
-      for (const target of ['draft', 'pending_payment', 'active', 'suspended', 'completed', 'expired', 'cancelled']) {
+    for (const terminal of ['completed', 'expired', 'cancelled', 'voided']) {
+      for (const target of ['draft', 'pending_payment', 'active', 'suspended', 'completed', 'expired', 'cancelled', 'voided']) {
         expect(isAllowedContractTransition(terminal, target)).toBe(false);
         expect(() => assertAllowedContractTransition(terminal, target)).toThrow(/not allowed/);
       }
     }
+  });
+
+  it('void is a compensating operation, never an ordinary status edge', () => {
+    expect(isContractVoided('voided')).toBe(true);
+    expect(isContractVoided('VOIDED')).toBe(true);
+    expect(isContractVoided('cancelled')).toBe(false);
+    // Only transactionService.voidPrintingContract may reach `voided`; the
+    // ordinary lifecycle map can never write it from any status.
+    for (const from of ['draft', 'pending_payment', 'active', 'suspended', 'completed', 'expired', 'cancelled']) {
+      expect(isAllowedContractTransition(from, 'voided')).toBe(false);
+    }
+    expect(isAllowedContractTransition('voided', 'voided')).toBe(false);
   });
 
   it('keeps the pending_payment chain and suspend/resume edges intact', () => {
@@ -88,12 +103,24 @@ describe('assessment item write guards (wallet-first)', () => {
     ).toThrow(/canonical wallet-first operation/);
   });
 
-  it('blocks every edge out of consumed (compensating reversal required)', () => {
-    for (const target of ['reserved', 'released', 'cancelled']) {
+  it('blocks every edge out of consumed (canonical void required)', () => {
+    for (const target of ['reserved', 'released', 'cancelled', 'voided']) {
       expect(() => assertAllowedItemWrite({ status: 'consumed' }, { status: target })).toThrow(
-        /compensating reversal/
+        /canonical void|compensating/
       );
     }
+  });
+
+  it('treats voided assessments as terminal', () => {
+    for (const target of ['reserved', 'consumed', 'released', 'cancelled']) {
+      expect(() => assertAllowedItemWrite({ status: 'voided' }, { status: target })).toThrow(
+        /voided.*terminal/
+      );
+    }
+    // Status-preserving writes (notes, job links) remain allowed.
+    expect(() =>
+      assertAllowedItemWrite({ status: 'voided', id: 'a' }, { status: 'voided', id: 'a', notes: 'kept' } as any)
+    ).not.toThrow();
   });
 
   it('allows non-financial transitions and status-preserving writes', () => {
@@ -113,6 +140,7 @@ describe('assessment item write guards (wallet-first)', () => {
     expect(() => assertAllowedItemCreate({ status: 'reserved' })).not.toThrow();
     expect(() => assertAllowedItemCreate({} as any)).not.toThrow();
     expect(() => assertAllowedItemCreate({ status: 'consumed' })).toThrow(/created reserved/);
+    expect(() => assertAllowedItemCreate({ status: 'voided' })).toThrow(/created reserved/);
   });
 });
 
@@ -270,7 +298,7 @@ describe('signing ceremony state machine', () => {
     for (const s of ['draft', 'pending_payment', 'active', 'suspended']) {
       expect(isSignableContractStatus(s)).toBe(true);
     }
-    for (const s of ['completed', 'expired', 'cancelled', undefined]) {
+    for (const s of ['completed', 'expired', 'cancelled', 'voided', undefined]) {
       expect(isSignableContractStatus(s)).toBe(false);
     }
   });

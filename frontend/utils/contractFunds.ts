@@ -87,9 +87,13 @@ export const contractFundPosition = (
   const items = (allItems || []).filter((it) => String(it?.contract_id || '') === cid);
   const reservedItems = items.filter((it) => String(it?.status || '') === 'reserved');
   const consumedItems = items.filter((it) => String(it?.status || '') === 'consumed');
-  const releasedItems = items.filter(
-    (it) => String(it?.status || '') === 'released' || String(it?.status || '') === 'cancelled',
-  );
+  // `voided` items are consumed assessments reversed by the canonical void:
+  // their value is back in the wallet, so they belong with the released
+  // (no longer held) movements, never with consumed.
+  const releasedItems = items.filter((it) => {
+    const status = String(it?.status || '');
+    return status === 'released' || status === 'cancelled' || status === 'voided';
+  });
   const bucketReserved = money((contract as { reserved_amount?: unknown })?.reserved_amount);
   const itemsReservedValue = money(
     reservedItems.reduce((s, it) => s + money((it as { item_price?: unknown })?.item_price), 0),

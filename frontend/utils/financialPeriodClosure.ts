@@ -80,6 +80,13 @@ export const isFinancialPeriodClosed = async (
  * Fail-closed guard: throws when `dateIso` falls inside a
  * closed period. `action` is the human operation being
  * attempted, used verbatim in the error message.
+ *
+ * WARNING: do NOT call this inside `dbService.executeAtomicOperation`.
+ * It reads the registry through `dbService.getSetting`, which opens a
+ * SEPARATE IndexedDB transaction; awaiting it lets the caller's readwrite
+ * transaction auto-commit, and the next store operation then throws
+ * `TransactionInactiveError`. Use the tx's own `settings` store and call
+ * the pure `assertFinancialPeriodOpenForPeriods` instead.
  */
 export const assertFinancialPeriodOpen = async (
   dateIso: string | undefined,

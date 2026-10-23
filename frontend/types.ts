@@ -3439,7 +3439,13 @@ export interface AssessmentContract {
   contract_number: string;
   title: string;
   description?: string;
-  status: 'draft' | 'pending_payment' | 'active' | 'suspended' | 'completed' | 'expired' | 'cancelled';
+  /**
+   * `voided` is terminal and stronger than `cancelled`: the contract and every
+   * remaining reservation are stopped, AND the whole consumed history is
+   * reversed (wallet credited + reversing ledger postings). It is written only
+   * by transactionService.voidPrintingContract — never by a status edit.
+   */
+  status: 'draft' | 'pending_payment' | 'active' | 'suspended' | 'completed' | 'expired' | 'cancelled' | 'voided';
   prepaid_amount: number;
   consumed_amount: number;
   reserved_amount: number;
@@ -3450,6 +3456,7 @@ export interface AssessmentContract {
   activated_at?: string;
   completed_at?: string;
   cancelled_at?: string;
+  voided_at?: string;
   suspended_at?: string;
   assessment_type: string;
   assessment_grade?: string;
@@ -3495,11 +3502,14 @@ export interface AssessmentContractItem {
   assessment_subject?: string;
   assessment_name: string;
   assessment_date?: string;
-  status: 'reserved' | 'consumed' | 'released' | 'cancelled';
+  status: 'reserved' | 'consumed' | 'released' | 'cancelled' | 'voided';
   item_price: number;
   consumed_at?: string;
   reserved_at?: string;
   released_at?: string;
+  /** Set only by the canonical contract void (compensating reversal). */
+  voided_at?: string;
+  void_reason?: string;
   job_order_id?: string;
   examination_printing_batch_id?: string;
   notes?: string;

@@ -8,6 +8,12 @@ export type ContractStatus = AssessmentContract['status'];
  * Draft → Pending Payment → Active → Suspended → Completed/Expired/Cancelled).
  * Single source of truth shared by the view AND the finance store so status
  * jumps cannot bypass the UI by calling the store directly.
+ *
+ * `voided` is deliberately NOT an edge here. Voiding is a compensating
+ * financial operation (transactionService.voidPrintingContract), not an
+ * ordinary status transition, so it may start from any non-voided status and
+ * always ends in the terminal `voided` state. Ordinary status writers can
+ * therefore never reach it.
  */
 export const CONTRACT_TRANSITIONS: Record<ContractStatus, ContractStatus[]> = {
   draft: ['pending_payment', 'cancelled'],
@@ -17,16 +23,26 @@ export const CONTRACT_TRANSITIONS: Record<ContractStatus, ContractStatus[]> = {
   completed: [],
   expired: [],
   cancelled: [],
+  voided: [],
 };
 
-export type ContractItemStatus = 'reserved' | 'consumed' | 'released' | 'cancelled';
+export type ContractItemStatus = 'reserved' | 'consumed' | 'released' | 'cancelled' | 'voided';
 
 export const CONTRACT_ITEM_TRANSITIONS: Record<ContractItemStatus, ContractItemStatus[]> = {
   reserved: ['consumed', 'released', 'cancelled'],
-  consumed: ['cancelled'],
+  // consumed → voided documents the canonical compensating reversal. It is
+  // NOT reachable through assertAllowedItemWrite: only
+  // transactionService.voidPrintingContract may write that edge, inside its
+  // atomic operation, after posting the wallet credit + reversing ledger entry.
+  consumed: ['cancelled', 'voided'],
   released: [],
   cancelled: [],
+  voided: [],
 };
+
+/** True when a contract is in the terminal, fully reversed `voided` state. */
+export const isContractVoided = (status: unknown): boolean =>
+  String(status || '').toLowerCase() === 'voided';
 
 export const isAllowedContractTransition = (
   from: string | undefined,
@@ -64,6 +80,11 @@ export const isAllowedItemTransition = (
  *  - any edge OUT of consumed is BLOCKED here (a consumed assessment already
  *    has exactly one wallet debit behind it; value recovery requires an
  *    explicit compensating reversal, tracked separately — not a status flip).
+ *    The ONE canonical exception is transactionService.voidPrintingContract,
+ *    which writes consumed → voided directly INSIDE its atomic operation after
+ *    posting the Credit wallet transaction + reversing ledger entry that fund
+ *    the edge. It intentionally bypasses this guard; no other writer may.
+ *  - `voided` is terminal: no ordinary writer may move an item out of it.
  * Status-preserving writes (job links, notes, scheduling fields) always pass.
  * Lifecycle-map violations are still rejected with the map error.
  */
@@ -74,6 +95,11 @@ export const assertAllowedItemWrite = (
   const from = String(current?.status || '');
   const to = String(next?.status || '');
   if (!current || from === to || !to) return;
+  if (from === 'voided') {
+    throw new Error(
+      `Status change voided → ${to} is blocked. A voided assessment has already been reversed (wallet credited + ledger posting); it is terminal.`,
+    );
+  }
   if (from === 'reserved' && to === 'consumed') {
     throw new Error(
       'Direct status mutation reserved → consumed is blocked. Consume assessments only through the canonical wallet-first operation (consumeContractAssessment), which posts exactly one wallet debit and one ledger entry.',
@@ -81,7 +107,7 @@ export const assertAllowedItemWrite = (
   }
   if (from === 'consumed') {
     throw new Error(
-      `Status change consumed → ${to} is blocked. A consumed assessment already has a wallet debit behind it; value recovery requires an explicit compensating reversal (tracked separately), not a status flip.`,
+      `Status change consumed → ${to} is blocked. A consumed assessment already has a wallet debit behind it; value recovery requires the canonical void (voidPrintingContract), which posts the compensating Credit and reversing ledger entry atomically — not a status flip.`,
     );
   }
   if (!isAllowedItemTransition(from, to)) {

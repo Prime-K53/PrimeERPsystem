@@ -1206,6 +1206,33 @@ export const api = {
       checkAuth(['Admin', 'Accountant', 'Editor'], 'Finance.ConsumeContractAssessment');
       return transactionService.consumeContractAssessment(args);
     }, 'Finance.ConsumeContractAssessment'),
+    /**
+     * Cancel stops the contract and releases ONLY the remaining reservation.
+     * Consumed assessments and their wallet debits are preserved.
+     */
+    cancelPrintingContract: (args: {
+      contractId: string;
+      reason?: string;
+      performedBy?: string;
+      idempotencyKey?: string;
+    }) => handle(() => {
+      checkAuth(['Admin', 'Accountant', 'Editor'], 'Finance.CancelPrintingContract');
+      return transactionService.cancelPrintingContract(args);
+    }, 'Finance.CancelPrintingContract'),
+    /**
+     * Void reverses the whole contract: consumed assessments are credited
+     * back to the customer wallet with reversing ledger postings, remaining
+     * reservations are released, and the contract becomes terminal `voided`.
+     */
+    voidPrintingContract: (args: {
+      contractId: string;
+      reason?: string;
+      performedBy?: string;
+      idempotencyKey?: string;
+    }) => handle(() => {
+      checkAuth(['Admin', 'Accountant', 'Editor'], 'Finance.VoidPrintingContract');
+      return transactionService.voidPrintingContract(args);
+    }, 'Finance.VoidPrintingContract'),
     saveWalletTransaction: (t: WalletTransaction) => handle(async () => {
       checkAuth(['Admin', 'Accountant'], 'Finance.SaveWalletTransaction');
       const result = await dbService.executeAtomicOperation(['walletTransactions', 'idempotencyKeys'], async (tx) => {

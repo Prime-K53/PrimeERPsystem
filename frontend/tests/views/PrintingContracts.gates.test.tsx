@@ -50,6 +50,11 @@ const financeState: Record<string, any> = {
   addContractAmendment: vi.fn(async () => undefined),
   updateContractAmendment: vi.fn(async () => undefined),
   addWalletTransaction: vi.fn(async () => undefined),
+  consumeContractAssessment: vi.fn(async () => ({ success: true })),
+  cancelPrintingContract: vi.fn(async () => ({ success: true, already: false, releasedValue: 0 })),
+  voidPrintingContract: vi.fn(async () => ({
+    success: true, already: false, reversedValue: 0, releasedValue: 0, newBalance: 5000,
+  })),
 };
 
 const salesState: Record<string, any> = {
@@ -87,7 +92,7 @@ vi.mock('../../context/FinanceContext', () => ({
 import PrintingContractsView from '../../components/printing-contracts/PrintingContractsView';
 
 async function openDetails() {
-  render(<PrintingContractsView />);
+  const rendered = render(<PrintingContractsView />);
   await waitFor(() => {
     expect(screen.getByText('PC-0001')).toBeTruthy();
   });
@@ -95,6 +100,7 @@ async function openDetails() {
   await waitFor(() => {
     expect(screen.getByText('Printing Jobs')).toBeTruthy();
   });
+  return rendered;
 }
 
 describe('role gates', () => {
@@ -192,5 +198,122 @@ describe('activation evidence routing', () => {
       );
     });
     expect(financeState.updateAssessmentContract).not.toHaveBeenCalled();
+  });
+});
+
+describe('cancel and void gates', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    Object.keys(mockUser).forEach((k) => delete mockUser[k]);
+    Object.assign(mockUser, { id: 'u-1', username: 'tester', role: 'Admin' });
+    salesState.customers = [{ id: 'cust-1', name: 'Acme School Client', walletBalance: 5000 }];
+    financeState.invoices = [];
+    financeState.contractAssessments = [
+      { id: 'a-1', contract_id: 'c-1', assessment_name: 'Maths', status: 'consumed', item_price: 1000, version: 1 },
+      { id: 'a-2', contract_id: 'c-1', assessment_name: 'English', status: 'reserved', item_price: 4000, version: 1 },
+    ];
+    financeState.cancelPrintingContract = vi.fn(async () => ({ success: true, already: false, releasedValue: 4000 }));
+    financeState.voidPrintingContract = vi.fn(async () => ({
+      success: true, already: false, reversedValue: 1000, releasedValue: 4000, newBalance: 5000,
+    }));
+  });
+
+  it('cancel requires confirmation and states that consumed money is not returned', async () => {
+    financeState.assessmentContracts = [{
+      ...contractRow,
+      status: 'active',
+      prepaid_amount: 5000,
+      consumed_amount: 1000,
+      reserved_amount: 4000,
+    }];
+    await openDetails();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelled' }));
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'Cancel printing contract' });
+    expect(dialog.textContent).toMatch(/Consumed assessments \(K1,000\) and the money already charged are NOT returned/);
+    expect(dialog.textContent).toMatch(/use Void instead/i);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel contract' }));
+    await waitFor(() => {
+      expect(financeState.cancelPrintingContract).toHaveBeenCalledWith({
+        contractId: 'c-1',
+        performedBy: 'u-1',
+        reason: 'Cancelled from Printing Contracts',
+      });
+    });
+    expect(mockNotify).toHaveBeenCalledWith(
+      expect.stringMatching(/Consumed assessments were NOT reversed/),
+      'success',
+    );
+    expect(financeState.voidPrintingContract).not.toHaveBeenCalled();
+  });
+
+  it('void requires a reason and then reverses consumed money', async () => {
+    financeState.assessmentContracts = [{
+      ...contractRow,
+      status: 'active',
+      prepaid_amount: 5000,
+      consumed_amount: 1000,
+      reserved_amount: 4000,
+    }];
+    await openDetails();
+
+    fireEvent.click(screen.getByRole('button', { name: /Void contract/ }));
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Void printing contract' })).toBeTruthy();
+    });
+
+    // Empty reason is refused; no service call is made.
+    fireEvent.click(screen.getByRole('button', { name: 'Void contract — reverse consumed money' }));
+    expect(mockNotify).toHaveBeenCalledWith('A reason is required to void a printing contract.', 'error');
+    expect(financeState.voidPrintingContract).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByPlaceholderText(/Contract signed in error/), {
+      target: { value: 'Contract signed in error' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Void contract — reverse consumed money' }));
+    await waitFor(() => {
+      expect(financeState.voidPrintingContract).toHaveBeenCalledWith({
+        contractId: 'c-1',
+        reason: 'Contract signed in error',
+        performedBy: 'u-1',
+      });
+    });
+    expect(mockNotify).toHaveBeenCalledWith(
+      expect.stringMatching(/returned to the customer wallet/),
+      'success',
+    );
+  });
+
+  it('hides every mutation action and shows the audit banner for a voided contract', async () => {
+    financeState.assessmentContracts = [{
+      ...contractRow,
+      status: 'voided',
+      prepaid_amount: 0,
+      consumed_amount: 0,
+      reserved_amount: 0,
+      data: {
+        void: {
+          reason: 'Contract signed in error',
+          reversedAmount: 1000,
+          releasedAmount: 4000,
+          at: '2026-10-01T10:00:00.000Z',
+          by: 'u-1',
+        },
+      },
+    }];
+    const { container } = await openDetails();
+
+    expect(screen.getByText('Contract voided — terminal')).toBeTruthy();
+    expect(screen.getByText(/Reason: Contract signed in error/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Void contract' })).toBeNull();
+    expect(screen.queryByText('Verify & activate')).toBeNull();
+    expect(screen.queryByText('Edit Contract')).toBeNull();
+    expect(screen.queryByText('Schedule Assessment')).toBeNull();
+    expect(screen.queryByText('Request Amendment')).toBeNull();
+    // List-row Edit/Delete icons are hidden too.
+    expect(container.querySelector('[title="Delete"]')).toBeNull();
+    expect(container.querySelector('[title="Edit"]')).toBeNull();
   });
 });

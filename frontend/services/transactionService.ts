@@ -16,7 +16,7 @@ import { BankAccount, BankTransaction } from '../types/banking';
 import { MultiCurrencyJournalEntry, MultiCurrencyTransactionLine, CurrencyGainLoss } from '../types/currency';
 
 import { assertInvoiceNumberFormat, calculateDueDate, generateNextId, resolveCustomerPaymentTerms, roundToCurrency } from '../utils/helpers';
-import { assertFinancialPeriodOpen, assertFinancialPeriodOpenForPeriods } from '../utils/financialPeriodClosure';
+import { assertFinancialPeriodOpenForPeriods, type ClosedFinancialPeriod } from '../utils/financialPeriodClosure';
 import { allocateEligibleReservations } from '../utils/contractFunds';
 import { traceExamInvoice } from '../utils/examinationInvoiceDiag';
 import { extractProfitMargin } from '../utils/financial/extractors';
@@ -78,23 +78,40 @@ import { propagateCustomerRename, resolveCustomerDisplayName } from './customerR
 const AR_POSTING_PREFIXES = ['LG-INV-AR-', 'LG-QTN-INV-AR-', 'LG-JO-INV-AR-', 'LG-REV-AR-'];
 
 /**
- * Same-process queue for assessment consumption. The IndexedDB readwrite
- * transaction is the persistence-level serialization boundary across
- * connections; this queue also avoids same-process contention. Cloud-replica
- * races are not server-enforced.
+ * ONE same-process mutation queue per contract. Every financial/state change
+ * on a contract (reserve, consume, amendment delta, closure/cancel, refund,
+ * void, create) runs through this queue, so two different operations can no
+ * longer interleave their read-check-write windows in the same tab. The
+ * IndexedDB readwrite transaction remains the persistence-level boundary
+ * across connections; cloud-replica races are not server-enforced.
  */
-const consumeContractLocks = new Map<string, Promise<void>>();
+const contractMutationLocks = new Map<string, Promise<void>>();
 
-/**
- * Per-contract reservation serialization (same pattern as
- * consumeContractLocks): two same-contract reservation
- * attempts must not interleave their entitlement checks.
- */
-const reserveContractLocks = new Map<string, Promise<void>>();
+const withContractMutationLock = async <T>(
+    contractId: string,
+    run: () => Promise<T>,
+): Promise<T> => {
+    const key = `contract-mutation:${contractId}`;
+    const previous = contractMutationLocks.get(key) || Promise.resolve();
+    let releaseLock!: () => void;
+    const current = new Promise<void>((resolve) => { releaseLock = resolve; });
+    contractMutationLocks.set(key, current);
+    try {
+        // A previous failure must not fail this attempt: it re-validates
+        // everything itself.
+        await previous.catch(() => {});
+        return await run();
+    } finally {
+        if (contractMutationLocks.get(key) === current) {
+            contractMutationLocks.delete(key);
+        }
+        releaseLock();
+    }
+};
 
 /**
  * Same-tab serialization for landing-cost consumption (same convention as
- * consumeContractLocks above). GRN verification reads PO consumption events
+ * the per-contract mutation queue above). GRN verification reads PO consumption events
  * then appends its own; two interleaved same-tab verifies of different GRNs
  * against one PO could otherwise both consume the same remaining amount
  * before either writes. Chaining per-PO promises closes that gap for the
@@ -134,6 +151,40 @@ async function findClosedFinancialYearForDate(
         }
     }
     return null;
+}
+
+/**
+ * Read the closed-period registry from the SAME IndexedDB transaction.
+ *
+ * Financial operations run inside `dbService.executeAtomicOperation`, whose
+ * readwrite transaction auto-commits as soon as it goes idle. Calling the
+ * async `assertFinancialPeriodOpen` there indirectly awaits `dbService.get`
+ * (a separate transaction), so the outer transaction commits and the next
+ * `get`/`put` throws `TransactionInactiveError` ("The transaction has
+ * finished"). Always read the registry through the tx store and use the pure
+ * `assertFinancialPeriodOpenForPeriods` guard.
+ */
+async function readClosedPeriodsFromSettingsStore(
+    settingsStore: IDBObjectStore | any,
+): Promise<ClosedFinancialPeriod[] | undefined> {
+    const record = await settingsStore.get('financial_closed_periods');
+    let periods: ClosedFinancialPeriod[] | undefined = Array.isArray(record?.value)
+        ? record.value
+        : Array.isArray(record)
+            ? record
+            : undefined;
+    if (!periods && typeof localStorage !== 'undefined') {
+        const serializedPeriods = localStorage.getItem('financial_closed_periods');
+        if (serializedPeriods !== null) {
+            try {
+                const parsedPeriods: unknown = JSON.parse(serializedPeriods);
+                if (Array.isArray(parsedPeriods)) periods = parsedPeriods as ClosedFinancialPeriod[];
+            } catch {
+                periods = undefined;
+            }
+        }
+    }
+    return periods;
 }
 
 /**
@@ -8517,20 +8568,7 @@ export const transactionService = {
         // Serialize same-contract invocations within this tab; a
         // prior failure must not fail this call (the fresh attempt
         // re-validates everything itself).
-        const lockKey = `reserve-contract-assessment:${contractId}`;
-        const previous = reserveContractLocks.get(lockKey) || Promise.resolve();
-        let releaseLock!: () => void;
-        const current = new Promise<void>((resolve) => { releaseLock = resolve; });
-        reserveContractLocks.set(lockKey, current);
-        try {
-            await previous.catch(() => {});
-            return await this.reserveContractAssessmentTx(args);
-        } finally {
-            if (reserveContractLocks.get(lockKey) === current) {
-                reserveContractLocks.delete(lockKey);
-            }
-            releaseLock();
-        }
+        return withContractMutationLock(contractId, () => this.reserveContractAssessmentTx(args));
     },
 
     /**
@@ -8559,10 +8597,11 @@ export const transactionService = {
         const nowIso = new Date().toISOString();
 
         const result = await dbService.executeAtomicOperation(
-            ['assessmentContracts', 'contractAssessments', 'customers'],
+            ['assessmentContracts', 'contractAssessments', 'customers', 'settings'],
             async (tx) => {
                 const contractStore = tx.objectStore('assessmentContracts');
                 const itemStore = tx.objectStore('contractAssessments');
+                const settingsStore = tx.objectStore('settings');
 
                 const contract = await contractStore.get(contractId);
                 if (!contract) {
@@ -8571,7 +8610,7 @@ export const transactionService = {
 
                 // ── Contract eligibility: terminal contracts are closed ──
                 const contractStatus = String(contract.status || '').trim().toLowerCase();
-                if (['completed', 'expired', 'cancelled'].includes(contractStatus)) {
+                if (['completed', 'expired', 'cancelled', 'voided'].includes(contractStatus)) {
                     throw new Error(`reserveContractAssessment: contract ${contractId} is '${contract.status || 'unknown'}' — it cannot be scheduled on a closed contract. Nothing written.`);
                 }
 
@@ -8589,7 +8628,8 @@ export const transactionService = {
                 // ── Closed-period guard (§10.14): scheduling is a
                 // financial event dated by the assessment date ──
                 const assessmentDate = String(assessment.assessment_date || nowIso).slice(0, 10);
-                await assertFinancialPeriodOpen(assessmentDate, 'reserveContractAssessment');
+                const closedPeriods = await readClosedPeriodsFromSettingsStore(settingsStore);
+                assertFinancialPeriodOpenForPeriods(assessmentDate, 'reserveContractAssessment', closedPeriods);
 
                 // ── Deterministic item id must be fresh ──
                 const prior = await itemStore.get(assessmentItemId);
@@ -8666,19 +8706,14 @@ export const transactionService = {
         const items = Array.isArray(args?.items) ? args.items : [];
         if (!contract?.id) throw new Error('createPrintingContractWithItems: contract.id is required.');
         if (!contract?.customer_id) throw new Error('createPrintingContractWithItems: contract.customer_id is required.');
-        const lockKey = `create-printing-contract:${String(contract.id)}`;
-        const previous = reserveContractLocks.get(lockKey) || Promise.resolve();
-        let releaseLock!: () => void;
-        const current = new Promise<void>((resolve) => { releaseLock = resolve; });
-        reserveContractLocks.set(lockKey, current);
-        try {
-            await previous.catch(() => {});
+        return withContractMutationLock(String(contract.id), async () => {
             const nowIso = new Date().toISOString();
             return await dbService.executeAtomicOperation(
-                ['assessmentContracts', 'contractAssessments', 'idempotencyKeys'],
+                ['assessmentContracts', 'contractAssessments', 'idempotencyKeys', 'settings'],
                 async (tx: any) => {
                     const contractStore = tx.objectStore('assessmentContracts');
                     const itemStore = tx.objectStore('contractAssessments');
+                    const settingsStore = tx.objectStore('settings');
                     await reserveIdempotencyKey(tx, 'printing_contract_create', String(contract.id));
                     const existingContract = await contractStore.get(String(contract.id));
                     if (existingContract) throw new Error(`Duplicate financial request blocked for printing contract ${String(contract.id)}.`);
@@ -8689,6 +8724,7 @@ export const transactionService = {
                     if (items.length > maxAssessments) {
                         throw new Error(`createPrintingContractWithItems: entitlement exceeded — ${items.length} items for max ${maxAssessments}. Nothing written.`);
                     }
+                    const closedPeriods = await readClosedPeriodsFromSettingsStore(settingsStore);
                     const seen = new Set<string>();
                     let total = 0;
                     for (const it of items) {
@@ -8703,7 +8739,7 @@ export const transactionService = {
                         const prior = await itemStore.get(id);
                         if (prior) throw new Error(`Duplicate financial request blocked for contract assessment ${id}.`);
                         const dateOnly = String((it as any)?.assessment_date || nowIso).slice(0, 10);
-                        await assertFinancialPeriodOpen(dateOnly, 'createPrintingContractWithItems');
+                        assertFinancialPeriodOpenForPeriods(dateOnly, 'createPrintingContractWithItems', closedPeriods);
                         total = toMoney(total + price);
                     }
                     const record = {
@@ -8743,10 +8779,7 @@ export const transactionService = {
                     return { success: true, contractId: String(contract.id), reservedAmount: total, itemCount: items.length };
                 },
             );
-        } finally {
-            if (reserveContractLocks.get(lockKey) === current) reserveContractLocks.delete(lockKey);
-            releaseLock();
-        }
+        });
     },
 
     /**
@@ -8770,6 +8803,7 @@ export const transactionService = {
         if (!amendmentId) throw new Error('applyContractAmendmentDelta: amendmentId is required.');
         const prepaidDelta = toMoney(Number(args?.prepaidDelta || 0));
         const countDelta = Math.floor(Number(args?.countDelta || 0));
+        return withContractMutationLock(contractId, async () => {
         const nowIso = new Date().toISOString();
         return await dbService.executeAtomicOperation(
             ['assessmentContracts', 'contractAssessments', 'customers', 'contractAmendments', 'idempotencyKeys'],
@@ -8779,7 +8813,7 @@ export const transactionService = {
                 const contract = await contractStore.get(contractId);
                 if (!contract) throw new Error(`applyContractAmendmentDelta: contract ${contractId} not found. Nothing written.`);
                 const status = String(contract.status || '');
-                if (['completed', 'expired', 'cancelled'].includes(status.toLowerCase())) {
+                if (['completed', 'expired', 'cancelled', 'voided'].includes(status.toLowerCase())) {
                     throw new Error(`applyContractAmendmentDelta: contract ${contractId} is closed (${status}). Nothing written.`);
                 }
                 const newPrepaid = toMoney(Number(contract.prepaid_amount || 0) + prepaidDelta);
@@ -8836,6 +8870,7 @@ export const transactionService = {
                 return { success: true, contractId, amendmentId, newPrepaid, newMax, funded: Boolean(fundedIncrease) };
             },
         );
+        });
     },
 
     /**
@@ -8843,47 +8878,429 @@ export const transactionService = {
      * protected reservation (reserved items → released, bucket → 0) without
      * touching consumed history or fabricating a refund. Cash refunds (if policy
      * allows) go through refundContractBalance separately with ledger treatment.
-     * Idempotent per contract+targetStatus.
+     *
+     * CANCEL is exactly this closure with targetStatus 'cancelled':
+     *  - 200 reserved, 50 consumed, 150 remaining → releases 150 only;
+     *  - the 50 consumed and the money already debited stay untouched.
+     * Reversing consumed money is the stronger `voidPrintingContract` operation.
+     *
+     * Idempotent per contract+targetStatus: a repeated closure of an already
+     * closed contract returns `{ already: true }` before reserving the key.
+     * `voided` is terminal and can never be reopened/closed by this method.
      */
-    async resolveContractClosure(args: { contractId: string; targetStatus: 'cancelled' | 'expired' | 'completed'; performedBy?: string }) {
+    async resolveContractClosure(args: {
+        contractId: string;
+        targetStatus: 'cancelled' | 'expired' | 'completed';
+        performedBy?: string;
+        reason?: string;
+        idempotencyKey?: string;
+    }) {
         const contractId = String(args?.contractId || '').trim();
         const targetStatus = String(args?.targetStatus || '').trim() as 'cancelled' | 'expired' | 'completed';
         if (!contractId) throw new Error('resolveContractClosure: contractId is required.');
         if (!['cancelled', 'expired', 'completed'].includes(targetStatus)) throw new Error('resolveContractClosure: invalid targetStatus.');
-        const nowIso = new Date().toISOString();
-        return await dbService.executeAtomicOperation(
-            ['assessmentContracts', 'contractAssessments', 'idempotencyKeys'],
-            async (tx: any) => {
-                await reserveIdempotencyKey(tx, 'contract_closure', `${contractId}:${targetStatus}`);
-                const contractStore = tx.objectStore('assessmentContracts');
-                const itemStore = tx.objectStore('contractAssessments');
-                const contract = await contractStore.get(contractId);
-                if (!contract) throw new Error(`resolveContractClosure: contract ${contractId} not found. Nothing written.`);
-                if (String(contract.status || '') === targetStatus) return { success: true, already: true, contractId, status: targetStatus };
-                const all: any[] = await itemStore.getAll().catch(() => []);
-                const mine = (all || []).filter((it: any) => String(it?.contract_id || '') === String(contractId));
-                if (targetStatus === 'completed') {
-                    const open = mine.filter((it: any) => String(it?.status || '') === 'reserved');
-                    if (open.length > 0) throw new Error(`resolveContractClosure: cannot complete with ${open.length} reserved assessments outstanding. Consume or release them first.`);
-                }
-                let releasedValue = 0;
-                for (const it of mine.filter((it: any) => String(it?.status || '') === 'reserved')) {
-                    releasedValue = toMoney(releasedValue + toMoney(Number(it?.item_price || 0)));
-                    await itemStore.put({ ...it, status: 'released', released_at: nowIso, updated_at: nowIso, version: Number(it?.version || 0) + 1 });
-                }
-                await contractStore.put({
-                    ...contract,
-                    status: targetStatus,
-                    reserved_amount: 0,
-                    ...(targetStatus === 'cancelled' ? { cancelled_at: nowIso } : {}),
-                    ...(targetStatus === 'completed' ? { completed_at: nowIso } : {}),
-                    updated_at: nowIso,
-                    version: Number(contract.version || 0) + 1,
-                    data: { ...(contract.data || {}), closure: { status: targetStatus, releasedValue, at: nowIso, by: args?.performedBy || 'system' } },
-                });
-                return { success: true, contractId, status: targetStatus, releasedValue };
-            },
-        );
+        const reason = String(args?.reason || '').trim();
+        return withContractMutationLock(contractId, async () => {
+            const nowIso = new Date().toISOString();
+            return await dbService.executeAtomicOperation(
+                ['assessmentContracts', 'contractAssessments', 'idempotencyKeys'],
+                async (tx: any) => {
+                    const contractStore = tx.objectStore('assessmentContracts');
+                    const itemStore = tx.objectStore('contractAssessments');
+                    const contract = await contractStore.get(contractId);
+                    if (!contract) throw new Error(`resolveContractClosure: contract ${contractId} not found. Nothing written.`);
+                    const currentStatus = String(contract.status || '').trim().toLowerCase();
+                    if (currentStatus === targetStatus) {
+                        return { success: true, already: true, contractId, status: targetStatus, releasedValue: 0 };
+                    }
+                    if (currentStatus === 'voided') {
+                        throw new Error(`resolveContractClosure: contract ${contractId} is voided — a voided contract is terminal and cannot be re-closed. Nothing written.`);
+                    }
+                    await reserveIdempotencyKey(
+                        tx,
+                        'contract_closure',
+                        `${contractId}:${targetStatus}`,
+                        args?.idempotencyKey,
+                    );
+                    const all: any[] = await itemStore.getAll().catch(() => []);
+                    const mine = (all || []).filter((it: any) => String(it?.contract_id || '') === String(contractId));
+                    if (targetStatus === 'completed') {
+                        const open = mine.filter((it: any) => String(it?.status || '') === 'reserved');
+                        if (open.length > 0) throw new Error(`resolveContractClosure: cannot complete with ${open.length} reserved assessments outstanding. Consume or release them first.`);
+                    }
+                    let releasedValue = 0;
+                    for (const it of mine.filter((it: any) => String(it?.status || '') === 'reserved')) {
+                        releasedValue = toMoney(releasedValue + toMoney(Number(it?.item_price || 0)));
+                        await itemStore.put({ ...it, status: 'released', released_at: nowIso, updated_at: nowIso, version: Number(it?.version || 0) + 1 });
+                    }
+                    await contractStore.put({
+                        ...contract,
+                        status: targetStatus,
+                        reserved_amount: 0,
+                        ...(targetStatus === 'cancelled' ? { cancelled_at: nowIso } : {}),
+                        ...(targetStatus === 'completed' ? { completed_at: nowIso } : {}),
+                        updated_at: nowIso,
+                        version: Number(contract.version || 0) + 1,
+                        data: {
+                            ...(contract.data || {}),
+                            closure: {
+                                status: targetStatus,
+                                releasedValue,
+                                reason: reason || null,
+                                at: nowIso,
+                                by: args?.performedBy || 'system',
+                            },
+                        },
+                    });
+                    return { success: true, contractId, status: targetStatus, releasedValue, already: false };
+                },
+            );
+        });
+    },
+
+    /**
+     * Cancel = stop the contract and release ONLY the remaining reservation.
+     * Consumed assessments and the money already debited are preserved —
+     * deliberately thin wrapper over resolveContractClosure.
+     */
+    async cancelPrintingContract(args: {
+        contractId: string;
+        reason?: string;
+        performedBy?: string;
+        idempotencyKey?: string;
+    }) {
+        const contractId = String(args?.contractId || '').trim();
+        if (!contractId) throw new Error('cancelPrintingContract: contractId is required.');
+        return this.resolveContractClosure({
+            contractId,
+            targetStatus: 'cancelled',
+            reason: args?.reason,
+            performedBy: args?.performedBy,
+            idempotencyKey: args?.idempotencyKey,
+        });
+    },
+
+    /**
+     * Canonical VOID of a printing contract — the compensating reversal.
+     *
+     * Cancel releases only the remaining reservation. Void additionally
+     * reverses EVERY consumed assessment:
+     *   - one deterministic Credit wallet transaction per consumed item
+     *     (`WTX-<itemId>-VOID-REVERSAL`) returns the money actually debited;
+     *   - one reversing ledger entry per item (`LG-WTX-<itemId>-VOID-REVERSAL`)
+     *     swaps the consumption legs (DR revenue / CR customer deposits);
+     *   - the customer wallet is credited ONCE with the total reversed value;
+     *   - remaining reserved items are released (their money never left the
+     *     wallet, so no credit is fabricated for them);
+     *   - every consumed item becomes terminal `voided`;
+     *   - the contract becomes terminal `voided` with prepaid/consumed/reserved
+     *     zeroed; the full before-state is preserved in `data.void`.
+     *
+     * All reads and validations run BEFORE the first write. Missing
+     * consumption evidence (wallet tx or ledger entry) fails closed rather
+     * than fabricating a refund. Closed financial years and closed periods are
+     * refused before any write. Repeated void of an already-voided contract is
+     * idempotent (`{ already: true }`) and writes nothing.
+     */
+    async voidPrintingContract(args: {
+        contractId: string;
+        performedBy?: string;
+        reason?: string;
+        idempotencyKey?: string;
+    }) {
+        const contractId = String(args?.contractId || '').trim();
+        if (!contractId) throw new Error('voidPrintingContract: contractId is required.');
+        const reason = String(args?.reason || '').trim();
+        const performedBy = String(args?.performedBy || 'system');
+        const explicitKey = args?.idempotencyKey
+            ? String(args.idempotencyKey)
+            : `wallet:contract:${contractId}:void`;
+
+        return withContractMutationLock(contractId, async () => {
+            const nowIso = new Date().toISOString();
+            return await dbService.executeAtomicOperation(
+                ['assessmentContracts', 'contractAssessments', 'customers', 'walletTransactions', 'ledger', 'accounts', 'idempotencyKeys', 'financialYears', 'settings'],
+                async (tx: any) => {
+                    const contractStore = tx.objectStore('assessmentContracts');
+                    const itemStore = tx.objectStore('contractAssessments');
+                    const customerStore = tx.objectStore('customers');
+                    const walletStore = tx.objectStore('walletTransactions');
+                    const ledgerStore = tx.objectStore('ledger');
+                    const financialYearStore = tx.objectStore('financialYears');
+                    const settingsStore = tx.objectStore('settings');
+
+                    // ── Reads ────────────────────────────────────────────
+                    const contract = await contractStore.get(contractId);
+                    if (!contract) {
+                        throw new Error(`voidPrintingContract: contract ${contractId} not found. Nothing written.`);
+                    }
+                    const currentStatus = String(contract.status || '').trim().toLowerCase();
+                    if (currentStatus === 'voided') {
+                        // Idempotent convergence: nothing new may be written and
+                        // no second credit may ever be posted.
+                        return {
+                            success: true,
+                            already: true,
+                            contractId,
+                            status: 'voided',
+                            reversedValue: 0,
+                            releasedValue: 0,
+                            walletTransactionIds: [] as string[],
+                            ledgerEntryIds: [] as string[],
+                            newBalance: null as number | null,
+                        };
+                    }
+
+                    const customerId = String(contract.customer_id || '');
+                    if (!customerId) {
+                        throw new Error(`voidPrintingContract: contract ${contractId} has no customer. Nothing written.`);
+                    }
+                    const customer = await customerStore.get(customerId);
+                    if (!customer) {
+                        throw new Error(`voidPrintingContract: customer ${customerId} not found. Nothing written.`);
+                    }
+
+                    // ── Closure gates BEFORE any write: the reversal is a
+                    // financial posting dated today, so a closed financial
+                    // year or closed-period registry entry refuses the whole
+                    // operation. ─────────────────────────────────────────
+                    const postingDate = nowIso.slice(0, 10);
+                    const closedFy = await findClosedFinancialYearForDate(financialYearStore, postingDate);
+                    if (closedFy) {
+                        throw new Error(`voidPrintingContract: reversal of contract ${contractId} falls in closed financial year '${closedFy.name || closedFy.id}' (${closedFy.start_date?.slice(0, 10) || ''}–${closedFy.end_date?.slice(0, 10) || ''}). Reopen the financial year before voiding. Nothing written.`);
+                    }
+                    const closedPeriods = await readClosedPeriodsFromSettingsStore(settingsStore);
+                    assertFinancialPeriodOpenForPeriods(postingDate, 'voidPrintingContract', closedPeriods);
+
+                    // ── Canonical records for this contract ──────────────
+                    const all: any[] = await itemStore.getAll().catch(() => []);
+                    const mine = (Array.isArray(all) ? all : []).filter(
+                        (it: any) => String(it?.contract_id || '') === String(contract.id || contractId),
+                    );
+                    const consumedItems = mine.filter((it: any) => String(it?.status || '') === 'consumed');
+                    const reservedItems = mine.filter((it: any) => String(it?.status || '') === 'reserved');
+
+                    // ── Validate EVERY reversal before the first write ────
+                    const reversals: Array<{
+                        item: any;
+                        amount: number;
+                        originalWalletTxId: string;
+                        originalLedgerId: string;
+                        walletTxId: string;
+                        ledgerId: string;
+                        debitAccountId: string;
+                        creditAccountId: string;
+                    }> = [];
+                    let reversedValue = 0;
+                    for (const item of consumedItems) {
+                        const itemId = String(item?.id || '');
+                        const originalWalletTxId = `WTX-${itemId}-CONSUMED`;
+                        const originalLedgerId = `LG-${originalWalletTxId}`;
+                        const originalTx: any = await walletStore.get(originalWalletTxId);
+                        if (!originalTx) {
+                            throw new Error(`voidPrintingContract: consumed assessment ${itemId} has no consumption wallet transaction (${originalWalletTxId}). Refusing to void without debit evidence. Reconcile the assessment first. Nothing written.`);
+                        }
+                        const originalLedger: any = await ledgerStore.get(originalLedgerId);
+                        if (!originalLedger) {
+                            throw new Error(`voidPrintingContract: consumed assessment ${itemId} has no consumption ledger entry (${originalLedgerId}). Refusing to void without posting evidence. Reconcile the assessment first. Nothing written.`);
+                        }
+                        const amount = toMoney(Number(originalTx.amount || 0));
+                        if (!(amount > 0)) {
+                            throw new Error(`voidPrintingContract: consumption transaction ${originalWalletTxId} has invalid amount (${String(originalTx.amount)}). Nothing written.`);
+                        }
+                        const debitAccountId = String(originalLedger.debitAccountId || '');
+                        const creditAccountId = String(originalLedger.creditAccountId || '');
+                        if (!debitAccountId || !creditAccountId) {
+                            throw new Error(`voidPrintingContract: consumption ledger entry ${originalLedgerId} is missing its account legs. Nothing written.`);
+                        }
+                        const walletTxId = `WTX-${itemId}-VOID-REVERSAL`;
+                        const ledgerId = `LG-${walletTxId}`;
+                        // Defensive: a manual/backfilled reversal must never gain
+                        // a sibling credit.
+                        if (await walletStore.get(walletTxId)) {
+                            throw new Error(`voidPrintingContract: reversal wallet transaction ${walletTxId} already exists. Refusing duplicate credit.`);
+                        }
+                        if (await ledgerStore.get(ledgerId)) {
+                            throw new Error(`voidPrintingContract: reversal ledger entry ${ledgerId} already exists. Refusing duplicate posting.`);
+                        }
+                        reversals.push({
+                            item,
+                            amount,
+                            originalWalletTxId,
+                            originalLedgerId,
+                            walletTxId,
+                            ledgerId,
+                            debitAccountId,
+                            creditAccountId,
+                        });
+                        reversedValue = toMoney(reversedValue + amount);
+                    }
+
+                    let releasedValue = 0;
+                    for (const item of reservedItems) {
+                        releasedValue = toMoney(releasedValue + toMoney(Number(item?.item_price || 0)));
+                    }
+
+                    const balanceBefore = toMoney(Number(customer.walletBalance || 0));
+                    const newBalance = toMoney(balanceBefore + reversedValue);
+                    const contractNumber = String(contract.contract_number || contractId);
+                    const customerName = String(
+                        contract.customerName
+                        || (customer as any)?.name
+                        || (customer as any)?.customerName
+                        || '',
+                    );
+
+                    // ── Idempotency reservation FIRST among writes ───────
+                    await reserveIdempotencyKey(tx, 'contract_void', contractId, explicitKey);
+
+                    // ── Compensating wallet credits + reversing ledger legs ─
+                    for (const rev of reversals) {
+                        const itemId = String(rev.item?.id || '');
+                        const itemLabel = String(rev.item?.assessment_name || itemId);
+                        await walletStore.put({
+                            id: rev.walletTxId,
+                            customerId,
+                            customerName,
+                            date: nowIso,
+                            type: 'Credit',
+                            amount: rev.amount,
+                            description: `Assessment void reversal ${contractNumber} — ${itemLabel}`,
+                            reference: contractNumber,
+                            idempotencyKey: `${explicitKey}:${itemId}`,
+                            data: {
+                                type: 'ASSESSMENT_VOID_REVERSAL',
+                                contract_id: contract.id || contractId,
+                                contract_number: contractNumber,
+                                assessment_item_id: itemId,
+                                customer_id: customerId,
+                                amount: rev.amount,
+                                original_wallet_transaction_id: rev.originalWalletTxId,
+                                original_ledger_entry_id: rev.originalLedgerId,
+                                reason: reason || null,
+                                voided_at: nowIso,
+                                idempotencyKey: `${explicitKey}:${itemId}`,
+                            },
+                        } as WalletTransaction);
+                        await ledgerStore.put({
+                            id: rev.ledgerId,
+                            date: nowIso,
+                            description: `Assessment void reversal ${contractNumber} — ${itemLabel}`,
+                            // Exact swap of the consumption legs: money returns
+                            // from revenue to the customer deposit liability.
+                            debitAccountId: rev.creditAccountId,
+                            creditAccountId: rev.debitAccountId,
+                            amount: rev.amount,
+                            referenceId: itemId,
+                            reconciled: true,
+                            customerId,
+                            customerName,
+                            data: {
+                                type: 'ASSESSMENT_VOID_REVERSAL',
+                                contract_id: contract.id || contractId,
+                                contract_number: contractNumber,
+                                assessment_item_id: itemId,
+                                original_wallet_transaction_id: rev.originalWalletTxId,
+                                original_ledger_entry_id: rev.originalLedgerId,
+                                reason: reason || null,
+                                voided_at: nowIso,
+                            },
+                        } as LedgerEntry);
+                    }
+
+                    if (reversedValue > 0) {
+                        await customerStore.put({ ...customer, walletBalance: newBalance });
+                    }
+
+                    // ── Item states: reserved → released; consumed → voided ─
+                    for (const item of reservedItems) {
+                        await itemStore.put({
+                            ...item,
+                            status: 'released',
+                            released_at: nowIso,
+                            release_reason: 'contract_void',
+                            updated_at: nowIso,
+                            version: Number(item?.version || 0) + 1,
+                            data: {
+                                ...(item?.data || {}),
+                                void: { releasedByContractVoid: true, reason: reason || null, at: nowIso, by: performedBy },
+                            },
+                        });
+                    }
+                    for (const rev of reversals) {
+                        const item = rev.item;
+                        await itemStore.put({
+                            ...item,
+                            status: 'voided',
+                            voided_at: nowIso,
+                            void_reason: reason || undefined,
+                            reversal_wallet_transaction_id: rev.walletTxId,
+                            updated_at: nowIso,
+                            version: Number(item?.version || 0) + 1,
+                            data: {
+                                ...(item?.data || {}),
+                                void: {
+                                    reason: reason || null,
+                                    by: performedBy,
+                                    at: nowIso,
+                                    amount: rev.amount,
+                                    originalWalletTransactionId: rev.originalWalletTxId,
+                                    originalLedgerEntryId: rev.originalLedgerId,
+                                    reversalWalletTransactionId: rev.walletTxId,
+                                    reversalLedgerEntryId: rev.ledgerId,
+                                },
+                            },
+                        });
+                    }
+
+                    // ── Contract: terminal voided, buckets zeroed, audit kept ─
+                    const prepaidAmountBefore = toMoney(Number(contract.prepaid_amount || 0));
+                    const consumedAmountBefore = toMoney(Number(contract.consumed_amount || 0));
+                    const reservedAmountBefore = toMoney(Number(contract.reserved_amount || 0));
+                    await contractStore.put({
+                        ...contract,
+                        status: 'voided',
+                        prepaid_amount: 0,
+                        consumed_amount: 0,
+                        reserved_amount: 0,
+                        voided_at: nowIso,
+                        updated_at: nowIso,
+                        version: Number(contract.version || 0) + 1,
+                        data: {
+                            ...(contract.data || {}),
+                            void: {
+                                status: 'voided',
+                                reason: reason || null,
+                                by: performedBy,
+                                at: nowIso,
+                                idempotencyKey: explicitKey,
+                                prepaidAmountBefore,
+                                consumedAmountBefore,
+                                reservedAmountBefore,
+                                reversedAmount: reversedValue,
+                                releasedAmount: releasedValue,
+                                reversedItemIds: reversals.map((rev) => String(rev.item?.id || '')),
+                                releasedItemIds: reservedItems.map((it: any) => String(it?.id || '')),
+                                walletTransactionIds: reversals.map((rev) => rev.walletTxId),
+                                ledgerEntryIds: reversals.map((rev) => rev.ledgerId),
+                            },
+                        },
+                    });
+
+                    return {
+                        success: true,
+                        already: false,
+                        contractId,
+                        status: 'voided',
+                        reversedValue,
+                        releasedValue,
+                        walletTransactionIds: reversals.map((rev) => rev.walletTxId),
+                        ledgerEntryIds: reversals.map((rev) => rev.ledgerId),
+                        newBalance: reversedValue > 0 ? newBalance : balanceBefore,
+                    };
+                },
+            );
+        });
     },
 
     /**
@@ -8900,21 +9317,27 @@ export const transactionService = {
         if (!(amount > 0)) throw new Error('refundContractBalance: amount must be positive.');
         if (!policyReference) throw new Error('refundContractBalance: policyReference is required — refunds are never automatic.');
         const key = String(args?.idempotencyKey || `refund:${contractId}:${amount.toFixed(2)}:${policyReference}`);
+        return withContractMutationLock(contractId, async () => {
         const nowIso = new Date().toISOString();
         return await dbService.executeAtomicOperation(
-            ['assessmentContracts', 'customers', 'walletTransactions', 'ledger', 'accounts', 'idempotencyKeys', 'financialYears'],
+            ['assessmentContracts', 'customers', 'walletTransactions', 'ledger', 'accounts', 'idempotencyKeys', 'financialYears', 'settings'],
             async (tx: any) => {
                 await reserveIdempotencyKey(tx, 'contract_refund', `${contractId}:${key}`, key);
                 const contractStore = tx.objectStore('assessmentContracts');
                 const customerStore = tx.objectStore('customers');
                 const walletStore = tx.objectStore('walletTransactions');
                 const ledgerStore = tx.objectStore('ledger');
+                const settingsStore = tx.objectStore('settings');
                 const contract = await contractStore.get(contractId);
                 if (!contract) throw new Error(`refundContractBalance: contract ${contractId} not found. Nothing written.`);
+                if (String(contract.status || '').toLowerCase() === 'voided') {
+                    throw new Error(`refundContractBalance: contract ${contractId} is voided — consumed money was already returned by the void. Nothing written.`);
+                }
                 const customerId = String(contract.customer_id || '');
                 const customer = await customerStore.get(customerId);
                 if (!customer) throw new Error(`refundContractBalance: customer ${customerId} not found. Nothing written.`);
-                await assertFinancialPeriodOpen(nowIso.slice(0, 10), 'refundContractBalance');
+                const closedPeriods = await readClosedPeriodsFromSettingsStore(settingsStore);
+                assertFinancialPeriodOpenForPeriods(nowIso.slice(0, 10), 'refundContractBalance', closedPeriods);
                 const maxRefundable = toMoney(Number(contract.prepaid_amount || 0) - Number(contract.consumed_amount || 0));
                 if (!(amount <= maxRefundable + 0.005)) {
                     throw new Error(`refundContractBalance: amount ${amount.toFixed(2)} exceeds refundable ${maxRefundable.toFixed(2)} (prepaid - consumed). Nothing written.`);
@@ -8961,6 +9384,7 @@ export const transactionService = {
                 return { success: true, walletTransactionId: walletTxId, newBalance: toMoney(balance + amount) };
             },
         );
+        });
     },
 
     /**
@@ -8993,20 +9417,9 @@ export const transactionService = {
         // Serialize same-contract invocations in this process. The underlying
         // IndexedDB transaction also serializes overlapping writes from other
         // connections; cross-device races still require server atomicity.
-        const lockKey = `consume-contract-assessment:${contractId}`;
-        const previous = consumeContractLocks.get(lockKey) || Promise.resolve();
-        let releaseLock!: () => void;
-        const current = new Promise<void>((resolve) => { releaseLock = resolve; });
-        consumeContractLocks.set(lockKey, current);
-        try {
-            await previous.catch(() => {});
-            return await this.consumeContractAssessmentTx(args);
-        } finally {
-            if (consumeContractLocks.get(lockKey) === current) {
-                consumeContractLocks.delete(lockKey);
-            }
-            releaseLock();
-        }
+        // A shared per-contract queue (not a per-operation one) is essential:
+        // reserve/consume/cancel/void must not interleave.
+        return withContractMutationLock(contractId, () => this.consumeContractAssessmentTx(args));
     },
 
     /**
@@ -9081,23 +9494,7 @@ export const transactionService = {
                 // canonical closure record; consumption dated
                 // inside a closed period is refused before any
                 // write, keeping closed-period books immutable. ──
-                const closedPeriodsRecord = await settingsStore.get('financial_closed_periods');
-                let closedPeriods = Array.isArray(closedPeriodsRecord?.value)
-                    ? closedPeriodsRecord.value
-                    : Array.isArray(closedPeriodsRecord)
-                        ? closedPeriodsRecord
-                        : undefined;
-                if (!closedPeriods && typeof localStorage !== 'undefined') {
-                    const serializedPeriods = localStorage.getItem('financial_closed_periods');
-                    if (serializedPeriods !== null) {
-                        try {
-                            const parsedPeriods: unknown = JSON.parse(serializedPeriods);
-                            if (Array.isArray(parsedPeriods)) closedPeriods = parsedPeriods;
-                        } catch {
-                            closedPeriods = undefined;
-                        }
-                    }
-                }
+                const closedPeriods = await readClosedPeriodsFromSettingsStore(settingsStore);
                 assertFinancialPeriodOpenForPeriods(
                     consumptionDate,
                     'consumeContractAssessment',

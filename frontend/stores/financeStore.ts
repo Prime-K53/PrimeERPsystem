@@ -71,6 +71,36 @@ interface FinanceState {
     contractId: string;
     assessmentItemId: string;
   }>;
+
+  cancelPrintingContract: (args: {
+    contractId: string;
+    reason?: string;
+    performedBy?: string;
+    idempotencyKey?: string;
+  }) => Promise<{
+    success: boolean;
+    already?: boolean;
+    contractId: string;
+    status: string;
+    releasedValue: number;
+  }>;
+
+  voidPrintingContract: (args: {
+    contractId: string;
+    reason?: string;
+    performedBy?: string;
+    idempotencyKey?: string;
+  }) => Promise<{
+    success: boolean;
+    already?: boolean;
+    contractId: string;
+    status: string;
+    reversedValue: number;
+    releasedValue: number;
+    walletTransactionIds: string[];
+    ledgerEntryIds: string[];
+    newBalance: number | null;
+  }>;
   
   addDeliveryNote: (note: DeliveryNote) => Promise<void>;
   updateDeliveryNote: (note: DeliveryNote) => Promise<void>;
@@ -364,6 +394,21 @@ addInvoice: async (invoice) => {
       // writes (wallet debit + ledger + item + buckets, one atomic op).
       // Refresh afterwards so contract, wallet and ledger views converge.
       const result = await api.finance.consumeContractAssessment(args);
+      await get().fetchFinanceData();
+      return result;
+  },
+
+  cancelPrintingContract: async (args: { contractId: string; reason?: string; performedBy?: string; idempotencyKey?: string }) => {
+      // Releases the remaining reservation only — consumed money is untouched.
+      const result = await api.finance.cancelPrintingContract(args);
+      await get().fetchFinanceData();
+      return result;
+  },
+
+  voidPrintingContract: async (args: { contractId: string; reason?: string; performedBy?: string; idempotencyKey?: string }) => {
+      // Compensating reversal: wallet credits + reversing ledger postings are
+      // written atomically by transactionService, then all views refresh.
+      const result = await api.finance.voidPrintingContract(args);
       await get().fetchFinanceData();
       return result;
   },

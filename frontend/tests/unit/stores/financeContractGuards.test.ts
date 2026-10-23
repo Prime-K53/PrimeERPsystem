@@ -107,12 +107,27 @@ describe('financeStore.updateContractAssessment guards', () => {
 
   it('blocks every edge out of consumed', async () => {
     seedState([baseItem({ status: 'consumed' })]);
-    for (const target of ['reserved', 'released', 'cancelled']) {
+    for (const target of ['reserved', 'released', 'cancelled', 'voided']) {
       await expect(
         useFinanceStore.getState().updateContractAssessment({ ...baseItem(), status: 'consumed', ...( { status: target } as any) })
-      ).rejects.toThrow(/compensating reversal/);
+      ).rejects.toThrow(/canonical void|compensating/);
     }
     expect(useFinanceStore.getState().contractAssessments[0].status).toBe('consumed');
+  });
+
+  it('treats voided assessments as terminal', async () => {
+    seedState([baseItem({ status: 'voided' })]);
+    for (const target of ['reserved', 'consumed', 'released', 'cancelled']) {
+      await expect(
+        useFinanceStore.getState().updateContractAssessment({ ...baseItem(), status: target } as any)
+      ).rejects.toThrow(/voided.*terminal/);
+    }
+    expect(useFinanceStore.getState().contractAssessments[0].status).toBe('voided');
+    // Status-preserving writes remain allowed on a voided item.
+    await useFinanceStore.getState().updateContractAssessment(
+      { ...baseItem(), status: 'voided', notes: 'archived' } as any,
+    );
+    expect(useFinanceStore.getState().contractAssessments[0].notes).toBe('archived');
   });
 
   it('allows non-financial transitions and status-preserving writes', async () => {
@@ -136,9 +151,22 @@ describe('financeStore.updateContractAssessment guards', () => {
     ).rejects.toThrow();
   });
 
+  it('blocks reopening a voided contract through the store', async () => {
+    seedState([baseItem()], [baseContract({ status: 'voided' })]);
+    for (const target of ['draft', 'active', 'cancelled', 'completed']) {
+      await expect(
+        useFinanceStore.getState().updateAssessmentContract({ ...baseContract(), status: 'voided', ...( { status: target } as any) })
+      ).rejects.toThrow(/not allowed/);
+    }
+    expect(useFinanceStore.getState().assessmentContracts[0].status).toBe('voided');
+  });
+
   it('blocks birth of non-reserved items', async () => {
     await expect(
       useFinanceStore.getState().addContractAssessment({ ...baseItem(), status: 'consumed' } as any)
+    ).rejects.toThrow(/created reserved/);
+    await expect(
+      useFinanceStore.getState().addContractAssessment({ ...baseItem(), status: 'voided' } as any)
     ).rejects.toThrow(/created reserved/);
   });
 });
@@ -171,5 +199,101 @@ describe('financeStore.consumeContractAssessment end-to-end delegation', () => {
       useFinanceStore.getState().consumeContractAssessment({ contractId: 'PC-1', assessmentItemId: 'A-1' })
     ).rejects.toThrow(/INSUFFICIENT_WALLET_FUNDS/);
     expect(await storeFor('walletTransactions').getAll()).toHaveLength(0);
+  });
+});
+
+// ─── Cancel vs Void through the store boundary ─────────────────────────
+
+async function seedDbForClose(balance = 200000) {
+  stores.clear();
+  for (const a of ACCOUNTS) await storeFor('accounts').put(a);
+  await storeFor('customers').put({ id: 'CUST-1', name: 'Test School', walletBalance: balance });
+  await storeFor('assessmentContracts').put(baseContract({
+    prepaid_amount: 200000,
+    consumed_amount: 0,
+    reserved_amount: 200000,
+    assessment_count: 2,
+    max_assessments: 2,
+  }));
+  // 50,000 will be consumed; 150,000 stays reserved.
+  await storeFor('contractAssessments').put(baseItem({ id: 'C-1', item_price: 50000 }));
+  await storeFor('contractAssessments').put(baseItem({ id: 'R-1', item_price: 150000 }));
+}
+
+describe('financeStore.cancelPrintingContract end-to-end delegation', () => {
+  beforeEach(() => seedDbForClose());
+
+  it('releases only the remaining reservation and preserves consumed money', async () => {
+    await useFinanceStore.getState().consumeContractAssessment({ contractId: 'PC-1', assessmentItemId: 'C-1' });
+    expect(((await storeFor('customers').get('CUST-1')) as any).walletBalance).toBe(150000);
+
+    const res: any = await useFinanceStore.getState().cancelPrintingContract({
+      contractId: 'PC-1',
+      reason: 'Customer withdrew',
+    });
+    expect(res.success).toBe(true);
+    expect(res.releasedValue).toBe(150000);
+
+    const contract: any = await storeFor('assessmentContracts').get('PC-1');
+    expect(contract.status).toBe('cancelled');
+    expect(contract.consumed_amount).toBe(50000);
+    expect(contract.reserved_amount).toBe(0);
+    // No refund is fabricated by a cancel.
+    expect(((await storeFor('customers').get('CUST-1')) as any).walletBalance).toBe(150000);
+    expect((await storeFor('walletTransactions').getAll())).toHaveLength(1);
+
+    // Zustand state is refreshed from the database.
+    expect(useFinanceStore.getState().assessmentContracts.find((c: any) => c.id === 'PC-1')?.status).toBe('cancelled');
+    expect(useFinanceStore.getState().contractAssessments.find((a: any) => a.id === 'C-1')?.status).toBe('consumed');
+    expect(useFinanceStore.getState().contractAssessments.find((a: any) => a.id === 'R-1')?.status).toBe('released');
+  });
+
+  it('repeated cancel converges without another write', async () => {
+    await useFinanceStore.getState().consumeContractAssessment({ contractId: 'PC-1', assessmentItemId: 'C-1' });
+    await useFinanceStore.getState().cancelPrintingContract({ contractId: 'PC-1' });
+    const res: any = await useFinanceStore.getState().cancelPrintingContract({ contractId: 'PC-1' });
+    expect(res.already).toBe(true);
+    expect(((await storeFor('customers').get('CUST-1')) as any).walletBalance).toBe(150000);
+    expect((await storeFor('walletTransactions').getAll())).toHaveLength(1);
+  });
+});
+
+describe('financeStore.voidPrintingContract end-to-end delegation', () => {
+  beforeEach(() => seedDbForClose());
+
+  it('returns consumed money, releases reservations and refreshes the stores', async () => {
+    await useFinanceStore.getState().consumeContractAssessment({ contractId: 'PC-1', assessmentItemId: 'C-1' });
+    expect(((await storeFor('customers').get('CUST-1')) as any).walletBalance).toBe(150000);
+
+    const res: any = await useFinanceStore.getState().voidPrintingContract({
+      contractId: 'PC-1',
+      reason: 'Contract signed in error',
+    });
+    expect(res.success).toBe(true);
+    expect(res.already).toBe(false);
+    expect(res.reversedValue).toBe(50000);
+    expect(res.releasedValue).toBe(150000);
+
+    expect(((await storeFor('customers').get('CUST-1')) as any).walletBalance).toBe(200000);
+    const contract: any = await storeFor('assessmentContracts').get('PC-1');
+    expect(contract.status).toBe('voided');
+    expect(contract.prepaid_amount).toBe(0);
+    expect(contract.consumed_amount).toBe(0);
+    expect(contract.reserved_amount).toBe(0);
+
+    // Zustand state is refreshed from the database.
+    expect(useFinanceStore.getState().assessmentContracts.find((c: any) => c.id === 'PC-1')?.status).toBe('voided');
+    expect(useFinanceStore.getState().contractAssessments.find((a: any) => a.id === 'C-1')?.status).toBe('voided');
+    expect(useFinanceStore.getState().contractAssessments.find((a: any) => a.id === 'R-1')?.status).toBe('released');
+    expect(useFinanceStore.getState().walletTransactions.filter((t: any) => t.type === 'Credit')).toHaveLength(1);
+  });
+
+  it('repeated void converges without another credit', async () => {
+    await useFinanceStore.getState().consumeContractAssessment({ contractId: 'PC-1', assessmentItemId: 'C-1' });
+    await useFinanceStore.getState().voidPrintingContract({ contractId: 'PC-1', reason: 'x' });
+    const res: any = await useFinanceStore.getState().voidPrintingContract({ contractId: 'PC-1', reason: 'x' });
+    expect(res.already).toBe(true);
+    expect(((await storeFor('customers').get('CUST-1')) as any).walletBalance).toBe(200000);
+    expect((await storeFor('walletTransactions').getAll()).filter((t: any) => t.type === 'Credit')).toHaveLength(1);
   });
 });

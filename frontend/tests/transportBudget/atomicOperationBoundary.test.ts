@@ -243,6 +243,100 @@ describe('dbService.executeAtomicOperation — IndexedDB transaction boundary', 
     }
   });
 
+  it('creates a printing contract atomically when the closed-period registry is read inside the transaction', async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const customerId = `ATOMIC-CUSTOMER-CONTRACT-${suffix}`;
+    const contractId = `ATOMIC-CONTRACT-CREATE-${suffix}`;
+    const itemId = `ATOMIC-ASSESSMENT-CREATE-${suffix}`;
+    await seedFundingCustomer(customerId);
+    // Persist the registry in IndexedDB so the async getSetting path would
+    // open a separate transaction; the atomic operation must read it through
+    // its own tx instead of letting the readwrite transaction auto-commit.
+    await dbService.saveSetting('financial_closed_periods', []);
+
+    const nowIso = new Date().toISOString();
+    const result = await transactionService.createPrintingContractWithItems({
+      contract: {
+        id: contractId,
+        contract_number: contractId,
+        customer_id: customerId,
+        company_id: 'ATOMIC-COMPANY',
+        title: 'Atomic contract creation',
+        status: 'draft',
+        max_assessments: 2,
+        prepaid_amount: 0,
+        reserved_amount: 0,
+        consumed_amount: 0,
+        created_at: nowIso,
+        updated_at: nowIso,
+        version: 1,
+      } as any,
+      items: [{
+        id: itemId,
+        assessment_name: 'Atomic assessment',
+        item_price: 1000,
+        assessment_date: nowIso.slice(0, 10),
+      }],
+    });
+
+    expect(result).toMatchObject({ success: true, contractId, reservedAmount: 1000, itemCount: 1 });
+    expect(await dbService.get<any>('assessmentContracts', contractId)).toMatchObject({
+      status: 'draft',
+      reserved_amount: 1000,
+      assessment_count: 1,
+    });
+    expect(await dbService.get<any>('contractAssessments', itemId)).toMatchObject({
+      contract_id: contractId,
+      status: 'reserved',
+      item_price: 1000,
+    });
+  });
+
+  it('refuses printing-contract creation inside a closed period without writing', async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const customerId = `ATOMIC-CUSTOMER-CONTRACT-CLOSED-${suffix}`;
+    const contractId = `ATOMIC-CONTRACT-CLOSED-${suffix}`;
+    const itemId = `ATOMIC-ASSESSMENT-CLOSED-${suffix}`;
+    await seedFundingCustomer(customerId);
+    await dbService.saveSetting('financial_closed_periods', [{
+      id: 'ATOMIC-FP-CLOSED',
+      from: '2026-01-01',
+      to: '2026-01-31',
+      reason: 'Atomic close',
+      closedAt: new Date().toISOString(),
+      closedBy: 'test',
+    }]);
+
+    const nowIso = new Date().toISOString();
+    await expect(transactionService.createPrintingContractWithItems({
+      contract: {
+        id: contractId,
+        contract_number: contractId,
+        customer_id: customerId,
+        company_id: 'ATOMIC-COMPANY',
+        title: 'Closed-period contract',
+        status: 'draft',
+        max_assessments: 1,
+        prepaid_amount: 0,
+        reserved_amount: 0,
+        consumed_amount: 0,
+        created_at: nowIso,
+        updated_at: nowIso,
+        version: 1,
+      } as any,
+      items: [{
+        id: itemId,
+        assessment_name: 'Closed-period assessment',
+        item_price: 1000,
+        assessment_date: '2026-01-15',
+      }],
+    })).rejects.toThrow(/closed.*not permitted within a closed financial period/i);
+
+    expect(await dbService.get('assessmentContracts', contractId)).toBeUndefined();
+    expect(await dbService.get('contractAssessments', itemId)).toBeUndefined();
+    await dbService.saveSetting('financial_closed_periods', []);
+  });
+
   it('rolls back actual invoice funding when account resolution fails after wallet writes', async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const customerId = `ATOMIC-CUSTOMER-ACCOUNT-${suffix}`;

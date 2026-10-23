@@ -136,8 +136,12 @@ export const reconcilePrintingContracts = (args: {
 
     const reservedItems = contractItems.filter((it) => it.status === 'reserved');
     const consumedItems = contractItems.filter((it) => it.status === 'consumed');
+    // `voided` = a consumed assessment reversed by the canonical void. It is
+    // no longer consumed, but its value is not an outstanding reservation
+    // either: count it with released movements so the item totals still add
+    // up to the original reserved value.
     const releasedItems = contractItems.filter(
-      (it) => it.status === 'released' || it.status === 'cancelled',
+      (it) => it.status === 'released' || it.status === 'cancelled' || it.status === 'voided',
     );
 
     const reservedItemsValue = money(reservedItems.reduce((s, it) => s + money(it.item_price), 0));
@@ -219,22 +223,39 @@ export const reconcilePrintingContracts = (args: {
   });
 
   // ── Global wallet-to-ledger reconciliation ──
+  // Consumption debits are netted against canonical void-reversal credits:
+  // after a void the wallet debits still exist (history is immutable), but the
+  // contracts' consumed_amount is zero and the money has been returned. The
+  // net movement is what must reconcile.
   const globalDiscrepancies: string[] = [];
-  const ledgerIds = new Set((ledger || []).map((e) => String(e.id)));
+  const ledgerById = new Map((ledger || []).map((e) => [String(e.id), e]));
   let consumptionDebits = 0;
   let consumptionLedgerTotal = 0;
+  let reversalCredits = 0;
+  let reversalLedgerTotal = 0;
   for (const tx of contractWalletTransactions) {
     const data = (tx as any)?.data || {};
-    if (String(tx.type || '') === 'Deduction' && String(data.type || '') === 'ASSESSMENT_CONSUMPTION') {
+    const kind = String(data.type || '');
+    const ledgerId = `LG-${String(tx.id || '')}`;
+    if (String(tx.type || '') === 'Deduction' && kind === 'ASSESSMENT_CONSUMPTION') {
       consumptionDebits = money(consumptionDebits + money(tx.amount));
-      const ledgerId = `LG-${String(tx.id || '')}`;
-      if (!ledgerIds.has(ledgerId)) {
+      const entry = ledgerById.get(ledgerId);
+      if (!entry) {
         globalDiscrepancies.push(
           `consumption wallet transaction ${tx.id} has no matching ledger entry (${ledgerId}).`,
         );
       } else {
-        const entry = (ledger || []).find((e) => String(e.id) === ledgerId);
-        consumptionLedgerTotal = money(consumptionLedgerTotal + money(entry?.amount));
+        consumptionLedgerTotal = money(consumptionLedgerTotal + money(entry.amount));
+      }
+    } else if (String(tx.type || '') === 'Credit' && kind === 'ASSESSMENT_VOID_REVERSAL') {
+      reversalCredits = money(reversalCredits + money(tx.amount));
+      const entry = ledgerById.get(ledgerId);
+      if (!entry) {
+        globalDiscrepancies.push(
+          `void-reversal wallet transaction ${tx.id} has no matching ledger entry (${ledgerId}).`,
+        );
+      } else {
+        reversalLedgerTotal = money(reversalLedgerTotal + money(entry.amount));
       }
     }
   }
@@ -243,9 +264,15 @@ export const reconcilePrintingContracts = (args: {
       `consumption wallet debits (${consumptionDebits}) do not match consumption ledger postings (${consumptionLedgerTotal}).`,
     );
   }
-  if (Math.abs(consumptionDebits - totalConsumed) > 0.005) {
+  if (Math.abs(reversalCredits - reversalLedgerTotal) > 0.005) {
     globalDiscrepancies.push(
-      `consumption wallet debits (${consumptionDebits}) do not match the contracts' consumed_amount total (${totalConsumed}).`,
+      `void-reversal wallet credits (${reversalCredits}) do not match reversal ledger postings (${reversalLedgerTotal}).`,
+    );
+  }
+  const netConsumed = money(consumptionDebits - reversalCredits);
+  if (Math.abs(netConsumed - totalConsumed) > 0.005) {
+    globalDiscrepancies.push(
+      `net consumption wallet debits (${netConsumed} = ${consumptionDebits} debited − ${reversalCredits} voided) do not match the contracts' consumed_amount total (${totalConsumed}).`,
     );
   }
 
