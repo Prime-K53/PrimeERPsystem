@@ -83,17 +83,39 @@ const Suppliers: React.FC = () => {
     });
   }, [suppliers, searchQuery, filterStatus, selectedMetric, purchases, supplierPayments]);
 
+  const computeSupplierBalance = useMemo(() => {
+    const getNumber = (value: any, fallback = 0) => (typeof value === 'number' && !isNaN(value) ? value : fallback);
+    const balances: Record<string, number> = {};
+    suppliers.forEach((s) => { balances[s.id] = 0; });
+    (purchases || []).forEach((p) => {
+      const sid = p.supplierId || (p.supplierName ? suppliers.find((s) => s.name === p.supplierName)?.id : undefined);
+      if (sid && balances[sid] !== undefined && derivePurchasePaymentStatus(p) !== 'Cancelled') {
+        balances[sid] += getPurchaseTotal(p) - getNumber(p.paidAmount);
+      }
+    });
+    (supplierPayments || []).forEach((sp) => {
+      if (balances[sp.supplierId] !== undefined) {
+        const poPaidPortion = (purchases || [])
+          .filter((p) => String(p.supplierId || '') === String(sp.supplierId) && derivePurchasePaymentStatus(p) !== 'Cancelled')
+          .reduce((sum, p) => sum + getNumber(p.paidAmount), 0);
+        const unapplied = Math.max(0, (sp.amount || 0) - Math.max(0, poPaidPortion - (balances[sp.supplierId] || 0)));
+        if (unapplied > 0.005) { balances[sp.supplierId] -= unapplied; }
+      }
+    });
+    return balances;
+  }, [suppliers, purchases, supplierPayments]);
+
   const stats = useMemo(() => {
     const getNumber = (value: any, fallback = 0) => (typeof value === 'number' && !isNaN(value) ? value : fallback);
     const today = new Date();
     const thirtyDaysAgo = subDays(today, 30);
-    const totalBalance = suppliers.reduce((sum, s) => sum + getNumber(s.balance), 0);
+    const totalBalance = suppliers.reduce((sum, s) => sum + (computeSupplierBalance[s.id] || 0), 0);
     const overduePayables = (purchases || []).filter(p => derivePurchasePaymentStatus(p) !== 'Paid' && derivePurchasePaymentStatus(p) !== 'Cancelled' && p.dueDate && isAfter(today, parseISO(p.dueDate))).reduce((sum, p) => sum + (getPurchaseTotal(p) - getNumber(p.paidAmount)), 0);
     const openBillsTotal = (purchases || []).filter(p => { const st = derivePurchasePaymentStatus(p); return st === 'Unpaid' || st === 'Partial'; }).reduce((sum, p) => sum + (getPurchaseTotal(p) - getNumber(p.paidAmount)), 0);
     const paidLast30Days = supplierPayments.filter(p => isAfter(parseISO(p.date), thirtyDaysAgo)).reduce((sum, p) => sum + getNumber(p.amount), 0);
     const activeCount = suppliers.filter(s => s.status === 'Active').length;
     return { totalBalance, overduePayables, openBillsTotal, paidLast30Days, activeCount };
-  }, [suppliers, purchases, supplierPayments]);
+  }, [suppliers, purchases, supplierPayments, computeSupplierBalance]);
 
   const handleEdit = (supplier: Supplier) => { setSelectedSupplier(supplier); setIsModalOpen(true); };
   const handleAddNew = () => { setSelectedSupplier(undefined); setIsModalOpen(true); };
@@ -257,8 +279,8 @@ const Suppliers: React.FC = () => {
                       <p style={{ fontSize: 13, color: ink, fontWeight: 700, margin: 0 }}>{getLastTransaction(supplier.id)}</p>
                     </td>
                     <td data-label="Balance due" style={{ padding: '10px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <p className="finance-nums" style={{ fontWeight: 700, fontSize: 13, margin: 0, color: (supplier.balance || 0) > 0 ? danger : teal[600], fontVariantNumeric: 'tabular-nums' }}>
-                        {currency}{(supplier.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      <p className="finance-nums" style={{ fontWeight: 700, fontSize: 13, margin: 0, color: (computeSupplierBalance[supplier.id] || 0) > 0 ? danger : teal[600], fontVariantNumeric: 'tabular-nums' }}>
+                        {currency}{(computeSupplierBalance[supplier.id] || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </p>
                     </td>
                     <td data-label="Actions" style={{ padding: '10px 16px' }} onClick={(e) => e.stopPropagation()}>

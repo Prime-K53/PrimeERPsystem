@@ -10132,6 +10132,7 @@ export const transactionService = {
                 // drive invoice status pending/partial/paid, so
                 // invoice.paid_amount always equals applied payments.
                 const invoiceApplications: { invoiceId: string; amount: number }[] = [];
+                let toApply = Number(payment.amount) || 0;
                 {
                     const linkedPOs = new Set(
                         ((payment as any).allocations || []).map((a: any) => String(a?.purchaseId || a?.purchaseOrderId || ''))
@@ -10147,7 +10148,6 @@ export const transactionService = {
                         if (aLinked !== bLinked) return aLinked - bLinked;
                         return String(a.invoice_date || '').localeCompare(String(b.invoice_date || ''));
                     });
-                    let toApply = Number(payment.amount) || 0;
                     for (const inv of openInvoices) {
                         if (!(toApply > 0.005)) {
                             break;
@@ -10168,6 +10168,33 @@ export const transactionService = {
                 (payment as any).invoiceApplications = invoiceApplications;
                 await paymentStore.put(ensureDocumentVerificationToken({ ...(payment as any) }));
 
+                // 1c. Auto-apply any unapplied payment to open Purchase Orders
+                // (ensures po.paidAmount always reflects payments, even when
+                // no explicit allocations were provided on the payment).
+                const poApplications: { purchaseId: string; amount: number }[] = [];
+                {
+                    const openPOs = (await purchaseStore.getAll()).filter(
+                        (p: Purchase) => p
+                            && String(p.supplierId || '') === String(payment.supplierId)
+                            && p.status !== 'Cancelled' && p.status !== 'Draft'
+                            && derivePurchasePaymentStatus(p) !== 'Cancelled'
+                            && derivePurchasePaymentStatus(p) !== 'Paid'
+                            && (getPurchaseTotal(p) - (p.paidAmount || 0)) > 0.005
+                    );
+                    openPOs.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+                    for (const po of openPOs) {
+                        if (!(toApply > 0.005)) break;
+                        const outstanding = getPurchaseTotal(po) - (po.paidAmount || 0);
+                        if (!(outstanding > 0.005)) continue;
+                        const applied = Math.min(outstanding, toApply);
+                        po.paidAmount = (po.paidAmount || 0) + applied;
+                        po.paymentStatus = derivePurchasePaymentStatus(po);
+                        await purchaseStore.put(po);
+                        poApplications.push({ purchaseId: po.id, amount: applied });
+                        toApply -= applied;
+                    }
+                }
+
                 // 2. Update linked Purchase Orders
                 if (payment.allocations && payment.allocations.length > 0) {
                     for (const allocation of payment.allocations) {
@@ -10178,6 +10205,12 @@ export const transactionService = {
                             await purchaseStore.put(po);
                         }
                     }
+                } else {
+                    // No explicit allocations — use auto-applied PO applications
+                    payment.allocations = poApplications.map((app) => ({
+                        purchaseId: app.purchaseId,
+                        amount: app.amount
+                    }));
                 }
 
                 // 3. Update Supplier Balance
