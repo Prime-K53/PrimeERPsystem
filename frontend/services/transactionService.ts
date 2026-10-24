@@ -10214,7 +10214,7 @@ export const transactionService = {
                 }
 
                 // 3. Update Supplier Balance
-                const supplier = await supplierStore.get(payment.supplierId);
+                const supplier = await supplierStore.get(payment.supplierId || payment.supplier_id);
                 if (supplier) {
                     supplier.balance = (supplier.balance || 0) - payment.amount;
                     await supplierStore.put(supplier);
@@ -10324,7 +10324,7 @@ export const transactionService = {
                 }
 
                 // 2. Reverse Supplier Balance
-                const supplier = await supplierStore.get(payment.supplierId);
+                const supplier = await supplierStore.get(payment.supplierId || payment.supplier_id);
                 if (supplier) {
                     supplier.balance = (supplier.balance || 0) + payment.amount;
                     await supplierStore.put(supplier);

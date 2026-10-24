@@ -9,6 +9,7 @@ import { DEFAULT_ACCOUNTS } from '../constants';
 import { generateNextId } from '../utils/helpers';
 import { assertAllowedContractTransition, assertAllowedItemWrite, assertAllowedItemCreate } from '../utils/contractLifecycle';
 import { ensureDocumentVerificationToken } from '../utils/documentVerification';
+import { ensureContractIntegrity } from '../services/printingContractService';
 import { customerNotificationService } from '../services/customerNotificationService';
 import { logger } from '../services/logger';
 import { isSupabaseConfigured } from '../services/cloudMode';
@@ -261,13 +262,26 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
           }
       }
 
+      const normalizedSupplierPayments = (supplierPayments || []).map((p: any) => ({
+        ...p,
+        supplierId: p.supplierId || p.supplier_id || p.supplier || "",
+        supplier_id: p.supplier_id || p.supplierId || p.supplier || "",
+        date: p.date || p.payment_date || "",
+        payment_date: p.payment_date || p.date || "",
+        method: p.method || p.paymentMethod || p.payment_method || "Bank",
+        paymentMethod: p.paymentMethod || p.method || p.payment_method || "Bank",
+        payment_method: p.payment_method || p.method || p.paymentMethod || "Bank",
+        reference: p.reference || p.reference_no || p.referenceNumber || "",
+        status: p.status || "Cleared",
+      }));
+
       const openingBalance = await dbService.getSetting<number>('opening_balance').then(v => v ?? 500).catch(() => 500);
       set({ 
           accounts: finalAccounts, 
           ledger, invoices, recurringInvoices, expenses, income,
           scheduledPayments, walletTransactions, deliveryNotes, budgets,
           openingBalance,
-          transfers, employees, payrollRuns, payslips, cheques, supplierPayments,
+          transfers, employees, payrollRuns, payslips, cheques, supplierPayments: normalizedSupplierPayments,
           assessmentContracts, contractAssessments, contractAmendments
       });
 
@@ -514,8 +528,11 @@ addInvoice: async (invoice) => {
 
    // ─── Printing Contracts ────────────────────────────────────
    addAssessmentContract: async (contract: AssessmentContract) => {
-       set(state => ({ assessmentContracts: [...state.assessmentContracts, contract] }));
-       await api.finance.saveAssessmentContract(contract);
+       // The canonical digest is persisted on the record itself, so the QR,
+       // the integrity block and the public verifier all refer to one digest.
+       const signed = await ensureContractIntegrity(contract);
+       set(state => ({ assessmentContracts: [...state.assessmentContracts, signed] }));
+       await api.finance.saveAssessmentContract(signed);
    },
     updateAssessmentContract: async (contract: AssessmentContract) => {
         // Defense in depth: lifecycle edges are enforced here as well as in
@@ -525,8 +542,11 @@ addInvoice: async (invoice) => {
         if (current && current.status !== contract.status) {
             assertAllowedContractTransition(current.status, contract.status);
         }
-        set(state => ({ assessmentContracts: state.assessmentContracts.map(c => c.id === contract.id ? contract : c) }));
-        await api.finance.saveAssessmentContract(contract);
+        // Any material edit (amounts, terms, parties, signatures, status)
+        // changes the digest; a stale hash would make the printed QR lie.
+        const signed = await ensureContractIntegrity(contract);
+        set(state => ({ assessmentContracts: state.assessmentContracts.map(c => c.id === signed.id ? signed : c) }));
+        await api.finance.saveAssessmentContract(signed);
     },
    deleteAssessmentContract: async (id: string) => {
        set(state => ({ assessmentContracts: state.assessmentContracts.filter(c => c.id !== id) }));

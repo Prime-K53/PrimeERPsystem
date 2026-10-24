@@ -83,7 +83,8 @@ const PAYMENT_METHOD_LABEL: Record<string, string> = {
 };
 
 function getPaymentMethod(payment: SupplierPayment): string {
-  return payment.paymentMethod || (payment as any).method || "Bank";
+  const p = payment as any;
+  return p.paymentMethod || p.method || p.payment_method || "Bank";
 }
 
 function formatCurrency(
@@ -109,6 +110,34 @@ function getPaymentStatus(
 
 function getPaymentDate(payment: SupplierPayment): string {
   return payment.payment_date || payment.date || "";
+}
+
+function getSupplierId(payment: SupplierPayment): string {
+  const p = payment as any;
+  return (
+    p.supplierId ||
+    p.supplier_id ||
+    p.supplier ||
+    p.supplierID ||
+    ""
+  );
+}
+
+function getSupplierNameFromPayment(
+  payment: SupplierPayment,
+  suppliers: any[],
+): string {
+  const p = payment as any;
+  const id = getSupplierId(payment);
+  const supplier = suppliers.find((s: any) => s.id === id);
+  if (supplier?.name) return supplier.name;
+  return (
+    p.supplierName ||
+    p.supplier_name ||
+    p.supplier ||
+    id ||
+    "-"
+  );
 }
 
 interface SupplierPaymentsProps {
@@ -189,9 +218,9 @@ const SupplierPayments: React.FC<SupplierPaymentsProps> = ({
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
       data = data.filter((p) => {
-        const supplier = suppliers.find((s) => s.id === p.supplier_id);
-        const supplierName = supplier?.name || p.supplier_id || "";
-        const ref = (p.reference || "").toLowerCase();
+        const supplier = suppliers.find((s) => s.id === getSupplierId(p));
+        const supplierName = getSupplierNameFromPayment(p, suppliers) || "";
+        const ref = ((p as any).reference || (p as any).reference_no || (p as any).referenceNumber || "").toLowerCase();
         const notes = (p.notes || "").toLowerCase();
         const paymentNum = (p.id || "").toLowerCase();
         return (
@@ -246,11 +275,11 @@ const SupplierPayments: React.FC<SupplierPaymentsProps> = ({
           break;
         case "supplier":
           aVal =
-            suppliers.find((s) => s.id === a.supplier_id)?.name ||
-            a.supplier_id;
+            getSupplierNameFromPayment(a, suppliers) ||
+            getSupplierId(a);
           bVal =
-            suppliers.find((s) => s.id === b.supplier_id)?.name ||
-            b.supplier_id;
+            getSupplierNameFromPayment(b, suppliers) ||
+            getSupplierId(b);
           break;
         case "method":
           aVal = getPaymentMethod(a);
@@ -338,8 +367,8 @@ const SupplierPayments: React.FC<SupplierPaymentsProps> = ({
   const handleDownloadPDF = async (payment: SupplierPayment) => {
     try {
       notify("Preparing payment voucher...", "info");
-      const supplier = suppliers.find((s) => s.id === payment.supplier_id);
-      const supplierName = supplier?.name || payment.supplier_id || "Unknown";
+      const supplier = suppliers.find((s) => s.id === getSupplierId(payment));
+      const supplierName = getSupplierNameFromPayment(payment, suppliers) || "Unknown";
       const doc = buildSupplierPaymentDoc(
         {
           ...payment,
@@ -702,11 +731,10 @@ const SupplierPayments: React.FC<SupplierPaymentsProps> = ({
               ) : (
                 filteredSortedData.map((payment: SupplierPayment) => {
                   const isSelected = selectedIds.includes(payment.id);
-                  const supplier = suppliers.find(
-                    (s) => s.id === payment.supplier_id,
+                  const supplierName = getSupplierNameFromPayment(
+                    payment,
+                    suppliers,
                   );
-                  const supplierName =
-                    supplier?.name || payment.supplier_id || "-";
                   const status = getPaymentStatus(payment);
                   const method = getPaymentMethod(payment);
                   const paymentDate = getPaymentDate(payment);
@@ -796,7 +824,7 @@ const SupplierPayments: React.FC<SupplierPaymentsProps> = ({
                       </td>
                       <td className="table-body-cell text-center">
                         <span className="text-[11px] text-slate-500 font-mono truncate max-w-[100px] block">
-                          {payment.reference || "-"}
+                          {(payment as any).reference || (payment as any).reference_no || (payment as any).referenceNumber || (payment as any).paymentNumber || "-"}
                         </span>
                       </td>
                       <td className="table-body-cell text-center">
