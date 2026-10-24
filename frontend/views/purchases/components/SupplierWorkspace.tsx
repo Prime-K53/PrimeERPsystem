@@ -385,6 +385,321 @@ export const SupplierWorkspace: React.FC<SupplierWorkspaceProps> = ({
     </div>
   );
 
+  const renderTimeline = () => (
+    <div className="space-y-4">
+      <h3 className="text-sm font-bold text-slate-900">Activity Timeline</h3>
+      {supplierLogs.length === 0 &&
+      supplierPurchases.length === 0 &&
+      supplierPaymentsList.length === 0 ? (
+        <div className="bg-white p-12 rounded-xl border border-slate-200 border-dashed text-center">
+          <History size={24} className="text-slate-300 mx-auto mb-2" />
+          <p className="text-xs text-slate-500">No activity recorded yet.</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm divide-y divide-slate-100">
+          {[
+            ...supplierPurchases.map((p) => ({
+              kind: "Bill",
+              date: p.date,
+              id: p.id,
+              amount: getPurchaseTotal(p),
+              status: p.paymentStatus || p.status,
+            })),
+            ...supplierPaymentsList.map((p) => ({
+              kind: "Payment",
+              date: p.date,
+              id: p.id,
+              amount: p.amount,
+              status: "Cleared",
+            })),
+          ]
+            .sort(
+              (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+            )
+            .map((tx) => (
+              <div key={tx.id} className="flex items-center gap-4 px-6 py-4">
+                <div
+                  className={`w-9 h-9 rounded-full flex items-center justify-center ${tx.kind === "Bill" ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}
+                >
+                  {tx.kind === "Bill" ? (
+                    <FileText size={14} />
+                  ) : (
+                    <DollarSign size={14} />
+                  )}
+                </div>
+                <div className="flex-1">
+                  <p className="text-[13px] font-bold text-slate-900">
+                    {tx.kind} · {tx.id}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    {format(parseISO(tx.date), "MMM dd, yyyy")}
+                  </p>
+                </div>
+                <span className="text-[13px] font-bold finance-nums">
+                  {currency}
+                  {tx.amount.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                  })}
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${tx.status === "Paid" || tx.status === "Cleared" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}
+                >
+                  {tx.status}
+                </span>
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderBills = () => (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-bold text-slate-900">Bills</h3>
+        <button
+          onClick={() =>
+            navigate("/procurement/bills", {
+              state: { action: "create", supplierId: supplier.id },
+            })
+          }
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold"
+        >
+          <Plus size={14} /> New Bill
+        </button>
+      </div>
+      {supplierPurchases.length === 0 ? (
+        <div className="bg-white p-12 rounded-xl border border-slate-200 border-dashed text-center">
+          <FileText size={24} className="text-slate-300 mx-auto mb-2" />
+          <p className="text-xs text-slate-500">No bills for this supplier.</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-slate-50/50">
+                <th className="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Date
+                </th>
+                <th className="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Reference
+                </th>
+                <th className="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">
+                  Total
+                </th>
+                <th className="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">
+                  Paid
+                </th>
+                <th className="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">
+                  Balance
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {supplierPurchases.map((p) => (
+                <tr key={p.id} className="hover:bg-slate-50/50">
+                  <td className="px-6 py-3 text-[13px] font-semibold text-slate-700">
+                    {format(parseISO(p.date), "MMM dd, yyyy")}
+                  </td>
+                  <td className="px-6 py-3 text-[13px] font-bold text-slate-900">
+                    {p.id}
+                  </td>
+                  <td className="px-6 py-3">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${derivePurchasePaymentStatus(p) === "Paid" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}
+                    >
+                      {derivePurchasePaymentStatus(p)}
+                    </span>
+                  </td>
+                  <td className="px-6 py-3 text-[13px] font-bold text-slate-900 text-right finance-nums">
+                    {currency}
+                    {getPurchaseTotal(p).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                    })}
+                  </td>
+                  <td className="px-6 py-3 text-[13px] font-semibold text-slate-700 text-right finance-nums">
+                    {currency}
+                    {(p.paidAmount || 0).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                    })}
+                  </td>
+                  <td className="px-6 py-3 text-[13px] font-bold text-rose-600 text-right finance-nums">
+                    {currency}
+                    {(getPurchaseTotal(p) - (p.paidAmount || 0)).toLocaleString(
+                      undefined,
+                      { minimumFractionDigits: 2 },
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderPayments = () => (
+    <div className="space-y-4">
+      <h3 className="text-sm font-bold text-slate-900">Payments</h3>
+      {supplierPaymentsList.length === 0 ? (
+        <div className="bg-white p-12 rounded-xl border border-slate-200 border-dashed text-center">
+          <DollarSign size={24} className="text-slate-300 mx-auto mb-2" />
+          <p className="text-xs text-slate-500">No payments recorded.</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-slate-50/50">
+                <th className="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Date
+                </th>
+                <th className="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Reference
+                </th>
+                <th className="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Method
+                </th>
+                <th className="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">
+                  Amount
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {supplierPaymentsList.map((p) => (
+                <tr key={p.id} className="hover:bg-slate-50/50">
+                  <td className="px-6 py-3 text-[13px] font-semibold text-slate-700">
+                    {format(parseISO(p.date), "MMM dd, yyyy")}
+                  </td>
+                  <td className="px-6 py-3 text-[13px] font-bold text-slate-900">
+                    {p.id}
+                  </td>
+                  <td className="px-6 py-3 text-[13px] font-semibold text-slate-700">
+                    {p.method}
+                  </td>
+                  <td className="px-6 py-3 text-[13px] font-bold text-emerald-700 text-right finance-nums">
+                    {currency}
+                    {p.amount.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                    })}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderLedger = () => (
+    <div className="space-y-4">
+      <h3 className="text-sm font-bold text-slate-900">Ledger Entries</h3>
+      {supplierLedger.length === 0 ? (
+        <div className="bg-white p-12 rounded-xl border border-slate-200 border-dashed text-center">
+          <CreditCard size={24} className="text-slate-300 mx-auto mb-2" />
+          <p className="text-xs text-slate-500">No ledger entries.</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-slate-50/50">
+                <th className="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Date
+                </th>
+                <th className="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Description
+                </th>
+                <th className="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Type
+                </th>
+                <th className="px-6 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">
+                  Amount
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {supplierLedger.map((e) => (
+                <tr key={e.id} className="hover:bg-slate-50/50">
+                  <td className="px-6 py-3 text-[13px] font-semibold text-slate-700">
+                    {format(parseISO(e.date), "MMM dd, yyyy")}
+                  </td>
+                  <td className="px-6 py-3 text-[13px] font-semibold text-slate-700">
+                    {e.description || e.entryType || e.type || "—"}
+                  </td>
+                  <td className="px-6 py-3 text-[13px] font-semibold text-slate-700">
+                    {e.entryType || e.type || "—"}
+                  </td>
+                  <td className="px-6 py-3 text-[13px] font-bold text-slate-900 text-right finance-nums">
+                    {currency}
+                    {(e.amount || 0).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                    })}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderDocuments = () => (
+    <div className="space-y-4">
+      <h3 className="text-sm font-bold text-slate-900">Documents</h3>
+      <div className="bg-white p-12 rounded-xl border border-slate-200 border-dashed text-center">
+        <Paperclip size={24} className="text-slate-300 mx-auto mb-2" />
+        <p className="text-xs text-slate-500">No documents attached yet.</p>
+      </div>
+    </div>
+  );
+
+  const renderSettings = () => (
+    <div className="space-y-4">
+      <h3 className="text-sm font-bold text-slate-900">Supplier Settings</h3>
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[13px] font-bold text-slate-900">Status</p>
+            <p className="text-[11px] text-slate-500">
+              Current status: {supplier.status || "Active"}
+            </p>
+          </div>
+          <button
+            onClick={() => onEdit(supplier)}
+            className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold"
+          >
+            Edit Supplier
+          </button>
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[13px] font-bold text-slate-900">
+              Payment Terms
+            </p>
+            <p className="text-[11px] text-slate-500">
+              {supplier.paymentTerms || "Due on receipt"}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[13px] font-bold text-slate-900">Category</p>
+            <p className="text-[11px] text-slate-500">
+              {supplier.category || "General Supplier"}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex flex-col h-screen bg-slate-50 overflow-hidden">
       {/* Top Header/Action Bar */}
@@ -539,20 +854,12 @@ export const SupplierWorkspace: React.FC<SupplierWorkspaceProps> = ({
         {/* Tab Content */}
         <div className="p-6">
           {activeTab === "Overview" && renderOverview()}
-          {activeTab !== "Overview" && (
-            <div className="bg-white p-12 rounded-xl border border-slate-200 border-dashed text-center">
-              <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                <FileSearch size={24} className="text-slate-300" />
-              </div>
-              <h3 className="text-sm font-bold text-slate-900 mb-1">
-                {activeTab} Details
-              </h3>
-              <p className="text-xs text-slate-500 max-w-xs mx-auto">
-                This section is being populated with {activeTab.toLowerCase()}{" "}
-                data for {supplier.name}.
-              </p>
-            </div>
-          )}
+          {activeTab === "Timeline" && renderTimeline()}
+          {activeTab === "Bills" && renderBills()}
+          {activeTab === "Payments" && renderPayments()}
+          {activeTab === "Ledger" && renderLedger()}
+          {activeTab === "Documents" && renderDocuments()}
+          {activeTab === "Settings" && renderSettings()}
         </div>
       </div>
     </div>
