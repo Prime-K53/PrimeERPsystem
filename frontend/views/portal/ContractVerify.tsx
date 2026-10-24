@@ -7,18 +7,15 @@ import { REDESIGN_CSS, Seal } from './DocumentVerify';
  *
  *   /verify?c=<contract-number-url-safe>&h=<full-sha256>
  *
- * The QR on the printed contract encodes the full digest. The server looks the
- * contract up, recomputes the canonical digest from the STORED record and
- * compares it constant-time — the browser never decides authenticity.
+ * Two independent outcomes are deliberately kept separate:
+ *   - Document Verification: whether the authoritative record can be resolved and
+ *     the document-level checks pass.
+ *   - SHA-256 Integrity Verification: whether the supplied/recomputed digest
+ *     matches the authoritative stored digest.
+ *  A valid document with an integrity mismatch must still be identified as a
+ *  document and must show both results independently.
  *
- * The short code (`4612-f2e1-2ecc`) is a MANUAL lookup aid printed under the
- * hash: it identifies a contract but is NOT proof on its own. A short-code
- * lookup therefore still resolves server-side and validates the full stored
- * digest.
- *
- * Deliberately router-free: the page is mounted directly by `index.tsx` for
- * real `/verify` URLs (before `HashRouter` boots) and as a normal `/verify`
- * route for the `/#/verify?...` fallback.
+ * The QR still points at this same page; nothing here changes the QR payload.
  */
 
 type ContractDetails = {
@@ -31,12 +28,20 @@ type ContractDetails = {
   companyName?: string;
 };
 
+type DocStatus = 'Verified' | 'Not Found / Invalid' | 'Unavailable';
+type IntegrityStatus = 'Integrity Verified' | 'Integrity Mismatch' | 'Hash Missing' | 'Integrity Check Unavailable' | 'Not Evaluated';
+
+type VerificationOutcome = {
+  docStatus: DocStatus;
+  integrityStatus: IntegrityStatus;
+  contract?: ContractDetails;
+  reason?: string;
+};
+
 type PageState =
   | { kind: 'idle' }
   | { kind: 'loading'; lookup: string }
-  | { kind: 'verified'; data: ContractDetails }
-  | { kind: 'altered'; lookup: string }
-  | { kind: 'not_found'; lookup: string }
+  | { kind: 'result'; lookup: string; hash: string; outcome: VerificationOutcome }
   | { kind: 'error'; lookup: string; hash: string };
 
 const SHORT_CODE_RE = /^[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}$/i;
@@ -62,6 +67,11 @@ const CONTRACT_VERIFY_CSS = `
 .ppv-note b{ color:var(--ink); font-weight:600; }
 .ppv-mono{ font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12.5px; }
 .ppv-err{ margin-top:14px; padding:10px 12px; border:1px solid rgba(178,58,46,.35); background:rgba(178,58,46,.05); color:var(--stamp); font-size:12.5px; line-height:1.5; }
+.ppv-result{ margin-top:14px; padding:10px 12px; border:1px solid var(--line); background:#FCFAF3; border-radius:3px; }
+.ppv-result-row{ display:flex; justify-content:space-between; gap:10px; font-size:12.5px; padding:6px 0; border-bottom:1px solid var(--line-soft); }
+.ppv-result-row:last-child{ border-bottom:none; }
+.ppv-result-label{ font-weight:600; color:var(--ink); }
+.ppv-result-value{ color:var(--ink-soft); text-align:right; }
 `;
 
 const str = (value: unknown, fallback = '—'): string => {
@@ -119,40 +129,64 @@ export function readContractVerifyParams(search?: string, hash?: string): { c: s
 async function requestContract(
   lookup: string,
   hash: string,
-  signal?: AbortSignal,
-): Promise<{ result: 'verified' | 'altered' | 'not_found'; data?: ContractDetails }> {
-  const params = new URLSearchParams();
-  params.set('c', lookup);
-  if (hash) params.set('h', hash);
+): Promise<VerificationOutcome> {
+  const empty: VerificationOutcome = { docStatus: 'Unavailable', integrityStatus: 'Integrity Check Unavailable' };
+  const safe = (value: string | undefined, fallback: string) => String(value || fallback).trim() || fallback;
 
-  const res = await fetch(
-    `${API_BASE_URL}/public/documents/contract-verify?${params.toString()}`,
-    { signal, headers: { Accept: 'application/json' } },
-  );
+  try {
+    const params = new URLSearchParams();
+    params.set('c', lookup);
+    if (hash) params.set('h', hash);
 
-  if (!res.ok) {
-    if (res.status === 503) throw new Error('unavailable');
-    throw new Error(`http_${res.status}`);
-  }
+    const res = await fetch(
+      `${API_BASE_URL}/public/documents/contract-verify?${params.toString()}`,
+      { headers: { Accept: 'application/json' } },
+    );
+    if (!res.ok) return empty;
 
-  const body = await res.json().catch(() => null) as Record<string, any> | null;
-  const result = String(body?.result || (body?.verified === true ? 'verified' : 'not_found'));
-  if (result === 'verified' && body?.verified === true) {
+    const body = await res.json().catch(() => null) as Record<string, any> | null;
+    const result = String(body?.result || (body?.verified === true ? 'verified' : 'not_found'));
+    const reason = String(body?.reason || '').trim();
+
+    if (result === 'verified' && body?.verified === true) {
+      const detail = body as any;
+      return {
+        docStatus: 'Verified',
+        integrityStatus: 'Integrity Verified',
+        contract: {
+          contractNumber: str(detail.contractNumber),
+          customerName: str(detail.customerName),
+          contractDate: fmtDate(detail.contractDate),
+          status: str(detail.status),
+          total: Number(detail.total || 0),
+          currency: String(detail.currency || 'MWK'),
+          companyName: detail.companyName ? String(detail.companyName) : undefined,
+        },
+        reason: 'verified',
+      };
+    }
+
+    if (result === 'altered') {
+      const integrityResult = String(body?.integrityResult || '').trim();
+      const mapped: IntegrityStatus =
+        integrityResult === 'Hash Missing' || reason === 'missing_stored_hash' || reason === 'stored_hash_not_sha256'
+          ? 'Hash Missing'
+          : 'Integrity Mismatch';
+      return {
+        docStatus: 'Verified',
+        integrityStatus: mapped,
+        reason: reason || 'integrity_failed',
+      };
+    }
+
     return {
-      result: 'verified',
-      data: {
-        contractNumber: str(body.contractNumber),
-        customerName: str(body.customerName),
-        contractDate: fmtDate(body.contractDate),
-        status: str(body.status),
-        total: Number(body.total || 0),
-        currency: String(body.currency || 'MWK'),
-        companyName: body.companyName ? String(body.companyName) : undefined,
-      },
+      docStatus: 'Not Found / Invalid',
+      integrityStatus: 'Not Evaluated',
+      reason: reason || 'not_found',
     };
+  } catch {
+    return empty;
   }
-  if (result === 'altered') return { result: 'altered' };
-  return { result: 'not_found' };
 }
 
 export const ContractVerify: React.FC = () => {
@@ -166,24 +200,18 @@ export const ContractVerify: React.FC = () => {
     const requestId = ++requestSeq.current;
     setState({ kind: 'loading', lookup: value });
     try {
-      const response = await requestContract(value, hash);
+      const outcome = await requestContract(value, hash);
       if (requestId !== requestSeq.current) return;
-      if (response.result === 'verified' && response.data) {
-        setState({ kind: 'verified', data: response.data });
-      } else if (response.result === 'altered') {
-        setState({ kind: 'altered', lookup: value });
-      } else {
-        setState({ kind: 'not_found', lookup: value });
-      }
+      setState({ kind: 'result', lookup: value, hash, outcome });
     } catch {
       if (requestId === requestSeq.current) setState({ kind: 'error', lookup: value, hash });
     }
+    if (SHORT_CODE_RE.test(value)) setLookup(value);
   }, []);
 
   useEffect(() => {
     if (initial.c) void runLookup(initial.c, initial.h);
     return () => {
-      // Invalidate any response still in flight when the page unmounts.
       requestSeq.current += 1;
     };
   }, [initial.c, initial.h, runLookup]);
@@ -225,6 +253,19 @@ export const ContractVerify: React.FC = () => {
     </div>
   );
 
+  const sectionBlock = (title: string, value: string, tone: 'teal' | 'amber' | 'red') => (
+    <div className="ppv-result-row">
+      <span className="ppv-result-label">{title}</span>
+      <span className="ppv-result-value">{value}</span>
+    </div>
+  );
+
+  const toneForDoc = (doc: DocStatus): 'teal' | 'amber' | 'red' =>
+    doc === 'Verified' ? 'teal' : doc === 'Unavailable' ? 'amber' : 'red';
+
+  const toneForIntegrity = (integrity: IntegrityStatus): 'teal' | 'amber' | 'red' =>
+    integrity === 'Integrity Verified' ? 'teal' : integrity === 'Hash Missing' ? 'amber' : 'red';
+
   const form = (submitLabel = 'Verify contract') => (
     <form className="ppv-form" onSubmit={submit}>
       <label htmlFor="contract-lookup">Short code</label>
@@ -244,7 +285,7 @@ export const ContractVerify: React.FC = () => {
         aria-invalid={Boolean(formError)}
       />
       {formError ? <div className="ppv-err" role="alert">{formError}</div> : null}
-      <button className="ppv-btn" type="submit" disabled={state.kind === 'loading'}>
+      <button className="ppv-btn" type="button" onClick={() => void runLookup(lookup, '')} disabled={state.kind === 'loading'}>
         {submitLabel}
       </button>
       <div className="ppv-note" id="contract-lookup-note">
@@ -254,6 +295,8 @@ export const ContractVerify: React.FC = () => {
       </div>
     </form>
   );
+
+  const submitForm = form('Check another contract');
 
   if (state.kind === 'loading') {
     return shell(
@@ -276,134 +319,135 @@ export const ContractVerify: React.FC = () => {
     );
   }
 
-  if (state.kind === 'verified') {
-    const d = state.data;
-    const tone = statusTone(d.status);
-    return shell(
-      <>
-        {mark}
-        <hr className="ppv-rule" />
-        <div className="ppv-stamp-row">
-          <div className="ppv-stamp"><Seal tone="teal" glyph="check" /></div>
-          <div className="ppv-stamp-text">
-            <div className="h1">Verified - matches our records</div>
-            <div className="p1">The contract data still matches the content hash printed on the document.</div>
-          </div>
-        </div>
-        <div className="ppv-doctype">Document type <b>Printing contract</b></div>
-        <div>
-          <div className="ppv-row">
-            <span className="label">Contract number</span><span className="fill" />
-            <span className="value">{str(d.contractNumber)}</span>
-          </div>
-          <div className="ppv-row">
-            <span className="label">Client</span><span className="fill" />
-            <span className="value">{str(d.customerName)}</span>
-          </div>
-          <div className="ppv-row">
-            <span className="label">Date</span><span className="fill" />
-            <span className="value">{fmtDate(d.contractDate)}</span>
-          </div>
-          <div className="ppv-row total">
-            <span className="label">Total</span><span className="fill" />
-            <span className="value">{fmtTotal(d.currency, d.total)}</span>
-          </div>
-        </div>
-        <div className={`ppv-band ${tone}`}>
-          <span className="lab">Contract status</span>
-          <span className="val">{str(d.status).toUpperCase()}</span>
-        </div>
-        <div className="ppv-foot">
-          <div className="qr" aria-hidden="true">✓</div>
-          <div className="ppv-foot-text">
-            Checked against {str(d.companyName, 'Prime Printing')} records. The QR on the printed
-            contract carries the same full SHA-256 digest.
-          </div>
-        </div>
-      </>
-    );
-  }
+  if (state.kind === 'result') {
+    const { outcome, lookup: stateLookup, hash } = state;
+    const docTone = toneForDoc(outcome.docStatus);
+    const integrityTone = toneForIntegrity(outcome.integrityStatus);
+    const isVerified = outcome.docStatus === 'Verified' && outcome.integrityStatus === 'Integrity Verified';
 
-  if (state.kind === 'altered') {
+    const markTone = outcome.docStatus === 'Verified' ? 'teal' : outcome.docStatus === 'Unavailable' ? 'amber' : 'red';
+    const sealGlyph = isVerified
+      ? 'check'
+      : outcome.docStatus === 'Unavailable'
+        ? 'dots'
+        : 'warn';
+
     return shell(
       <>
         {mark}
         <hr className="ppv-rule" />
         <div className="ppv-stamp-row">
-          <div className="ppv-stamp"><Seal tone="red" glyph="warn" /></div>
+          <div className="ppv-stamp"><Seal tone={markTone} glyph={sealGlyph} /></div>
           <div className="ppv-stamp-text">
-            <div className="h1">Altered - does not match our records</div>
+            <div className="h1">
+              {outcome.docStatus === 'Verified'
+                ? outcome.integrityStatus === 'Integrity Verified'
+                  ? 'Verified - matches our records'
+                  : 'Document found - integrity not verified'
+                : outcome.docStatus === 'Unavailable'
+                  ? 'Verification unavailable'
+                  : 'Document not found'}
+            </div>
             <div className="p1">
-              The contract data no longer matches the content hash on the document. Do not rely on this
-              copy — contact Prime Printing.
+              {outcome.docStatus === 'Verified'
+                ? outcome.integrityStatus === 'Integrity Verified'
+                  ? 'The contract data still matches the content hash printed on the document.'
+                  : 'The printed hash does not match the authoritative record.'
+                : outcome.docStatus === 'Unavailable'
+                  ? 'The verification service could not be reached. Please try again.'
+                  : 'No contract matches that number or short code in Prime Printing records.'}
             </div>
           </div>
         </div>
-        <div className="ppv-err">
-          No contract details are shown for a document that fails the integrity check.
+
+        <div className="ppv-result" style={{ marginTop: 12 }}>
+          {sectionBlock('Document Verification', outcome.docStatus, docTone)}
+          {sectionBlock('SHA-256 Integrity Verification', outcome.integrityStatus, integrityTone)}
+          {outcome.contract ? sectionBlock('Document Status', str(outcome.contract.status), statusTone(outcome.contract.status)) : null}
         </div>
-        {form('Check another contract')}
+
+        {outcome.docStatus === 'Verified' && outcome.contract ? (
+          <div style={{ marginTop: 12 }}>
+            <div className="ppv-doctype">Document type <b>Printing contract</b></div>
+            <div>
+              <div className="ppv-row">
+                <span className="label">Contract number</span><span className="fill" />
+                <span className="value">{str(outcome.contract.contractNumber)}</span>
+              </div>
+              <div className="ppv-row">
+                <span className="label">Client</span><span className="fill" />
+                <span className="value">{str(outcome.contract.customerName)}</span>
+              </div>
+              <div className="ppv-row">
+                <span className="label">Date</span><span className="fill" />
+                <span className="value">{fmtDate(outcome.contract.contractDate)}</span>
+              </div>
+              <div className="ppv-row total">
+                <span className="label">Total</span><span className="fill" />
+                <span className="value">{fmtTotal(outcome.contract.currency, outcome.contract.total)}</span>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {outcome.docStatus === 'Verified' && outcome.integrityStatus !== 'Integrity Verified' ? (
+          <div className="ppv-err">
+            {outcome.integrityStatus === 'Hash Missing'
+              ? 'No authoritative SHA-256 content hash exists for this contract. Content integrity could not be established.'
+              : 'The contract data no longer matches the content hash on the document. Do not rely on this copy — contact Prime Printing.'}
+          </div>
+        ) : null}
+
+        {outcome.docStatus !== 'Verified' ? (
+          <>
+            {outcome.docStatus === 'Unavailable' ? (
+              <button
+                className="ppv-btn"
+                type="button"
+                disabled={!state.lookup}
+                onClick={() => void runLookup(state.lookup, state.hash)}
+              >
+                Retry
+              </button>
+            ) : null}
+            {submitForm}
+          </>
+        ) : null}
+        {outcome.docStatus === 'Unavailable' ? (
+          <div className="ppv-err">
+            The verification service could not be reached. Please try again.
+          </div>
+        ) : null}
       </>
     );
   }
 
-  if (state.kind === 'not_found') {
+  if (state.kind === 'idle') {
     return shell(
       <>
         {mark}
         <hr className="ppv-rule" />
         <div className="ppv-stamp-row">
-          <div className="ppv-stamp"><Seal tone="amber" glyph="warn" /></div>
+          <div className="ppv-stamp"><Seal tone="teal" glyph="dots" /></div>
           <div className="ppv-stamp-text">
-            <div className="h1">Not found</div>
-            <div className="p1">No contract matches that number or short code in Prime Printing records.</div>
+            <div className="h1">Verify a printing contract</div>
+            <div className="p1">Scan the QR on the contract, or enter the short code printed under its hash.</div>
           </div>
         </div>
-        {form('Try again')}
+        <p className="ppv-lede">
+          The QR opens this page with the contract number and its full SHA-256 content hash. A short-code
+          lookup runs the same server-side check.
+        </p>
+        {form()}
       </>
     );
   }
 
-  if (state.kind === 'error') {
-    return shell(
-      <>
-        {mark}
-        <hr className="ppv-rule" />
-        <div className="ppv-stamp-row">
-          <div className="ppv-stamp"><Seal tone="amber" glyph="warn" /></div>
-          <div className="ppv-stamp-text">
-            <div className="h1">Verification unavailable</div>
-            <div className="p1">The verification service could not be reached. Please try again.</div>
-          </div>
-        </div>
-        <button
-          className="ppv-btn"
-          type="button"
-          disabled={!state.lookup}
-          onClick={() => void runLookup(state.lookup, state.hash)}
-        >
-          Retry
-        </button>
-        {form('Check another contract')}
-      </>
-    );
-  }
-
+  // Preserve a fallback for an unexpected state.
   return shell(
     <>
       {mark}
       <hr className="ppv-rule" />
-      <div className="ppv-stamp-row">
-        <div className="ppv-stamp"><Seal tone="teal" glyph="dots" /></div>
-        <div className="ppv-stamp-text">
-          <div className="h1">Verify a printing contract</div>
-          <div className="p1">Scan the QR on the contract, or enter the short code printed under its hash.</div>
-        </div>
-      </div>
-      <p className="ppv-lede">
-        The QR opens this page with the contract number and its full SHA-256 content hash. A short-code
-        lookup runs the same server-side check.
-      </p>
       {form()}
     </>
   );

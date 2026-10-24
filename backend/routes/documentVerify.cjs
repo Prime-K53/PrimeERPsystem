@@ -30,18 +30,39 @@ router.get('/contract-verify', async (req, res) => {
     const sc = String(req.query.sc || req.query.shortCode || '').slice(0, 16);
     const lookup = await verifyContract({ contractNumber: c, hash: h, shortCode: sc });
     if (lookup.result === 'verified') {
-      return res.status(200).json(lookup.contract);
+      return res.status(200).json({
+        ...lookup.contract,
+        verified: true,
+        result: 'verified',
+        documentVerified: true,
+        integrityVerified: true,
+        integrityResult: 'Integrity Verified',
+        reason: 'verified',
+      });
     }
     if (lookup.result === 'altered') {
+      const reason = lookup.reason || 'integrity_failed';
+      const integrityResult =
+        reason === 'missing_stored_hash' || reason === 'stored_hash_not_sha256'
+          ? 'Hash Missing'
+          : 'Integrity Mismatch';
       return res.status(200).json({
         verified: false,
         result: 'altered',
+        documentVerified: true,
+        integrityVerified: false,
+        integrityResult,
+        reason,
         error: GENERIC_ALTERED,
       });
     }
     return res.status(200).json({
       verified: false,
       result: 'not_found',
+      documentVerified: false,
+      integrityVerified: false,
+      integrityResult: 'Not Evaluated',
+      reason: lookup.reason || 'no_match',
       error: GENERIC_NOT_FOUND,
     });
   } catch (err) {
