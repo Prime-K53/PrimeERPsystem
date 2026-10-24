@@ -1,8 +1,8 @@
-import React from 'react';
-import { Document, Page, View, Text, Font, Image } from '@react-pdf/renderer';
-import { docStyles, docStylesMono } from './styles.ts';
-import type { PrimeColorMode } from './pdfPrintMode.ts';
-import { monoText, monoFill, monoLine, monoInk } from './pdfPrintMode.ts';
+import React from "react";
+import { Document, Page, View, Text, Font, Image } from "@react-pdf/renderer";
+import { docStyles, docStylesMono } from "./styles.ts";
+import type { PrimeColorMode } from "./pdfPrintMode.ts";
+import { monoText, monoFill, monoLine, monoInk } from "./pdfPrintMode.ts";
 import {
   PrimeDocData,
   SalesExchangeDoc,
@@ -17,40 +17,58 @@ import {
   PrintingContractDoc,
   ContractScheduleDoc,
   ContractCompletionReceiptDoc,
-} from './schemas.ts';
-import { CompanyConfig } from '../../../../types.ts';
-import { DEFAULT_CURRENCIES } from '../../../../types/currency.ts';
-import { resolvePdfLogoSource, resolvePdfQrCodeSource } from '../../../../utils/companyAssetUtils.ts';
-import { normalizeSignatureDataUrl } from '../../../../utils/signatureUtils.ts';
-import { formatIsoDate } from '../../../../utils/isoDate.ts';
+} from "./schemas.ts";
+import { CompanyConfig } from "../../../../types.ts";
+import { DEFAULT_CURRENCIES } from "../../../../types/currency.ts";
+import {
+  resolvePdfLogoSource,
+  resolvePdfQrCodeSource,
+  resolvePdfSignatureSource,
+} from "../../../../utils/companyAssetUtils.ts";
+import { normalizeSignatureDataUrl } from "../../../../utils/signatureUtils.ts";
+import { formatIsoDate } from "../../../../utils/isoDate.ts";
 import {
   getDefaultPaymentTermsLabel,
   getStoredCompanyConfig,
   resolvePrimeTemplateSettings,
   PrimeTemplateSettings,
-} from './templateSettings.ts';
-import { generateAccountSummary } from '../../../../utils/pdfMapper.ts';
-import { currencyService } from '../../../../services/currencyService';
-import { resolveReceiptPaymentBadge, buildReceiptAcknowledgement } from '../../../../services/receiptCalculationService';
-import { resolveCustomerDisplayName, stripCustomerIdSuffix } from '../../../../services/printingContractService';
+  PRIME_MONO_FONT_FAMILY,
+} from "./templateSettings.ts";
+import { generateAccountSummary } from "../../../../utils/pdfMapper.ts";
+import { currencyService } from "../../../../services/currencyService";
+import {
+  resolveReceiptPaymentBadge,
+  buildReceiptAcknowledgement,
+} from "../../../../services/receiptCalculationService";
+import {
+  resolveCustomerDisplayName,
+  stripCustomerIdSuffix,
+} from "../../../../services/printingContractService";
 import {
   PaginationFurniture,
   VerificationLabel,
   isPaginatedDocumentType,
   paginationIdentity,
-} from './documentPagination.tsx';
+} from "./documentPagination.tsx";
 import {
   formatQuickPhotocopyPriceLabel,
   formatQuickPhotocopyQty,
   getQuickPhotocopyLineDisplay,
   getQuickPhotocopyTotals,
   isQuickPhotocopyItem,
-} from '../../../../services/quickPhotocopyService';
+} from "../../../../services/quickPhotocopyService";
 
 const formatPhone = (phone: string): string => {
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length === 12 && digits.startsWith('265')) {
-    return '(+265) ' + digits.slice(3, 6) + ' ' + digits.slice(6, 9) + ' ' + digits.slice(9, 12);
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("265")) {
+    return (
+      "(+265) " +
+      digits.slice(3, 6) +
+      " " +
+      digits.slice(6, 9) +
+      " " +
+      digits.slice(9, 12)
+    );
   }
   return phone;
 };
@@ -62,9 +80,9 @@ const InvoiceInfoPanel = ({
   config,
   fontScale,
   customers = [],
-  colorMode = 'brand',
+  colorMode = "brand",
 }: {
-  type: 'payment_terms' | 'account_summary';
+  type: "payment_terms" | "account_summary";
   settings: PrimeTemplateSettings;
   data: any;
   config: CompanyConfig | null;
@@ -72,37 +90,79 @@ const InvoiceInfoPanel = ({
   customers?: any[];
   colorMode?: PrimeColorMode;
 }) => {
-  const mode: PrimeColorMode = colorMode ?? 'brand';
-  if (type === 'account_summary') {
+  const mode: PrimeColorMode = colorMode ?? "brand";
+  if (type === "account_summary") {
     const summary = generateAccountSummary(data, config, customers);
     return (
       <View style={{ marginBottom: 15 }}>
-        <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', color: monoText(mode, '#94a3b8'), textTransform: 'uppercase', marginBottom: 4, letterSpacing: 1 }}>ACCOUNT SUMMARY</Text>
-        <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#475569'), lineHeight: 1.4 }}>{summary.statement}</Text>
+        <Text
+          style={{
+            fontSize: 8 * fontScale,
+            fontWeight: "bold",
+            color: monoText(mode, "#94a3b8"),
+            textTransform: "uppercase",
+            marginBottom: 4,
+            letterSpacing: 1,
+          }}
+        >
+          ACCOUNT SUMMARY
+        </Text>
+        <Text
+          style={{
+            fontSize: 10 * fontScale,
+            color: monoText(mode, "#475569"),
+            lineHeight: 1.4,
+          }}
+        >
+          {summary.statement}
+        </Text>
       </View>
     );
   }
 
-  const paymentTermsLabel = String(data?.paymentTerms || '').trim() || getDefaultPaymentTermsLabel(config);
+  const paymentTermsLabel =
+    String(data?.paymentTerms || "").trim() ||
+    getDefaultPaymentTermsLabel(config);
   return (
     <View style={{ marginBottom: 15 }}>
-      <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', color: monoText(mode, '#94a3b8'), textTransform: 'uppercase', marginBottom: 4, letterSpacing: 1 }}>Payment Terms</Text>
-      <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#475569'), lineHeight: 1.4 }}>{paymentTermsLabel}</Text>
+      <Text
+        style={{
+          fontSize: 8 * fontScale,
+          fontWeight: "bold",
+          color: monoText(mode, "#94a3b8"),
+          textTransform: "uppercase",
+          marginBottom: 4,
+          letterSpacing: 1,
+        }}
+      >
+        Payment Terms
+      </Text>
+      <Text
+        style={{
+          fontSize: 10 * fontScale,
+          color: monoText(mode, "#475569"),
+          lineHeight: 1.4,
+        }}
+      >
+        {paymentTermsLabel}
+      </Text>
     </View>
   );
 };
 
 const hexToRgb = (hex: string) => {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  return result ? {
-    r: parseInt(result[1], 16),
-    g: parseInt(result[2], 16),
-    b: parseInt(result[3], 16)
-  } : null;
+  return result
+    ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16),
+      }
+    : null;
 };
 
 // Disable hyphenation
-Font.registerHyphenationCallback(word => [word]);
+Font.registerHyphenationCallback((word) => [word]);
 
 /**
  * Verification QR size, in PDF points, shared by every document that carries a
@@ -118,7 +178,11 @@ Font.registerHyphenationCallback(word => [word]);
  */
 const VERIFICATION_QR_SIZE = 72;
 
-const renderQrImage = (qrCodeDataUrl?: string | null, size: number = VERIFICATION_QR_SIZE, showCaption = true) => {
+const renderQrImage = (
+  qrCodeDataUrl?: string | null,
+  size: number = VERIFICATION_QR_SIZE,
+  showCaption = true,
+) => {
   const resolvedQrCode = resolvePdfQrCodeSource(qrCodeDataUrl);
   if (!resolvedQrCode) return null;
 
@@ -126,10 +190,19 @@ const renderQrImage = (qrCodeDataUrl?: string | null, size: number = VERIFICATIO
   // (legacy human-readable payload otherwise). The caption is rendered ONLY
   // for the POS receipt; all other documents show the QR image alone.
   return (
-    <View style={{ alignItems: 'center' }}>
+    <View style={{ alignItems: "center" }}>
       <Image src={resolvedQrCode} style={{ width: size, height: size }} />
       {showCaption ? (
-        <Text style={{ fontSize: Math.max(6, size * 0.13), color: '#000', marginTop: 2, letterSpacing: 0.5 }}>SCAN TO VERIFY</Text>
+        <Text
+          style={{
+            fontSize: Math.max(6, size * 0.13),
+            color: "#000",
+            marginTop: 2,
+            letterSpacing: 0.5,
+          }}
+        >
+          SCAN TO VERIFY
+        </Text>
       ) : null}
     </View>
   );
@@ -137,19 +210,23 @@ const renderQrImage = (qrCodeDataUrl?: string | null, size: number = VERIFICATIO
 
 // Format amount helper
 const formatAmount = (amount: number) => {
-  return (amount || 0).toLocaleString('en-US', {
+  return (amount || 0).toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
 };
 
 const toTitleCase = (str: string) => {
-  return str.toLowerCase().split(/[_\s]+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  return str
+    .toLowerCase()
+    .split(/[_\s]+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
 };
 
 const formatDateOnly = (value?: string) => {
-  const normalized = String(value || '').trim();
-  if (!normalized) return 'N/A';
+  const normalized = String(value || "").trim();
+  if (!normalized) return "N/A";
 
   const parsed = new Date(normalized);
   if (!Number.isNaN(parsed.getTime())) {
@@ -164,27 +241,47 @@ const formatDateOnly = (value?: string) => {
     }
   }
 
-  const beforeComma = normalized.split(',')[0]?.trim();
+  const beforeComma = normalized.split(",")[0]?.trim();
   return beforeComma || normalized;
 };
 
-const getStatusTone = (status?: string, colorMode: PrimeColorMode = 'brand') => {
-  const normalized = String(status || '').trim().toLowerCase();
-  const mono = colorMode === 'mono';
+const getStatusTone = (
+  status?: string,
+  colorMode: PrimeColorMode = "brand",
+) => {
+  const normalized = String(status || "")
+    .trim()
+    .toLowerCase();
+  const mono = colorMode === "mono";
 
-  if (normalized === 'paid' || normalized === 'active') {
-    return { border: mono ? '#000' : '#10b981', text: mono ? '#000' : '#059669' };
+  if (normalized === "paid" || normalized === "active") {
+    return {
+      border: mono ? "#000" : "#10b981",
+      text: mono ? "#000" : "#059669",
+    };
   }
 
-  if (normalized === 'partial' || normalized === 'partially paid' || normalized === 'partially_paid' || normalized === 'paused' || normalized === 'processing') {
-    return { border: mono ? '#000' : '#f59e0b', text: mono ? '#000' : '#d97706' };
+  if (
+    normalized === "partial" ||
+    normalized === "partially paid" ||
+    normalized === "partially_paid" ||
+    normalized === "paused" ||
+    normalized === "processing"
+  ) {
+    return {
+      border: mono ? "#000" : "#f59e0b",
+      text: mono ? "#000" : "#d97706",
+    };
   }
 
-  if (normalized === 'overdue') {
-    return { border: mono ? '#000' : '#dc2626', text: mono ? '#000' : '#b91c1c' };
+  if (normalized === "overdue") {
+    return {
+      border: mono ? "#000" : "#dc2626",
+      text: mono ? "#000" : "#b91c1c",
+    };
   }
 
-  return { border: mono ? '#000' : '#ef4444', text: mono ? '#000' : '#dc2626' };
+  return { border: mono ? "#000" : "#ef4444", text: mono ? "#000" : "#dc2626" };
 };
 
 const formatSecurityTimestamp = (value?: string) => {
@@ -193,15 +290,15 @@ const formatSecurityTimestamp = (value?: string) => {
     return parsed.toLocaleString();
   }
 
-  return String(value || 'Unknown time');
+  return String(value || "Unknown time");
 };
 
 const pickFirstText = (...values: Array<unknown>) => {
   for (const value of values) {
-    const normalized = String(value ?? '').trim();
+    const normalized = String(value ?? "").trim();
     if (normalized) return normalized;
   }
-  return '';
+  return "";
 };
 
 /**
@@ -212,29 +309,83 @@ const pickFirstText = (...values: Array<unknown>) => {
  * by a separator or end-of-string.
  */
 const stripChargePerCandidateSubstring = (summary: string): string => {
-  const trimmed = String(summary || '').trim();
+  const trimmed = String(summary || "").trim();
   if (!trimmed) return trimmed;
   // Fragment pattern: "Charge per candidate: <amount>" with optional leading
   // and trailing whitespace. The joiner between segments is " · ".
   const fragmentRe = /^Charge per candidate:\s*[^·]+$/i;
   // A lone trailing " ·" (without trailing space) is not a real joiner; drop it
   // so the single-segment path can recognise the string as the fragment alone.
-  const cleaned = trimmed.replace(/\s·\s*$/, '').trim();
-  if (!cleaned.includes(' · ')) {
-    return fragmentRe.test(cleaned) ? '' : cleaned;
+  const cleaned = trimmed.replace(/\s·\s*$/, "").trim();
+  if (!cleaned.includes(" · ")) {
+    return fragmentRe.test(cleaned) ? "" : cleaned;
   }
   // Split on the joiner, drop segments that are the charge fragment, rejoin.
   // Trailing empty segments (from a trailing " · ") are ignored.
-  const segments = cleaned.split(' · ').filter(s => s.trim().length > 0);
-  const kept = segments.filter(s => !fragmentRe.test(s.trim()));
-  return kept.length > 0 ? kept.join(' · ') : '';
+  const segments = cleaned.split(" · ").filter((s) => s.trim().length > 0);
+  const kept = segments.filter((s) => !fragmentRe.test(s.trim()));
+  return kept.length > 0 ? kept.join(" · ") : "";
 };
+
+/**
+ * Standard terms printed on every printing contract.
+ *
+ * These are the contract's baseline legal terms — the recorded free-text
+ * `terms` field is additive ("additional agreed terms"), never a substitute.
+ * They are deliberately static so the printed agreement cannot vary by
+ * contract unless the parties record an express variation.
+ */
+const PRINTING_CONTRACT_STANDARD_TERMS: ReadonlyArray<{
+  title: string;
+  body: string;
+}> = [
+  {
+    title: "Payment and prepayment",
+    body: "The Client shall pay the contract value shown in this contract before printing begins. Prepayment is applied to the agreed assessment entitlement and is non-refundable except where these terms expressly provide otherwise. All amounts are stated in Malawi Kwacha and exclude bank charges.",
+  },
+  {
+    title: "Delivery and collection",
+    body: "The Service Provider shall deliver the printed work, or make it available for collection, at the place and time stated in the Agreed Specification. Risk in the work passes to the Client on delivery or collection, and the Client shall inspect it promptly.",
+  },
+  {
+    title: "Proof approval and corrections",
+    body: "Where a proof is submitted, the Client shall approve it or return corrections within one working day. The Service Provider is not responsible for errors in a proof the Client has approved. Corrections requested after approval may change the price and delivery date.",
+  },
+  {
+    title: "Confidentiality",
+    body: "The Service Provider shall keep all examination and assessment materials confidential, use them only to perform this contract, and restrict access to staff who need them. This obligation continues after the contract ends.",
+  },
+  {
+    title: "Quality and reprints",
+    body: "The printed work shall conform to the Agreed Specification. The Client shall report any defect within three working days after delivery or collection. The Service Provider shall, at its option, reprint the affected work or refund its price, and this is the Client's sole remedy for defects.",
+  },
+  {
+    title: "Changes to quantity or specification",
+    body: "A change requested after signing is effective only when agreed in writing. The Service Provider may adjust the price and delivery date to reflect the change. Work already produced cannot be reduced or cancelled.",
+  },
+  {
+    title: "Cancellation",
+    body: "The Client may cancel this contract by written notice. The Service Provider may retain payment for work already performed and for materials and capacity committed to the contract. Cancellation does not affect rights or obligations that have already accrued.",
+  },
+  {
+    title: "Liability limits",
+    body: "The Service Provider's total liability under this contract shall not exceed the contract value. The Service Provider is not liable for indirect or consequential loss, loss of profit, or loss caused by the Client's acts or omissions. Nothing in this clause limits liability that cannot be limited by law.",
+  },
+  {
+    title: "Force majeure",
+    body: "Neither party is liable for delay or failure caused by an event beyond its reasonable control, including power failure, equipment failure, civil disturbance or government action. The affected party shall notify the other promptly and use reasonable efforts to resume performance.",
+  },
+  {
+    title: "Dispute resolution and governing law",
+    body: "The parties shall first try in good faith to resolve any dispute by negotiation. If the dispute is not resolved within fourteen days, it shall be referred to mediation in Malawi. This contract is governed by the laws of the Republic of Malawi, and the courts of Malawi have exclusive jurisdiction.",
+  },
+];
 
 const buildCompanyAddress = (config?: CompanyConfig | null) => {
   return [config?.addressLine1, config?.city, config?.country]
-    .map((value) => String(value ?? '').trim())
+    .map((value) => String(value ?? "").trim())
     .filter(Boolean)
-    .join(', ');
+    .join(", ");
 };
 
 /**
@@ -251,11 +402,11 @@ const buildCompanyAddress = (config?: CompanyConfig | null) => {
  * never loses its address entirely.
  */
 const buildReceiptCompanyAddress = (config?: CompanyConfig | null) => {
-  const street = String(config?.addressLine1 ?? '').trim();
+  const street = String(config?.addressLine1 ?? "").trim();
   if (!street) return buildCompanyAddress(config);
 
-  const city = String(config?.city ?? '').trim();
-  const country = String(config?.country ?? '').trim();
+  const city = String(config?.city ?? "").trim();
+  const country = String(config?.country ?? "").trim();
 
   // Drop the configured country, then the configured city, repeatedly and
   // from the end only — the leading street part must never be touched.
@@ -264,9 +415,9 @@ const buildReceiptCompanyAddress = (config?: CompanyConfig | null) => {
   for (let i = 0; i < 2; i++) {
     for (const suffix of suffixes) {
       if (!suffix) continue;
-      const escaped = suffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const re = new RegExp(`[\\s,]*${escaped}\\s*$`, 'i');
-      const next = trimmed.replace(re, '').trim();
+      const escaped = suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp(`[\\s,]*${escaped}\\s*$`, "i");
+      const next = trimmed.replace(re, "").trim();
       if (next && next !== trimmed) trimmed = next;
     }
   }
@@ -281,8 +432,8 @@ const buildReceiptCompanyAddress = (config?: CompanyConfig | null) => {
  * base currency, so the receipt names it plainly as "Kwacha".
  */
 const CURRENCY_SHORT_NAMES: Record<string, string> = {
-  K: 'Kwacha',
-  MK: 'Kwacha',
+  K: "Kwacha",
+  MK: "Kwacha",
 };
 
 /**
@@ -298,11 +449,11 @@ const CURRENCY_SHORT_NAMES: Record<string, string> = {
  * Unknown symbols keep their raw text, so the row is never blank or wrong.
  */
 const resolveReceiptCurrencyLabel = (symbol: string): string => {
-  const raw = String(symbol || '').trim();
-  if (!raw) return '';
+  const raw = String(symbol || "").trim();
+  if (!raw) return "";
   const short = CURRENCY_SHORT_NAMES[raw];
   if (short) return short;
-  return DEFAULT_CURRENCIES.find(c => c.symbol === raw)?.name || raw;
+  return DEFAULT_CURRENCIES.find((c) => c.symbol === raw)?.name || raw;
 };
 
 /**
@@ -350,34 +501,44 @@ const RECEIPT_META_GAP = 16;
  * wider glyphs will ellipsize rather than wrap — still exactly one row.
  */
 const HELVETICA_WIDTHS: readonly number[] = [
-  278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278,
-  556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556,
-  1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778,
-  667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556,
-  333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556,
-  556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584,
+  278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278,
+  278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584,
+  584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556,
+  833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278,
+  278, 278, 469, 556, 333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222,
+  500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500,
+  500, 334, 260, 334, 584,
 ];
 
 const HELVETICA_BOLD_WIDTHS: readonly number[] = [
-  278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278, 278,
-  556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 333, 333, 584, 584, 584, 611,
-  975, 722, 722, 722, 722, 667, 611, 778, 722, 278, 556, 722, 611, 833, 722, 778,
-  667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 333, 278, 333, 584, 556,
-  333, 556, 611, 556, 611, 556, 333, 611, 611, 278, 278, 556, 278, 889, 611, 611,
-  611, 611, 389, 556, 333, 611, 556, 778, 556, 556, 500, 389, 280, 389, 584,
+  278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278,
+  278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 333, 333, 584, 584,
+  584, 611, 975, 722, 722, 722, 722, 667, 611, 778, 722, 278, 556, 722, 611,
+  833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 333,
+  278, 333, 584, 556, 333, 556, 611, 556, 611, 556, 333, 611, 611, 278, 278,
+  556, 278, 889, 611, 611, 611, 611, 389, 556, 333, 611, 556, 778, 556, 556,
+  500, 389, 280, 389, 584,
 ];
 
 /** Mean advance of the tabulated range, used for characters outside it. */
-const HELVETICA_FALLBACK_WIDTH = HELVETICA_WIDTHS.reduce((sum, w) => sum + w, 0) / HELVETICA_WIDTHS.length;
+const HELVETICA_FALLBACK_WIDTH =
+  HELVETICA_WIDTHS.reduce((sum, w) => sum + w, 0) / HELVETICA_WIDTHS.length;
 
 /** Advance width of `text` at `fontSize`, in PDF points. */
-const measureTextWidth = (text: string, fontSize: number, bold = false): number => {
+const measureTextWidth = (
+  text: string,
+  fontSize: number,
+  bold = false,
+): number => {
   const table = bold ? HELVETICA_BOLD_WIDTHS : HELVETICA_WIDTHS;
-  const units = String(text ?? '').split('').reduce((sum, char) => {
-    const code = char.charCodeAt(0);
-    const width = code >= 32 && code <= 126 ? table[code - 32] : HELVETICA_FALLBACK_WIDTH;
-    return sum + width;
-  }, 0);
+  const units = String(text ?? "")
+    .split("")
+    .reduce((sum, char) => {
+      const code = char.charCodeAt(0);
+      const width =
+        code >= 32 && code <= 126 ? table[code - 32] : HELVETICA_FALLBACK_WIDTH;
+      return sum + width;
+    }, 0);
   return (units / 1000) * fontSize;
 };
 
@@ -398,9 +559,13 @@ const RECEIPT_FIT_WIDTH_SAFETY = 0.97;
 const fitFontSize = (
   text: string,
   availableWidth: number,
-  { maxSize, minSize, bold = false }: { maxSize: number; minSize: number; bold?: boolean }
+  {
+    maxSize,
+    minSize,
+    bold = false,
+  }: { maxSize: number; minSize: number; bold?: boolean },
 ): number => {
-  const sample = String(text ?? '');
+  const sample = String(text ?? "");
   if (!sample) return maxSize;
   const widthAtMax = measureTextWidth(sample, 1, bold);
   if (widthAtMax <= 0) return maxSize;
@@ -411,12 +576,18 @@ const fitFontSize = (
 };
 
 const normalizeCompanyIdentity = (config?: CompanyConfig | null) => {
-  const companyName = pickFirstText(config?.companyName, 'Prime ERP');
+  const companyName = pickFirstText(config?.companyName, "Prime ERP");
   const companyAddress = buildCompanyAddress(config);
   const rawPhone = pickFirstText(config?.phone);
-  const formattedPhone = rawPhone.replace(/(\+265\s?\d{3}\s?\d{3}\s?\d{3})(?=\+265)/g, '$1 | ');
+  const formattedPhone = rawPhone.replace(
+    /(\+265\s?\d{3}\s?\d{3}\s?\d{3})(?=\+265)/g,
+    "$1 | ",
+  );
   const companyEmail = pickFirstText(config?.email);
-  const website = pickFirstText((config as any)?.website, (config as any)?.companyWebsite);
+  const website = pickFirstText(
+    (config as any)?.website,
+    (config as any)?.companyWebsite,
+  );
   return {
     companyName,
     companyAddress,
@@ -428,30 +599,50 @@ const normalizeCompanyIdentity = (config?: CompanyConfig | null) => {
   };
 };
 
-const resolveFooterText = (config: CompanyConfig | null | undefined, paymentTermsLabel: string, showPaymentTerms: boolean) => {
+const resolveFooterText = (
+  config: CompanyConfig | null | undefined,
+  paymentTermsLabel: string,
+  showPaymentTerms: boolean,
+) => {
   const configuredFooter = pickFirstText(
     config?.footer,
     config?.receiptFooter,
-    config?.transactionSettings?.pos?.receiptFooter
+    config?.transactionSettings?.pos?.receiptFooter,
   );
   if (configuredFooter) {
     return configuredFooter;
   }
-  return 'This is a computer-generated document. Scan QR Code to Verify. For enquiries contact';
+  return "This is a computer-generated document. Scan QR Code to Verify. For enquiries contact";
 };
 
 const buildFooterContactLine = (_config?: CompanyConfig | null) => {
-  return 'Prime Printing Service, Along M5 Road Mtakataka, Dedza, Malawi, Phone +265 992 528 222,';
+  return "Prime Printing Service, Along M5 Road Mtakataka, Dedza, Malawi, Phone +265 992 528 222,";
 };
 
 const isCancelledStatus = (status?: string | boolean, data?: any): boolean => {
   if (data?.isCancelled === true || data?.cancelled === true) return true;
-  const str = String(status || data?.status || data?.transactionStatus || data?.paymentStatus || data?.orderStatus || '').trim().toLowerCase();
-  return str === 'cancelled' || str === 'canceled' || str === 'void' || str === 'voided';
+  const str = String(
+    status ||
+      data?.status ||
+      data?.transactionStatus ||
+      data?.paymentStatus ||
+      data?.orderStatus ||
+      "",
+  )
+    .trim()
+    .toLowerCase();
+  return (
+    str === "cancelled" ||
+    str === "canceled" ||
+    str === "void" ||
+    str === "voided"
+  );
 };
 
-const CancelledWatermark = ({ colorMode = 'brand' }: { colorMode?: PrimeColorMode } = {}) => {
-  const s = colorMode === 'mono' ? docStylesMono : docStyles;
+const CancelledWatermark = ({
+  colorMode = "brand",
+}: { colorMode?: PrimeColorMode } = {}) => {
+  const s = colorMode === "mono" ? docStylesMono : docStyles;
   return (
     <View style={s.watermarkContainer} fixed>
       <Text style={s.watermarkText}>CANCELLED</Text>
@@ -459,11 +650,30 @@ const CancelledWatermark = ({ colorMode = 'brand' }: { colorMode?: PrimeColorMod
   );
 };
 
-import { StatementSummaryTemplate } from './StatementSummaryTemplate.tsx';
-import { PortalCopyWatermark } from './PortalCopyWatermark.tsx';
+import { StatementSummaryTemplate } from "./StatementSummaryTemplate.tsx";
+import { PortalCopyWatermark } from "./PortalCopyWatermark.tsx";
 
 interface DocProps {
-  type: 'INVOICE' | 'WORK_ORDER' | 'PO' | 'DELIVERY_NOTE' | 'QUOTATION' | 'RECEIPT' | 'SUPPLIER_PAYMENT' | 'POS_RECEIPT' | 'ACCOUNT_STATEMENT' | 'EXAMINATION_INVOICE' | 'ACCOUNT_STATEMENT_SUMMARY' | 'FISCAL_REPORT' | 'SALES_EXCHANGE' | 'ORDER' | 'SALES_ORDER' | 'SUBSCRIPTION' | 'PRINTING_CONTRACT' | 'CONTRACT_SCHEDULE' | 'CONTRACT_COMPLETION_RECEIPT';
+  type:
+    | "INVOICE"
+    | "WORK_ORDER"
+    | "PO"
+    | "DELIVERY_NOTE"
+    | "QUOTATION"
+    | "RECEIPT"
+    | "SUPPLIER_PAYMENT"
+    | "POS_RECEIPT"
+    | "ACCOUNT_STATEMENT"
+    | "EXAMINATION_INVOICE"
+    | "ACCOUNT_STATEMENT_SUMMARY"
+    | "FISCAL_REPORT"
+    | "SALES_EXCHANGE"
+    | "ORDER"
+    | "SALES_ORDER"
+    | "SUBSCRIPTION"
+    | "PRINTING_CONTRACT"
+    | "CONTRACT_SCHEDULE"
+    | "CONTRACT_COMPLETION_RECEIPT";
   data: PrimeDocData;
   configOverride?: CompanyConfig | null;
   /**
@@ -471,7 +681,7 @@ interface DocProps {
    * 'portal' renders the same document WITH the native PORTAL COPY watermark.
    * Established server-side by the backend — never inferred from the browser.
    */
-  channel?: 'erp' | 'portal';
+  channel?: "erp" | "portal";
   /**
    * Print color mode. 'brand' (default) keeps full brand colors for
    * on-screen preview and downloads; 'mono' renders B/W for the printer
@@ -491,7 +701,7 @@ const SecurityFooter = ({
   // once, after the final block) instead of repeating on every page.
   // Default false preserves the exact legacy behavior for all other docs.
   flowing = false,
-  colorMode = 'brand',
+  colorMode = "brand",
 }: {
   data: Record<string, unknown>;
   companyName: string;
@@ -501,11 +711,13 @@ const SecurityFooter = ({
   flowing?: boolean;
   colorMode?: PrimeColorMode;
 }) => {
-  const mode: PrimeColorMode = colorMode ?? 'brand';
+  const mode: PrimeColorMode = colorMode ?? "brand";
   // Verification QR is printed large enough to scan reliably from paper or
   // screen, and matches every other document's QR (see VERIFICATION_QR_SIZE).
   const footerQrSize = VERIFICATION_QR_SIZE;
-  const qrCodeDataUrl = resolvePdfQrCodeSource(String(data?.securityQrCodeDataUrl || '').trim());
+  const qrCodeDataUrl = resolvePdfQrCodeSource(
+    String(data?.securityQrCodeDataUrl || "").trim(),
+  );
 
   // Document Authentication & Verification block: digitally-generated line
   // (kept tick circle), official body copy, vertical divider, QR, bottom
@@ -514,20 +726,29 @@ const SecurityFooter = ({
   // QR code itself (which encodes the verification URL) is unchanged.
   // Icons are drawn with Views (no icon font) so standard PDF fonts render
   // identically everywhere. Bullet (•) is WinAnsi-safe.
-  const displayCompany = String(companyName || '').trim() || 'Prime Printing';
-  const shortCompany = displayCompany.replace(/\s+(Service|Services)$/i, '').trim() || displayCompany;
-  const titleColor = '#000';
+  const displayCompany = String(companyName || "").trim() || "Prime Printing";
+  const shortCompany =
+    displayCompany.replace(/\s+(Service|Services)$/i, "").trim() ||
+    displayCompany;
+  const titleColor = "#000";
 
   const subRow = (
-    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        marginTop: 4,
+        gap: 4,
+      }}
+    >
       <View
         style={{
           width: 12,
           height: 12,
           borderRadius: 6,
-          backgroundColor: monoInk(mode, '#10b981'),
-          alignItems: 'center',
-          justifyContent: 'center',
+          backgroundColor: monoInk(mode, "#10b981"),
+          alignItems: "center",
+          justifyContent: "center",
         }}
       >
         <View
@@ -536,81 +757,131 @@ const SecurityFooter = ({
             height: 3.5,
             borderLeftWidth: 1.2,
             borderBottomWidth: 1.2,
-            borderColor: '#ffffff',
-            transform: 'rotate(-45deg)',
+            borderColor: "#ffffff",
+            transform: "rotate(-45deg)",
             marginTop: -1,
           }}
         />
       </View>
-      <Text style={{ fontSize: 8.5 * fontScale, fontWeight: 'bold', color: monoText(mode, '#2563eb') }}>
+      <Text
+        style={{
+          fontSize: 8.5 * fontScale,
+          fontWeight: "bold",
+          color: monoText(mode, "#2563eb"),
+        }}
+      >
         Digitally generated
       </Text>
-      <Text style={{ fontSize: 8.5 * fontScale, color: monoText(mode, '#64748b') }}>•</Text>
-      <Text style={{ fontSize: 8.5 * fontScale, fontWeight: 'bold', color: monoText(mode, '#059669') }}>
+      <Text
+        style={{ fontSize: 8.5 * fontScale, color: monoText(mode, "#64748b") }}
+      >
+        •
+      </Text>
+      <Text
+        style={{
+          fontSize: 8.5 * fontScale,
+          fontWeight: "bold",
+          color: monoText(mode, "#059669"),
+        }}
+      >
         Verification available online
       </Text>
     </View>
   );
 
   const bodyCopy = (
-    <Text style={{ marginTop: 6, fontSize: 9 * fontScale, color: '#000', lineHeight: 1.45 }}>
-      This is an official {shortCompany} document. It was electronically generated and is valid
-      without a handwritten signature. Scan the QR code to verify the document&apos;s authenticity
-      and confirm its current record. or contact us on +265 992 528 222
+    <Text
+      style={{
+        marginTop: 6,
+        fontSize: 9 * fontScale,
+        color: "#000",
+        lineHeight: 1.45,
+      }}
+    >
+      This is an official {shortCompany} document. It was electronically
+      generated and is valid without a handwritten signature. Scan the QR code
+      to verify the document&apos;s authenticity and confirm its current record.
+      or contact us on +265 992 528 222
     </Text>
   );
 
   const qrColumn = (
-    <View style={{ width: footerQrSize + 18, alignItems: 'center' }}>
-      <View style={{ alignItems: 'center' }}>
+    <View style={{ width: footerQrSize + 18, alignItems: "center" }}>
+      <View style={{ alignItems: "center" }}>
         {!!qrCodeDataUrl ? (
-          <Image src={qrCodeDataUrl} style={{ width: footerQrSize, height: footerQrSize }} />
+          <Image
+            src={qrCodeDataUrl}
+            style={{ width: footerQrSize, height: footerQrSize }}
+          />
         ) : (
-          <View style={{ width: footerQrSize, height: footerQrSize, backgroundColor: monoFill(mode, '#f1f5f9') }} />
+          <View
+            style={{
+              width: footerQrSize,
+              height: footerQrSize,
+              backgroundColor: monoFill(mode, "#f1f5f9"),
+            }}
+          />
         )}
       </View>
     </View>
   );
 
   const contentRow = (
-    <View style={{ flexDirection: 'row', gap: 10 }}>
+    <View style={{ flexDirection: "row", gap: 10 }}>
       <View style={{ flex: 1 }}>
         {subRow}
         {bodyCopy}
       </View>
-      <View style={{ width: 1, backgroundColor: monoFill(mode, '#cbd5e1'), alignSelf: 'stretch' }} />
+      <View
+        style={{
+          width: 1,
+          backgroundColor: monoFill(mode, "#cbd5e1"),
+          alignSelf: "stretch",
+        }}
+      />
       {qrColumn}
     </View>
   );
 
   const bottomRule = (
-    <View style={{ marginTop: 8, height: 1, backgroundColor: monoFill(mode, '#dbeafe'), width: '100%' }} />
+    <View
+      style={{
+        marginTop: 8,
+        height: 1,
+        backgroundColor: monoFill(mode, "#dbeafe"),
+        width: "100%",
+      }}
+    />
   );
 
   // Flowing mode must not reuse the absolute-positioned shared style:
   // absolute elements anchor to their parent box and would overlay content.
   const flowingStyle = {
-    flexDirection: 'column' as const,
+    flexDirection: "column" as const,
     gap: 0,
     borderTopWidth: 0.5,
-    borderColor: monoLine(mode, '#e2e8f0'),
+    borderColor: monoLine(mode, "#e2e8f0"),
     paddingTop: 8,
-    width: '100%' as const,
+    width: "100%" as const,
   };
 
   const fixedStyle = {
-    position: 'absolute' as const,
+    position: "absolute" as const,
     bottom: 26,
     left: 40,
     right: 40,
-    flexDirection: 'column' as const,
+    flexDirection: "column" as const,
     borderTopWidth: 0.5,
-    borderColor: monoLine(mode, '#e2e8f0'),
+    borderColor: monoLine(mode, "#e2e8f0"),
     paddingTop: 8,
   };
 
   return (
-    <View style={flowing ? flowingStyle : fixedStyle} fixed={!flowing} wrap={false}>
+    <View
+      style={flowing ? flowingStyle : fixedStyle}
+      fixed={!flowing}
+      wrap={false}
+    >
       {contentRow}
       {bottomRule}
     </View>
@@ -623,50 +894,109 @@ const CleanInvoiceTemplate = ({
   config,
   templateSettings,
   channel,
-  mode = 'brand',
+  mode = "brand",
 }: {
   type: string;
   data: Record<string, unknown>;
   config: CompanyConfig | null;
   templateSettings: ReturnType<typeof resolvePrimeTemplateSettings>;
-  channel?: 'erp' | 'portal';
+  channel?: "erp" | "portal";
   mode?: PrimeColorMode;
 }) => {
   const dataAny = data;
   const fontScale = templateSettings.bodyFontSize / 12;
 
   // Company Details
-  const { companyName, companyAddress, formattedPhone, companyPhone, companyEmail } = normalizeCompanyIdentity(config);
-  const currency = config?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || 'K';
-  
-  const logo = resolvePdfLogoSource(config, templateSettings.showCompanyLogo);
-  const accentColor = templateSettings.accentColor || '#5a9e96';
+  const {
+    companyName,
+    companyAddress,
+    formattedPhone,
+    companyPhone,
+    companyEmail,
+  } = normalizeCompanyIdentity(config);
+  const currency =
+    config?.currencySymbol ||
+    currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol ||
+    "K";
 
-  let docTitle = 'INVOICE';
-  if (type === 'QUOTATION') docTitle = 'QUOTATION';
-  else if (type === 'ORDER' || type === 'SALES_ORDER') docTitle = 'SALES ORDER';
-  else if (type === 'PO') docTitle = 'PURCHASE ORDER';
-  else if (type === 'SUBSCRIPTION') docTitle = 'RECURRING INVOICE';
+  const logo = resolvePdfLogoSource(config, templateSettings.showCompanyLogo);
+  const accentColor = templateSettings.accentColor || "#5a9e96";
+
+  let docTitle = "INVOICE";
+  if (type === "QUOTATION") docTitle = "QUOTATION";
+  else if (type === "ORDER" || type === "SALES_ORDER") docTitle = "SALES ORDER";
+  else if (type === "PO") docTitle = "PURCHASE ORDER";
+  else if (type === "SUBSCRIPTION") docTitle = "RECURRING INVOICE";
 
   const pod = dataAny.proofOfDelivery as Record<string, unknown> | undefined;
 
   // Invoice Details
-  const invoiceNumber = String(dataAny.invoiceNumber || dataAny.orderNumber || dataAny.number || dataAny.quotationNumber || new Date().getTime());
+  const invoiceNumber = String(
+    dataAny.invoiceNumber ||
+      dataAny.orderNumber ||
+      dataAny.number ||
+      dataAny.quotationNumber ||
+      new Date().getTime(),
+  );
   const invoiceDate = String(dataAny.date || new Date().toLocaleDateString());
   const dueDate = dataAny.dueDate ? String(dataAny.dueDate) : undefined;
-  
+
   const docTitleForMeta = `${docTitle} ${invoiceNumber}`;
-  
+
   // Recipient Details
   const resolvedRecipientName = String(
-    dataAny.clientName || dataAny.customerName || dataAny.customer_name || dataAny.schoolName || dataAny.school_name || dataAny.recipientName || dataAny.recipient_name || dataAny.vendorName || dataAny.vendor_name || dataAny.supplierName || dataAny.supplier_name || pod?.receivedBy || dataAny.receivedBy || ''
+    dataAny.clientName ||
+      dataAny.customerName ||
+      dataAny.customer_name ||
+      dataAny.schoolName ||
+      dataAny.school_name ||
+      dataAny.recipientName ||
+      dataAny.recipient_name ||
+      dataAny.vendorName ||
+      dataAny.vendor_name ||
+      dataAny.supplierName ||
+      dataAny.supplier_name ||
+      pod?.receivedBy ||
+      dataAny.receivedBy ||
+      "",
   ).trim();
   const resolvedRecipientAddress = String(
-    dataAny.address || dataAny.customerAddress || dataAny.customer_address || dataAny.billingAddress || dataAny.billing_address || dataAny.shippingAddress || dataAny.shipping_address || dataAny.schoolAddress || dataAny.school_address || dataAny.vendorAddress || dataAny.vendor_address || dataAny.supplierAddress || dataAny.supplier_address || pod?.address || pod?.deliveryLocation || ''
+    dataAny.address ||
+      dataAny.customerAddress ||
+      dataAny.customer_address ||
+      dataAny.billingAddress ||
+      dataAny.billing_address ||
+      dataAny.shippingAddress ||
+      dataAny.shipping_address ||
+      dataAny.schoolAddress ||
+      dataAny.school_address ||
+      dataAny.vendorAddress ||
+      dataAny.vendor_address ||
+      dataAny.supplierAddress ||
+      dataAny.supplier_address ||
+      pod?.address ||
+      pod?.deliveryLocation ||
+      "",
   ).trim();
-  const resolvedRecipientPhone = formatPhone(String(
-    dataAny.phone || dataAny.customerPhone || dataAny.customer_phone || dataAny.schoolPhone || dataAny.school_phone || dataAny.vendorPhone || dataAny.vendor_phone || dataAny.supplierPhone || dataAny.supplier_phone || dataAny.recipientPhone || dataAny.recipient_phone || pod?.receiverPhone || pod?.recipientPhone || pod?.phone || ''
-  ).trim());
+  const resolvedRecipientPhone = formatPhone(
+    String(
+      dataAny.phone ||
+        dataAny.customerPhone ||
+        dataAny.customer_phone ||
+        dataAny.schoolPhone ||
+        dataAny.school_phone ||
+        dataAny.vendorPhone ||
+        dataAny.vendor_phone ||
+        dataAny.supplierPhone ||
+        dataAny.supplier_phone ||
+        dataAny.recipientPhone ||
+        dataAny.recipient_phone ||
+        pod?.receiverPhone ||
+        pod?.recipientPhone ||
+        pod?.phone ||
+        "",
+    ).trim(),
+  );
 
   // Financials
   const items = (dataAny.items || []) as Array<Record<string, unknown>>;
@@ -675,23 +1005,52 @@ const CleanInvoiceTemplate = ({
   const totalAmount = Number(dataAny.totalAmount) || subtotal;
   const tax = Number(dataAny.tax) || 0;
   const discount = Number(dataAny.discount) || 0;
-  const discountPercentage = discount > 0 && subtotal > 0 ? Number(((discount / subtotal) * 100).toFixed(2)) : 0;
-  const discountLabel = discountPercentage > 0 ? `Discount (${discountPercentage}%)` : 'Discount';
-  const discountAmountText = discount > 0 ? `-${currency} ${discount.toLocaleString('en-US', {minimumFractionDigits: 2})}` : '';
-  
+  const discountPercentage =
+    discount > 0 && subtotal > 0
+      ? Number(((discount / subtotal) * 100).toFixed(2))
+      : 0;
+  const discountLabel =
+    discountPercentage > 0 ? `Discount (${discountPercentage}%)` : "Discount";
+  const discountAmountText =
+    discount > 0
+      ? `-${currency} ${discount.toLocaleString("en-US", { minimumFractionDigits: 2 })}`
+      : "";
+
   const showInvoiceBalances = templateSettings.showOutstandingAndWalletBalances;
   const resolvedWalletBalance = Number(dataAny.walletBalance || 0);
-  const resolvedOutstandingBalance = Math.max(0, Number(dataAny.totalAmount || 0) - Number(dataAny.amountPaid || 0));
+  const resolvedOutstandingBalance = Math.max(
+    0,
+    Number(dataAny.totalAmount || 0) - Number(dataAny.amountPaid || 0),
+  );
 
   const showPaymentTerms = templateSettings.showPaymentTerms;
   const showAccountSummary = templateSettings.showAccountSummary;
-  const paymentTermsLabel = String(dataAny.paymentTerms || '').trim() || getDefaultPaymentTermsLabel(config);
-  const legalFooterLine1 = resolveFooterText(config, paymentTermsLabel, showPaymentTerms);
+  const paymentTermsLabel =
+    String(dataAny.paymentTerms || "").trim() ||
+    getDefaultPaymentTermsLabel(config);
+  const legalFooterLine1 = resolveFooterText(
+    config,
+    paymentTermsLabel,
+    showPaymentTerms,
+  );
   const legalFooterLine2 = buildFooterContactLine(config);
 
   const renderRow = (item: any, i: number) => {
-    const isService = item.category === 'service' || item.type === 'service' || item.isService === true;
-    let formattedDesc = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || '';
+    const isService =
+      item.category === "service" ||
+      item.type === "service" ||
+      item.isService === true;
+    let formattedDesc =
+      item.name ||
+      item.productName ||
+      item.product_name ||
+      item.itemName ||
+      item.item_name ||
+      item.title ||
+      item.label ||
+      item.desc ||
+      item.description ||
+      "";
     let qty: string | number = item.qty;
     let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
     let total = item.total;
@@ -705,25 +1064,99 @@ const CleanInvoiceTemplate = ({
       qty = display.qty;
       unitPrice = display.unitPrice;
       const storedTotal = Number(item.total);
-      total = Number.isFinite(storedTotal) && storedTotal > 0 ? storedTotal : display.amount;
+      total =
+        Number.isFinite(storedTotal) && storedTotal > 0
+          ? storedTotal
+          : display.amount;
       // Rate appears exactly once (Price column) — never in the name.
       formattedDesc = display.name;
     } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
-      const itemName = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || 'Service';
+      const itemName =
+        item.name ||
+        item.productName ||
+        item.product_name ||
+        item.itemName ||
+        item.item_name ||
+        item.title ||
+        item.label ||
+        item.desc ||
+        item.description ||
+        "Service";
       if (totalPages > 0) {
         formattedDesc = `${itemName} (${totalPages} pages × ${copies} copies)`;
       }
     }
 
     return (
-      <View key={i} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: monoLine(mode, '#e0e0e0'), minHeight: 24, alignItems: 'center', paddingVertical: 4 }}>
-        <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#334155'), textAlign: 'center' }}>{i + 1}</Text>
-        <Text style={{ flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, color: monoText(mode, '#334155') }}>{formattedDesc}</Text>
-        <Text style={{ width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, color: monoText(mode, '#334155'), textAlign: 'right' }}>{qty}</Text>
-        <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: monoText(mode, '#334155'), textAlign: 'right' }}>{isQP ? formatQuickPhotocopyPriceLabel(unitPrice, currency) : `${currency} ${unitPrice.toFixed(2)}`}</Text>
-        <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: monoText(mode, '#334155'), textAlign: 'right' }}>{currency} {total.toFixed(2)}</Text>
+      <View
+        key={i}
+        style={{
+          flexDirection: "row",
+          borderBottomWidth: 0.5,
+          borderBottomColor: monoLine(mode, "#e0e0e0"),
+          minHeight: 24,
+          alignItems: "center",
+          paddingVertical: 4,
+        }}
+      >
+        <Text
+          style={{
+            width: 44,
+            paddingHorizontal: 4,
+            fontSize: 10 * fontScale,
+            color: monoText(mode, "#334155"),
+            textAlign: "center",
+          }}
+        >
+          {i + 1}
+        </Text>
+        <Text
+          style={{
+            flex: 2,
+            paddingHorizontal: 8,
+            fontSize: 10 * fontScale,
+            color: monoText(mode, "#334155"),
+          }}
+        >
+          {formattedDesc}
+        </Text>
+        <Text
+          style={{
+            width: 60,
+            paddingHorizontal: 8,
+            fontSize: 10 * fontScale,
+            color: monoText(mode, "#334155"),
+            textAlign: "right",
+          }}
+        >
+          {qty}
+        </Text>
+        <Text
+          style={{
+            width: 100,
+            paddingHorizontal: 8,
+            fontSize: 10 * fontScale,
+            color: monoText(mode, "#334155"),
+            textAlign: "right",
+          }}
+        >
+          {isQP
+            ? formatQuickPhotocopyPriceLabel(unitPrice, currency)
+            : `${currency} ${unitPrice.toFixed(2)}`}
+        </Text>
+        <Text
+          style={{
+            width: 100,
+            paddingHorizontal: 8,
+            fontSize: 10 * fontScale,
+            color: monoText(mode, "#334155"),
+            textAlign: "right",
+          }}
+        >
+          {currency} {total.toFixed(2)}
+        </Text>
       </View>
     );
   };
@@ -732,51 +1165,232 @@ const CleanInvoiceTemplate = ({
 
   return (
     <Document title={docTitleForMeta} author={companyName}>
-      <Page size="A4" style={{ padding: 40, paddingBottom: 100, fontFamily: templateSettings.fontFamily }}>
-        {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+      <Page
+        size="A4"
+        style={{
+          padding: 40,
+          paddingBottom: 100,
+          fontFamily: templateSettings.fontFamily,
+        }}
+      >
+        {channel === "portal" && <PortalCopyWatermark colorMode={mode} />}
         {isCancelled && <CancelledWatermark colorMode={mode} />}
         {/* Header */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 }}>
-           <View style={{ flex: 1 }}>
-              {!!logo ? (
-                <Image src={logo} style={{ width: templateSettings.logoWidth, marginBottom: 10 }} />
-              ) : (
-                <Text style={{ fontSize: templateSettings.companyNameFontSize, fontWeight: 'bold', color: monoText(mode, accentColor), marginBottom: 8 }}>{companyName}</Text>
-              )}
-              {!!companyAddress && <Text style={{ fontSize: 9 * fontScale, color: monoText(mode, '#64748b'), lineHeight: 1.4 }}>{companyAddress}</Text>}
-              {!!companyPhone && <Text style={{ fontSize: 9 * fontScale, color: monoText(mode, '#64748b'), marginTop: 2 }}>{companyPhone}</Text>}
-              {!!companyEmail && <Text style={{ fontSize: 9 * fontScale, color: monoText(mode, '#64748b'), marginTop: 2 }}>{companyEmail}</Text>}
-           </View>
-           <View style={{ flex: 1, alignItems: 'flex-end', textAlign: 'right' }}>
-              <Text style={{ fontSize: 26 * fontScale, fontWeight: '300', color: monoText(mode, '#1e293b'), letterSpacing: 1.5 }}>{docTitle}</Text>
-              <Text style={{ fontSize: 11 * fontScale, color: monoText(mode, '#475569'), marginTop: 8, fontWeight: 'bold' }}>{invoiceNumber}</Text>
-           </View>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            marginBottom: 20,
+          }}
+        >
+          <View style={{ flex: 1 }}>
+            {!!logo ? (
+              <Image
+                src={logo}
+                style={{ width: templateSettings.logoWidth, marginBottom: 10 }}
+              />
+            ) : (
+              <Text
+                style={{
+                  fontSize: templateSettings.companyNameFontSize,
+                  fontWeight: "bold",
+                  color: monoText(mode, accentColor),
+                  marginBottom: 8,
+                }}
+              >
+                {companyName}
+              </Text>
+            )}
+            {!!companyAddress && (
+              <Text
+                style={{
+                  fontSize: 9 * fontScale,
+                  color: monoText(mode, "#64748b"),
+                  lineHeight: 1.4,
+                }}
+              >
+                {companyAddress}
+              </Text>
+            )}
+            {!!companyPhone && (
+              <Text
+                style={{
+                  fontSize: 9 * fontScale,
+                  color: monoText(mode, "#64748b"),
+                  marginTop: 2,
+                }}
+              >
+                {companyPhone}
+              </Text>
+            )}
+            {!!companyEmail && (
+              <Text
+                style={{
+                  fontSize: 9 * fontScale,
+                  color: monoText(mode, "#64748b"),
+                  marginTop: 2,
+                }}
+              >
+                {companyEmail}
+              </Text>
+            )}
+          </View>
+          <View style={{ flex: 1, alignItems: "flex-end", textAlign: "right" }}>
+            <Text
+              style={{
+                fontSize: 26 * fontScale,
+                fontWeight: "300",
+                color: monoText(mode, "#1e293b"),
+                letterSpacing: 1.5,
+              }}
+            >
+              {docTitle}
+            </Text>
+            <Text
+              style={{
+                fontSize: 11 * fontScale,
+                color: monoText(mode, "#475569"),
+                marginTop: 8,
+                fontWeight: "bold",
+              }}
+            >
+              {invoiceNumber}
+            </Text>
+          </View>
         </View>
 
         {/* Company and Client Info */}
-        <View style={{ flexDirection: 'row', marginBottom: 30, gap: 30 }}>
+        <View style={{ flexDirection: "row", marginBottom: 30, gap: 30 }}>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', color: monoText(mode, '#94a3b8'), textTransform: 'uppercase', marginBottom: 6, letterSpacing: 1 }}>Bill To</Text>
-            <Text style={{ fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#1e293b'), marginBottom: 4 }}>{resolvedRecipientName || 'N/A'}</Text>
-            {!!resolvedRecipientAddress && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#334155'), marginBottom: 3, lineHeight: 1.4 }}>{resolvedRecipientAddress}</Text>}
-            {!!resolvedRecipientPhone && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#334155') }}>{resolvedRecipientPhone}</Text>}
+            <Text
+              style={{
+                fontSize: 8 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#94a3b8"),
+                textTransform: "uppercase",
+                marginBottom: 6,
+                letterSpacing: 1,
+              }}
+            >
+              Bill To
+            </Text>
+            <Text
+              style={{
+                fontSize: 11 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#1e293b"),
+                marginBottom: 4,
+              }}
+            >
+              {resolvedRecipientName || "N/A"}
+            </Text>
+            {!!resolvedRecipientAddress && (
+              <Text
+                style={{
+                  fontSize: 10 * fontScale,
+                  color: monoText(mode, "#334155"),
+                  marginBottom: 3,
+                  lineHeight: 1.4,
+                }}
+              >
+                {resolvedRecipientAddress}
+              </Text>
+            )}
+            {!!resolvedRecipientPhone && (
+              <Text
+                style={{
+                  fontSize: 10 * fontScale,
+                  color: monoText(mode, "#334155"),
+                }}
+              >
+                {resolvedRecipientPhone}
+              </Text>
+            )}
           </View>
-          <View style={{ flex: 1, alignItems: 'flex-start' }}>
+          <View style={{ flex: 1, alignItems: "flex-start" }}>
             <View style={{ marginBottom: 12 }}>
-              <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', color: monoText(mode, '#94a3b8'), textTransform: 'uppercase', marginBottom: 3, letterSpacing: 1 }}>Date</Text>
-              <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold' }}>{invoiceDate}</Text>
+              <Text
+                style={{
+                  fontSize: 8 * fontScale,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#94a3b8"),
+                  textTransform: "uppercase",
+                  marginBottom: 3,
+                  letterSpacing: 1,
+                }}
+              >
+                Date
+              </Text>
+              <Text
+                style={{
+                  fontSize: 10 * fontScale,
+                  color: monoText(mode, "#1e293b"),
+                  fontWeight: "bold",
+                }}
+              >
+                {invoiceDate}
+              </Text>
             </View>
             {Boolean(templateSettings.showDueDate) && !!dueDate && (
               <View style={{ marginBottom: 12 }}>
-                <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', color: monoText(mode, '#94a3b8'), textTransform: 'uppercase', marginBottom: 3, letterSpacing: 1 }}>Due Date</Text>
-                <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold' }}>{dueDate}</Text>
+                <Text
+                  style={{
+                    fontSize: 8 * fontScale,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#94a3b8"),
+                    textTransform: "uppercase",
+                    marginBottom: 3,
+                    letterSpacing: 1,
+                  }}
+                >
+                  Due Date
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 10 * fontScale,
+                    color: monoText(mode, "#1e293b"),
+                    fontWeight: "bold",
+                  }}
+                >
+                  {dueDate}
+                </Text>
               </View>
             )}
           </View>
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <View
+            style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
+          >
             {!!dataAny.status && (
-              <View style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 4, borderWidth: 1, borderColor: monoLine(mode, getStatusTone(String(dataAny.status), mode).border), backgroundColor: monoFill(mode, getStatusTone(String(dataAny.status), mode).border + '15') }}>
-                <Text style={{ fontSize: 12 * fontScale, color: monoText(mode, getStatusTone(String(dataAny.status), mode).text), fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1 }}>{String(dataAny.status).toUpperCase()}</Text>
+              <View
+                style={{
+                  paddingVertical: 8,
+                  paddingHorizontal: 12,
+                  borderRadius: 4,
+                  borderWidth: 1,
+                  borderColor: monoLine(
+                    mode,
+                    getStatusTone(String(dataAny.status), mode).border,
+                  ),
+                  backgroundColor: monoFill(
+                    mode,
+                    getStatusTone(String(dataAny.status), mode).border + "15",
+                  ),
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 12 * fontScale,
+                    color: monoText(
+                      mode,
+                      getStatusTone(String(dataAny.status), mode).text,
+                    ),
+                    fontWeight: "bold",
+                    textTransform: "uppercase",
+                    letterSpacing: 1,
+                  }}
+                >
+                  {String(dataAny.status).toUpperCase()}
+                </Text>
               </View>
             )}
           </View>
@@ -784,150 +1398,618 @@ const CleanInvoiceTemplate = ({
 
         {/* Table representation */}
         <View style={{ marginBottom: 20 }}>
-          <View style={{ flexDirection: 'row', backgroundColor: monoFill(mode, accentColor), borderRadius: 4, minHeight: 28, alignItems: 'center' }}>
-            <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), textAlign: 'center' }}>SN</Text>
-            <Text style={{ flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff') }}>Description</Text>
-            <Text style={{ width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), textAlign: 'right' }}>Qty</Text>
-            <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), textAlign: 'right' }}>Price</Text>
-            <Text style={{ width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), textAlign: 'right' }}>Amount</Text>
+          <View
+            style={{
+              flexDirection: "row",
+              backgroundColor: monoFill(mode, accentColor),
+              borderRadius: 4,
+              minHeight: 28,
+              alignItems: "center",
+            }}
+          >
+            <Text
+              style={{
+                width: 44,
+                paddingHorizontal: 4,
+                fontSize: 10 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#ffffff"),
+                textAlign: "center",
+              }}
+            >
+              SN
+            </Text>
+            <Text
+              style={{
+                flex: 2,
+                paddingHorizontal: 8,
+                fontSize: 10 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#ffffff"),
+              }}
+            >
+              Description
+            </Text>
+            <Text
+              style={{
+                width: 60,
+                paddingHorizontal: 8,
+                fontSize: 10 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#ffffff"),
+                textAlign: "right",
+              }}
+            >
+              Qty
+            </Text>
+            <Text
+              style={{
+                width: 100,
+                paddingHorizontal: 8,
+                fontSize: 10 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#ffffff"),
+                textAlign: "right",
+              }}
+            >
+              Price
+            </Text>
+            <Text
+              style={{
+                width: 100,
+                paddingHorizontal: 8,
+                fontSize: 10 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#ffffff"),
+                textAlign: "right",
+              }}
+            >
+              Amount
+            </Text>
           </View>
           {items.map(renderRow)}
         </View>
 
         {/* Totals Section */}
-        {type === 'PO' ? (
-          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 15 }}>
+        {type === "PO" ? (
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "flex-end",
+              marginTop: 15,
+            }}
+          >
             <View style={{ minWidth: 220 }}>
-              <View style={{ flexDirection: 'row', paddingVertical: 4 }}>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>Subtotal</Text>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {subtotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+              <View style={{ flexDirection: "row", paddingVertical: 4 }}>
+                <Text
+                  style={{
+                    flex: 1,
+                    fontSize: 10 * fontScale,
+                    color: monoText(mode, "#475569"),
+                  }}
+                >
+                  Subtotal
+                </Text>
+                <Text
+                  style={{
+                    flex: 1,
+                    fontSize: 10 * fontScale,
+                    color: monoText(mode, "#1e293b"),
+                    fontWeight: "bold",
+                    textAlign: "right",
+                  }}
+                >
+                  {currency}{" "}
+                  {subtotal.toLocaleString("en-US", {
+                    minimumFractionDigits: 2,
+                  })}
+                </Text>
               </View>
               {discount > 0 && (
-                <View style={{ flexDirection: 'row', paddingVertical: 4 }}>
-                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>{discountLabel}</Text>
-                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{discountAmountText}</Text>
+                <View style={{ flexDirection: "row", paddingVertical: 4 }}>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#475569"),
+                    }}
+                  >
+                    {discountLabel}
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#1e293b"),
+                      fontWeight: "bold",
+                      textAlign: "right",
+                    }}
+                  >
+                    {discountAmountText}
+                  </Text>
                 </View>
               )}
               {tax > 0 && (
-                <View style={{ flexDirection: 'row', paddingVertical: 4 }}>
-                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>Tax</Text>
-                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {tax.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+                <View style={{ flexDirection: "row", paddingVertical: 4 }}>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#475569"),
+                    }}
+                  >
+                    Tax
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#1e293b"),
+                      fontWeight: "bold",
+                      textAlign: "right",
+                    }}
+                  >
+                    {currency}{" "}
+                    {tax.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                  </Text>
                 </View>
               )}
               {dataAny.roundingDifference ? (
-                <View style={{ flexDirection: 'row', paddingVertical: 4 }}>
-                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>Rounding{dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ''}</Text>
-                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {Number(dataAny.roundingDifference).toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+                <View style={{ flexDirection: "row", paddingVertical: 4 }}>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#475569"),
+                    }}
+                  >
+                    Rounding
+                    {dataAny.roundingMethod
+                      ? ` (${dataAny.roundingMethod})`
+                      : ""}
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#1e293b"),
+                      fontWeight: "bold",
+                      textAlign: "right",
+                    }}
+                  >
+                    {currency}{" "}
+                    {Number(dataAny.roundingDifference).toLocaleString(
+                      "en-US",
+                      { minimumFractionDigits: 2 },
+                    )}
+                  </Text>
                 </View>
               ) : null}
-              {type !== 'QUOTATION' && type !== 'SUBSCRIPTION' && (
-                <View style={{ flexDirection: 'row', paddingVertical: 4, marginTop: 4, borderTopWidth: 1, borderColor: monoLine(mode, '#e2e8f0'), paddingTop: 8 }}>
-                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>Amount Paid</Text>
-                  <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {amountPaid.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+              {type !== "QUOTATION" && type !== "SUBSCRIPTION" && (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    paddingVertical: 4,
+                    marginTop: 4,
+                    borderTopWidth: 1,
+                    borderColor: monoLine(mode, "#e2e8f0"),
+                    paddingTop: 8,
+                  }}
+                >
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#475569"),
+                    }}
+                  >
+                    Amount Paid
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#1e293b"),
+                      fontWeight: "bold",
+                      textAlign: "right",
+                    }}
+                  >
+                    {currency}{" "}
+                    {amountPaid.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                    })}
+                  </Text>
                 </View>
               )}
-              {type !== 'QUOTATION' && type !== 'SUBSCRIPTION' && (
-                <View style={{ flexDirection: 'row', paddingVertical: 8, backgroundColor: monoFill(mode, accentColor + '15'), marginTop: 8, borderRadius: 4, paddingHorizontal: 8 }}>
-                  <Text style={{ flex: 1, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, accentColor) }}>Balance Due</Text>
-                  <Text style={{ fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, accentColor), textAlign: 'right' }}>
-                    {currency} {(totalAmount - amountPaid).toLocaleString('en-US', {minimumFractionDigits: 2})}
+              {type !== "QUOTATION" && type !== "SUBSCRIPTION" && (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    paddingVertical: 8,
+                    backgroundColor: monoFill(mode, accentColor + "15"),
+                    marginTop: 8,
+                    borderRadius: 4,
+                    paddingHorizontal: 8,
+                  }}
+                >
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 11 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, accentColor),
+                    }}
+                  >
+                    Balance Due
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 11 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, accentColor),
+                      textAlign: "right",
+                    }}
+                  >
+                    {currency}{" "}
+                    {(totalAmount - amountPaid).toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                    })}
                   </Text>
                 </View>
               )}
             </View>
           </View>
         ) : (
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 15 }}>
-          <View style={{ flex: 1.5, paddingRight: 40 }}>
-             {/* Notes region */}
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              marginTop: 15,
+            }}
+          >
+            <View style={{ flex: 1.5, paddingRight: 40 }}>
+              {/* Notes region */}
               {!!dataAny.notes && (
-                 <View>
-                    <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', color: monoText(mode, '#94a3b8'), textTransform: 'uppercase', marginBottom: 4, letterSpacing: 1 }}>Notes</Text>
-                    <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#475569'), lineHeight: 1.4 }}>{String(dataAny.notes)}</Text>
-                 </View>
+                <View>
+                  <Text
+                    style={{
+                      fontSize: 8 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#94a3b8"),
+                      textTransform: "uppercase",
+                      marginBottom: 4,
+                      letterSpacing: 1,
+                    }}
+                  >
+                    Notes
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#475569"),
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {String(dataAny.notes)}
+                  </Text>
+                </View>
               )}
-          </View>
-
-          <View style={{ flex: 1, minWidth: 220 }}>
-            <View style={{ flexDirection: 'row', paddingVertical: 4 }}>
-              <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>Subtotal</Text>
-              <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {subtotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
             </View>
-            {discount > 0 && (
-              <View style={{ flexDirection: 'row', paddingVertical: 4 }}>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>{discountLabel}</Text>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{discountAmountText}</Text>
-              </View>
-            )}
-            {tax > 0 && (
-              <View style={{ flexDirection: 'row', paddingVertical: 4 }}>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>Tax</Text>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {tax.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
-              </View>
-            )}
-            {dataAny.roundingDifference ? (
-              <View style={{ flexDirection: 'row', paddingVertical: 4 }}>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>Rounding{dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ''}</Text>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {Number(dataAny.roundingDifference).toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
-              </View>
-            ) : null}
-            
-            {type !== 'INVOICE' && type !== 'ORDER' && type !== 'QUOTATION' && type !== 'SUBSCRIPTION' && (
-              <View style={{ alignSelf: 'flex-end', width: 220, flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderTopWidth: 1, borderColor: monoLine(mode, '#e2e8f0'), marginTop: 4 }}>
-                <Text style={{ fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#1e293b') }}>Total Amount</Text>
-                <Text style={{ fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#1e293b'), textAlign: 'right' }}>{currency} {(totalAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
-              </View>
-            )}
-            
-            {type !== 'QUOTATION' && type !== 'SUBSCRIPTION' && (
-              <View style={{ flexDirection: 'row', paddingVertical: 4, marginTop: (type === 'INVOICE' || type === 'ORDER') ? 4 : 0, borderTopWidth: (type === 'INVOICE' || type === 'ORDER') ? 1 : 0, borderColor: monoLine(mode, '#e2e8f0'), paddingTop: (type === 'INVOICE' || type === 'ORDER') ? 8 : 4 }}>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#475569') }}>Amount Paid</Text>
-                <Text style={{ flex: 1, fontSize: 10 * fontScale, color: monoText(mode, '#1e293b'), fontWeight: 'bold', textAlign: 'right' }}>{currency} {amountPaid.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
-              </View>
-            )}
-            
-            
-            {type !== 'QUOTATION' && type !== 'SUBSCRIPTION' && (
-              <View style={{ flexDirection: 'row', paddingVertical: 8, backgroundColor: monoFill(mode, accentColor + '15'), marginTop: 8, borderRadius: 4, paddingHorizontal: 8 }}>
-                <Text style={{ flex: 1, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, accentColor) }}>Balance Due</Text>
-                <Text style={{ fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, accentColor), textAlign: 'right' }}>
-                    {currency} {(totalAmount - amountPaid).toLocaleString('en-US', {minimumFractionDigits: 2})}
+
+            <View style={{ flex: 1, minWidth: 220 }}>
+              <View style={{ flexDirection: "row", paddingVertical: 4 }}>
+                <Text
+                  style={{
+                    flex: 1,
+                    fontSize: 10 * fontScale,
+                    color: monoText(mode, "#475569"),
+                  }}
+                >
+                  Subtotal
+                </Text>
+                <Text
+                  style={{
+                    flex: 1,
+                    fontSize: 10 * fontScale,
+                    color: monoText(mode, "#1e293b"),
+                    fontWeight: "bold",
+                    textAlign: "right",
+                  }}
+                >
+                  {currency}{" "}
+                  {subtotal.toLocaleString("en-US", {
+                    minimumFractionDigits: 2,
+                  })}
                 </Text>
               </View>
-            )}
-            
-            {type === 'SUBSCRIPTION' && (
-              <View style={{ flexDirection: 'row', paddingVertical: 8, backgroundColor: monoFill(mode, accentColor + '15'), marginTop: 8, borderRadius: 4, paddingHorizontal: 8 }}>
-                <Text style={{ flex: 1, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, accentColor) }}>Recurring Total</Text>
-                <Text style={{ flex: 1, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, accentColor), textAlign: 'right' }}>
-                    {currency} {totalAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}
-                </Text>
-              </View>
-            )}
+              {discount > 0 && (
+                <View style={{ flexDirection: "row", paddingVertical: 4 }}>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#475569"),
+                    }}
+                  >
+                    {discountLabel}
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#1e293b"),
+                      fontWeight: "bold",
+                      textAlign: "right",
+                    }}
+                  >
+                    {discountAmountText}
+                  </Text>
+                </View>
+              )}
+              {tax > 0 && (
+                <View style={{ flexDirection: "row", paddingVertical: 4 }}>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#475569"),
+                    }}
+                  >
+                    Tax
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#1e293b"),
+                      fontWeight: "bold",
+                      textAlign: "right",
+                    }}
+                  >
+                    {currency}{" "}
+                    {tax.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                  </Text>
+                </View>
+              )}
+              {dataAny.roundingDifference ? (
+                <View style={{ flexDirection: "row", paddingVertical: 4 }}>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#475569"),
+                    }}
+                  >
+                    Rounding
+                    {dataAny.roundingMethod
+                      ? ` (${dataAny.roundingMethod})`
+                      : ""}
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#1e293b"),
+                      fontWeight: "bold",
+                      textAlign: "right",
+                    }}
+                  >
+                    {currency}{" "}
+                    {Number(dataAny.roundingDifference).toLocaleString(
+                      "en-US",
+                      { minimumFractionDigits: 2 },
+                    )}
+                  </Text>
+                </View>
+              ) : null}
+
+              {type !== "INVOICE" &&
+                type !== "ORDER" &&
+                type !== "QUOTATION" &&
+                type !== "SUBSCRIPTION" && (
+                  <View
+                    style={{
+                      alignSelf: "flex-end",
+                      width: 220,
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      paddingVertical: 6,
+                      borderTopWidth: 1,
+                      borderColor: monoLine(mode, "#e2e8f0"),
+                      marginTop: 4,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11 * fontScale,
+                        fontWeight: "bold",
+                        color: monoText(mode, "#1e293b"),
+                      }}
+                    >
+                      Total Amount
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 11 * fontScale,
+                        fontWeight: "bold",
+                        color: monoText(mode, "#1e293b"),
+                        textAlign: "right",
+                      }}
+                    >
+                      {currency}{" "}
+                      {totalAmount.toLocaleString("en-US", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </Text>
+                  </View>
+                )}
+
+              {type !== "QUOTATION" && type !== "SUBSCRIPTION" && (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    paddingVertical: 4,
+                    marginTop: type === "INVOICE" || type === "ORDER" ? 4 : 0,
+                    borderTopWidth:
+                      type === "INVOICE" || type === "ORDER" ? 1 : 0,
+                    borderColor: monoLine(mode, "#e2e8f0"),
+                    paddingTop: type === "INVOICE" || type === "ORDER" ? 8 : 4,
+                  }}
+                >
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#475569"),
+                    }}
+                  >
+                    Amount Paid
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#1e293b"),
+                      fontWeight: "bold",
+                      textAlign: "right",
+                    }}
+                  >
+                    {currency}{" "}
+                    {amountPaid.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                    })}
+                  </Text>
+                </View>
+              )}
+
+              {type !== "QUOTATION" && type !== "SUBSCRIPTION" && (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    paddingVertical: 8,
+                    backgroundColor: monoFill(mode, accentColor + "15"),
+                    marginTop: 8,
+                    borderRadius: 4,
+                    paddingHorizontal: 8,
+                  }}
+                >
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 11 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, accentColor),
+                    }}
+                  >
+                    Balance Due
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 11 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, accentColor),
+                      textAlign: "right",
+                    }}
+                  >
+                    {currency}{" "}
+                    {(totalAmount - amountPaid).toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                    })}
+                  </Text>
+                </View>
+              )}
+
+              {type === "SUBSCRIPTION" && (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    paddingVertical: 8,
+                    backgroundColor: monoFill(mode, accentColor + "15"),
+                    marginTop: 8,
+                    borderRadius: 4,
+                    paddingHorizontal: 8,
+                  }}
+                >
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 11 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, accentColor),
+                    }}
+                  >
+                    Recurring Total
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 11 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, accentColor),
+                      textAlign: "right",
+                    }}
+                  >
+                    {currency}{" "}
+                    {totalAmount.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                    })}
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
-        </View>
-        )
-        }
+        )}
 
         {/* Outstanding Balance Statement */}
-        {type === 'INVOICE' && showInvoiceBalances && Number(dataAny?.totalCustomerOutstanding || 0) > 0 && (() => {
-          const totalOutstanding = Number(dataAny.totalCustomerOutstanding || 0);
-          const todayStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-          return (
-            <View style={{ marginTop: 15, padding: 8, backgroundColor: monoFill(mode, '#f0f9ff'), borderRadius: 4, borderLeftWidth: 3, borderLeftColor: monoLine(mode, '#0ea5e9') }} wrap={false}>
-              <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#0369a1'), lineHeight: 1.4 }}>
-                {'Your overall outstanding balance is '}
-                <Text style={{ fontWeight: 'bold' }}>{currency} {totalOutstanding.toLocaleString('en-US', { minimumFractionDigits: 2 })}</Text>
-                {` as of ${todayStr}`}
-              </Text>
-            </View>
-          );
-        })()}
+        {type === "INVOICE" &&
+          showInvoiceBalances &&
+          Number(dataAny?.totalCustomerOutstanding || 0) > 0 &&
+          (() => {
+            const totalOutstanding = Number(
+              dataAny.totalCustomerOutstanding || 0,
+            );
+            const todayStr = new Date().toLocaleDateString("en-GB", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            });
+            return (
+              <View
+                style={{
+                  marginTop: 15,
+                  padding: 8,
+                  backgroundColor: monoFill(mode, "#f0f9ff"),
+                  borderRadius: 4,
+                  borderLeftWidth: 3,
+                  borderLeftColor: monoLine(mode, "#0ea5e9"),
+                }}
+                wrap={false}
+              >
+                <Text
+                  style={{
+                    fontSize: 10 * fontScale,
+                    color: monoText(mode, "#0369a1"),
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {"Your overall outstanding balance is "}
+                  <Text style={{ fontWeight: "bold" }}>
+                    {currency}{" "}
+                    {totalOutstanding.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                    })}
+                  </Text>
+                  {` as of ${todayStr}`}
+                </Text>
+              </View>
+            );
+          })()}
 
         {/* Footer info (Notes etc) */}
         <View wrap={false} style={{ marginTop: 15, flex: 1 }}>
           {showAccountSummary ? (
-            <InvoiceInfoPanel colorMode={mode}
+            <InvoiceInfoPanel
+              colorMode={mode}
               type="account_summary"
               settings={templateSettings}
               data={dataAny}
@@ -935,7 +2017,8 @@ const CleanInvoiceTemplate = ({
               fontScale={fontScale}
             />
           ) : templateSettings.showPaymentTerms ? (
-            <InvoiceInfoPanel colorMode={mode}
+            <InvoiceInfoPanel
+              colorMode={mode}
               type="payment_terms"
               settings={templateSettings}
               data={dataAny}
@@ -946,7 +2029,8 @@ const CleanInvoiceTemplate = ({
         </View>
 
         {/* Use the standard Security Footer at bottom */}
-        <SecurityFooter colorMode={mode}
+        <SecurityFooter
+          colorMode={mode}
           data={dataAny}
           companyName={companyName}
           legalFooterLine1={legalFooterLine1}
@@ -964,59 +2048,117 @@ const ModernInvoiceTemplate = ({
   config,
   templateSettings,
   channel,
-  mode = 'brand',
+  mode = "brand",
 }: {
   type: string;
   data: Record<string, unknown>;
   config: CompanyConfig | null;
   templateSettings: ReturnType<typeof resolvePrimeTemplateSettings>;
-  channel?: 'erp' | 'portal';
+  channel?: "erp" | "portal";
   mode?: PrimeColorMode;
 }) => {
   const dataAny = data;
   const fontScale = templateSettings.bodyFontSize / 12;
 
   // Company Details
-  const { companyName, companyPhone, companyEmail } = normalizeCompanyIdentity(config);
-  const currency = config?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || 'K';
-  
+  const { companyName, companyPhone, companyEmail } =
+    normalizeCompanyIdentity(config);
+  const currency =
+    config?.currencySymbol ||
+    currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol ||
+    "K";
+
   const logo = resolvePdfLogoSource(config, templateSettings.showCompanyLogo);
-  const accentColor = templateSettings.accentColor || '#739F99';
+  const accentColor = templateSettings.accentColor || "#739F99";
   const dueDate = dataAny.dueDate ? String(dataAny.dueDate) : undefined;
 
-  let docTitle = 'Invoice';
-  if (type === 'QUOTATION') docTitle = 'Quotation Document';
-  else if (type === 'ORDER' || type === 'SALES_ORDER') docTitle = 'Sales Order';
-  else if (type === 'PO') docTitle = 'Purchase Order';
-  else if (type === 'SUBSCRIPTION') docTitle = 'Recurring Invoice';
-  else if (type === 'INVOICE') docTitle = 'Invoice Service';
+  let docTitle = "Invoice";
+  if (type === "QUOTATION") docTitle = "Quotation Document";
+  else if (type === "ORDER" || type === "SALES_ORDER") docTitle = "Sales Order";
+  else if (type === "PO") docTitle = "Purchase Order";
+  else if (type === "SUBSCRIPTION") docTitle = "Recurring Invoice";
+  else if (type === "INVOICE") docTitle = "Invoice Service";
   else {
-    const titleCased = type.toLowerCase().split(/[_\s]+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-    docTitle = titleCased || 'Document';
+    const titleCased = type
+      .toLowerCase()
+      .split(/[_\s]+/)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+    docTitle = titleCased || "Document";
   }
 
-  const titleWords = docTitle.split(' ');
+  const titleWords = docTitle.split(" ");
   const titleFirst = titleWords[0];
-  const titleRest = titleWords.slice(1).join(' ');
+  const titleRest = titleWords.slice(1).join(" ");
 
   const pod = dataAny.proofOfDelivery as Record<string, unknown> | undefined;
 
   // Invoice Details
-  const invoiceNumber = String(dataAny.invoiceNumber || dataAny.orderNumber || dataAny.number || dataAny.quotationNumber || new Date().getTime());
+  const invoiceNumber = String(
+    dataAny.invoiceNumber ||
+      dataAny.orderNumber ||
+      dataAny.number ||
+      dataAny.quotationNumber ||
+      new Date().getTime(),
+  );
   const invoiceDate = String(dataAny.date || new Date().toLocaleDateString());
-  
+
   const docTitleForMeta = `${docTitle} ${invoiceNumber}`;
-  
+
   // Recipient Details
   const resolvedRecipientName = String(
-    dataAny.clientName || dataAny.customerName || dataAny.customer_name || dataAny.schoolName || dataAny.school_name || dataAny.recipientName || dataAny.recipient_name || dataAny.vendorName || dataAny.vendor_name || dataAny.supplierName || dataAny.supplier_name || pod?.receivedBy || dataAny.receivedBy || ''
+    dataAny.clientName ||
+      dataAny.customerName ||
+      dataAny.customer_name ||
+      dataAny.schoolName ||
+      dataAny.school_name ||
+      dataAny.recipientName ||
+      dataAny.recipient_name ||
+      dataAny.vendorName ||
+      dataAny.vendor_name ||
+      dataAny.supplierName ||
+      dataAny.supplier_name ||
+      pod?.receivedBy ||
+      dataAny.receivedBy ||
+      "",
   ).trim();
   const resolvedRecipientAddress = String(
-    dataAny.address || dataAny.customerAddress || dataAny.customer_address || dataAny.billingAddress || dataAny.billing_address || dataAny.shippingAddress || dataAny.shipping_address || dataAny.schoolAddress || dataAny.school_address || dataAny.vendorAddress || dataAny.vendor_address || dataAny.supplierAddress || dataAny.supplier_address || pod?.address || pod?.deliveryLocation || ''
+    dataAny.address ||
+      dataAny.customerAddress ||
+      dataAny.customer_address ||
+      dataAny.billingAddress ||
+      dataAny.billing_address ||
+      dataAny.shippingAddress ||
+      dataAny.shipping_address ||
+      dataAny.schoolAddress ||
+      dataAny.school_address ||
+      dataAny.vendorAddress ||
+      dataAny.vendor_address ||
+      dataAny.supplierAddress ||
+      dataAny.supplier_address ||
+      pod?.address ||
+      pod?.deliveryLocation ||
+      "",
   ).trim();
-  const resolvedRecipientPhone = formatPhone(String(
-    dataAny.phone || dataAny.customerPhone || dataAny.customer_phone || dataAny.schoolPhone || dataAny.school_phone || dataAny.vendorPhone || dataAny.vendor_phone || dataAny.supplierPhone || dataAny.supplier_phone || dataAny.recipientPhone || dataAny.recipient_phone || pod?.receiverPhone || pod?.recipientPhone || pod?.phone || ''
-  ).trim());
+  const resolvedRecipientPhone = formatPhone(
+    String(
+      dataAny.phone ||
+        dataAny.customerPhone ||
+        dataAny.customer_phone ||
+        dataAny.schoolPhone ||
+        dataAny.school_phone ||
+        dataAny.vendorPhone ||
+        dataAny.vendor_phone ||
+        dataAny.supplierPhone ||
+        dataAny.supplier_phone ||
+        dataAny.recipientPhone ||
+        dataAny.recipient_phone ||
+        pod?.receiverPhone ||
+        pod?.recipientPhone ||
+        pod?.phone ||
+        "",
+    ).trim(),
+  );
 
   // Financials
   const items = (dataAny.items || []) as Array<Record<string, unknown>>;
@@ -1025,22 +2167,52 @@ const ModernInvoiceTemplate = ({
   const totalAmount = Number(dataAny.totalAmount) || subtotal;
   const tax = Number(dataAny.tax) || 0;
   const discount = Number(dataAny.discount) || 0;
-  const discountPercentage = discount > 0 && subtotal > 0 ? Number(((discount / subtotal) * 100).toFixed(2)) : 0;
-  const discountLabel = discountPercentage > 0 ? `Discount (${discountPercentage}%)` : 'Discount';
-  const discountAmountText = discount > 0 ? `-${currency} ${discount.toLocaleString('en-US', {minimumFractionDigits: 2})}` : '';
-  
+  const discountPercentage =
+    discount > 0 && subtotal > 0
+      ? Number(((discount / subtotal) * 100).toFixed(2))
+      : 0;
+  const discountLabel =
+    discountPercentage > 0 ? `Discount (${discountPercentage}%)` : "Discount";
+  const discountAmountText =
+    discount > 0
+      ? `-${currency} ${discount.toLocaleString("en-US", { minimumFractionDigits: 2 })}`
+      : "";
+
   const showDueDate = templateSettings.showDueDate;
   const showInvoiceBalances = templateSettings.showOutstandingAndWalletBalances;
   const showAccountSummary = templateSettings.showAccountSummary;
-  const resolvedOutstandingBalance = Math.max(0, Number(dataAny.totalAmount || 0) - Number(dataAny.amountPaid || 0));
-  const outstandingDisplay = showInvoiceBalances && type === 'INVOICE' ? resolvedOutstandingBalance : (totalAmount - amountPaid);
-  const paymentTermsLabel = String(dataAny.paymentTerms || '').trim() || getDefaultPaymentTermsLabel(config);
+  const resolvedOutstandingBalance = Math.max(
+    0,
+    Number(dataAny.totalAmount || 0) - Number(dataAny.amountPaid || 0),
+  );
+  const outstandingDisplay =
+    showInvoiceBalances && type === "INVOICE"
+      ? resolvedOutstandingBalance
+      : totalAmount - amountPaid;
+  const paymentTermsLabel =
+    String(dataAny.paymentTerms || "").trim() ||
+    getDefaultPaymentTermsLabel(config);
 
-  const qrCodeDataUrl = resolvePdfQrCodeSource(String(dataAny.securityQrCodeDataUrl || ''));
+  const qrCodeDataUrl = resolvePdfQrCodeSource(
+    String(dataAny.securityQrCodeDataUrl || ""),
+  );
 
   const renderRow = (item: any, i: number) => {
-    const isService = item.category === 'service' || item.type === 'service' || item.isService === true;
-    let formattedDesc = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || '';
+    const isService =
+      item.category === "service" ||
+      item.type === "service" ||
+      item.isService === true;
+    let formattedDesc =
+      item.name ||
+      item.productName ||
+      item.product_name ||
+      item.itemName ||
+      item.item_name ||
+      item.title ||
+      item.label ||
+      item.desc ||
+      item.description ||
+      "";
     let qty: string | number = item.qty;
     let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
     let total = item.total;
@@ -1052,13 +2224,26 @@ const ModernInvoiceTemplate = ({
       qty = display.qty;
       unitPrice = display.unitPrice;
       const storedTotal = Number(item.total);
-      total = Number.isFinite(storedTotal) && storedTotal > 0 ? storedTotal : display.amount;
+      total =
+        Number.isFinite(storedTotal) && storedTotal > 0
+          ? storedTotal
+          : display.amount;
       // Rate appears exactly once (Price column) — never in the name.
       formattedDesc = display.name;
     } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
-      const itemName = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || 'Service';
+      const itemName =
+        item.name ||
+        item.productName ||
+        item.product_name ||
+        item.itemName ||
+        item.item_name ||
+        item.title ||
+        item.label ||
+        item.desc ||
+        item.description ||
+        "Service";
       if (totalPages > 0) {
         formattedDesc = `${itemName} (${totalPages} pages × ${copies} copies)`;
       }
@@ -1066,171 +2251,702 @@ const ModernInvoiceTemplate = ({
 
     // B/W print keeps zebra striping visible: alternate rows print light
     // gray instead of being flattened to white.
-    const bgColor = mode === 'mono' ? (i % 2 !== 0 ? '#e9e9e9' : '#fff') : (i % 2 !== 0 ? '#F5F5F5' : 'transparent');
+    const bgColor =
+      mode === "mono"
+        ? i % 2 !== 0
+          ? "#e9e9e9"
+          : "#fff"
+        : i % 2 !== 0
+          ? "#F5F5F5"
+          : "transparent";
 
     return (
-      <View key={i} style={{ flexDirection: 'row', backgroundColor: bgColor, minHeight: 28, alignItems: 'center', paddingVertical: 6, paddingHorizontal: 4 }}>
-        <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'center' }}>{i + 1}</Text>
-        <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333') }}>{formattedDesc}</Text>
-        <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'right' }}>{qty}</Text>
-        <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'right' }}>
-            {isQP ? formatQuickPhotocopyPriceLabel(unitPrice, currency) : `${currency} ${unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
+      <View
+        key={i}
+        style={{
+          flexDirection: "row",
+          backgroundColor: bgColor,
+          minHeight: 28,
+          alignItems: "center",
+          paddingVertical: 6,
+          paddingHorizontal: 4,
+        }}
+      >
+        <Text
+          style={{
+            width: 44,
+            paddingHorizontal: 4,
+            fontSize: 10 * fontScale,
+            color: monoText(mode, "#333333"),
+            textAlign: "center",
+          }}
+        >
+          {i + 1}
         </Text>
-        <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'right' }}>
-            {currency} {total.toLocaleString('en-US', {minimumFractionDigits: 2})}
+        <Text
+          style={{
+            flex: 2.2,
+            paddingHorizontal: 4,
+            fontSize: 10 * fontScale,
+            color: monoText(mode, "#333333"),
+          }}
+        >
+          {formattedDesc}
+        </Text>
+        <Text
+          style={{
+            width: 60,
+            paddingHorizontal: 4,
+            fontSize: 10 * fontScale,
+            color: monoText(mode, "#333333"),
+            textAlign: "right",
+          }}
+        >
+          {qty}
+        </Text>
+        <Text
+          style={{
+            width: 110,
+            paddingHorizontal: 4,
+            fontSize: 10 * fontScale,
+            color: monoText(mode, "#333333"),
+            textAlign: "right",
+          }}
+        >
+          {isQP
+            ? formatQuickPhotocopyPriceLabel(unitPrice, currency)
+            : `${currency} ${unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
+        </Text>
+        <Text
+          style={{
+            width: 110,
+            paddingHorizontal: 4,
+            fontSize: 10 * fontScale,
+            color: monoText(mode, "#333333"),
+            textAlign: "right",
+          }}
+        >
+          {currency}{" "}
+          {total.toLocaleString("en-US", { minimumFractionDigits: 2 })}
         </Text>
       </View>
     );
   };
 
-  const isCancelled = isCancelledStatus(dataAny.paymentStatus || dataAny.status, dataAny);
+  const isCancelled = isCancelledStatus(
+    dataAny.paymentStatus || dataAny.status,
+    dataAny,
+  );
 
   return (
     <Document title={docTitleForMeta} author={companyName}>
-      <Page size="A4" style={{ paddingVertical: 45, paddingHorizontal: 40, fontFamily: templateSettings.fontFamily, backgroundColor: '#FFFFFF' }}>
-        {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+      <Page
+        size="A4"
+        style={{
+          paddingVertical: 45,
+          paddingHorizontal: 40,
+          fontFamily: templateSettings.fontFamily,
+          backgroundColor: "#FFFFFF",
+        }}
+      >
+        {channel === "portal" && <PortalCopyWatermark colorMode={mode} />}
         {isCancelled && <CancelledWatermark colorMode={mode} />}
-        
-{/* Centered Logo & Company Header */}
-        <View style={{ alignItems: 'center', marginBottom: 1.5 }}>
+
+        {/* Centered Logo & Company Header */}
+        <View style={{ alignItems: "center", marginBottom: 1.5 }}>
           {!!logo ? (
-             <Image src={logo} style={{ width: templateSettings.logoWidth }} />
-           ) : (
-             <Text style={{ color: monoText(mode, '#222222'), fontSize: templateSettings.logoWidth * 0.4, fontWeight: 'bold' }}>{companyName.charAt(0)}</Text>
-           )}
+            <Image src={logo} style={{ width: templateSettings.logoWidth }} />
+          ) : (
+            <Text
+              style={{
+                color: monoText(mode, "#222222"),
+                fontSize: templateSettings.logoWidth * 0.4,
+                fontWeight: "bold",
+              }}
+            >
+              {companyName.charAt(0)}
+            </Text>
+          )}
         </View>
 
         {/* Invoice Huge Title */}
-        <View style={{ alignItems: 'center', marginBottom: 2 }}>
-          <Text style={{ fontSize: 48 * fontScale, color: monoText(mode, '#111111') }}>
-            <Text style={{ fontWeight: 'heavy' }}>{titleFirst}</Text>
-            {!!titleRest && <Text style={{ fontStyle: 'italic', fontWeight: 'normal', color: monoText(mode, '#333333') }}> {titleRest}</Text>}
+        <View style={{ alignItems: "center", marginBottom: 2 }}>
+          <Text
+            style={{
+              fontSize: 48 * fontScale,
+              color: monoText(mode, "#111111"),
+            }}
+          >
+            <Text style={{ fontWeight: "heavy" }}>{titleFirst}</Text>
+            {!!titleRest && (
+              <Text
+                style={{
+                  fontStyle: "italic",
+                  fontWeight: "normal",
+                  color: monoText(mode, "#333333"),
+                }}
+              >
+                {" "}
+                {titleRest}
+              </Text>
+            )}
           </Text>
         </View>
 
         {/* Info Row: Number / Date */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 30, marginBottom: 20 }}>
-          <Text style={{ fontSize: 12 * fontScale, color: monoText(mode, '#222222') }}>
-            <Text style={{ fontWeight: 'bold' }}>{type === 'INVOICE' ? 'Invoice Number:' : 'Reference Number:'}</Text> {invoiceNumber}
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            paddingHorizontal: 30,
+            marginBottom: 20,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 12 * fontScale,
+              color: monoText(mode, "#222222"),
+            }}
+          >
+            <Text style={{ fontWeight: "bold" }}>
+              {type === "INVOICE" ? "Invoice Number:" : "Reference Number:"}
+            </Text>{" "}
+            {invoiceNumber}
           </Text>
-          <Text style={{ fontSize: 12 * fontScale, color: monoText(mode, '#222222') }}>
-            <Text style={{ fontWeight: 'bold' }}>{type === 'INVOICE' ? 'Invoice Date:' : 'Date:'}</Text> {invoiceDate}
+          <Text
+            style={{
+              fontSize: 12 * fontScale,
+              color: monoText(mode, "#222222"),
+            }}
+          >
+            <Text style={{ fontWeight: "bold" }}>
+              {type === "INVOICE" ? "Invoice Date:" : "Date:"}
+            </Text>{" "}
+            {invoiceDate}
           </Text>
         </View>
 
         {/* Columns: Payment Info vs Bill To */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 30 }}>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            marginBottom: 30,
+          }}
+        >
           <View style={{ flex: 1, paddingRight: 20 }}>
-            <View style={{ backgroundColor: monoFill(mode, accentColor), paddingVertical: 6, paddingHorizontal: 12, alignSelf: 'flex-start', marginBottom: 12, minWidth: 150 }}>
-              <Text style={{ color: monoText(mode, '#ffffff'), fontSize: 10 * fontScale, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1 }}>COMPANY INFO</Text>
+            <View
+              style={{
+                backgroundColor: monoFill(mode, accentColor),
+                paddingVertical: 6,
+                paddingHorizontal: 12,
+                alignSelf: "flex-start",
+                marginBottom: 12,
+                minWidth: 150,
+              }}
+            >
+              <Text
+                style={{
+                  color: monoText(mode, "#ffffff"),
+                  fontSize: 10 * fontScale,
+                  fontWeight: "bold",
+                  textTransform: "uppercase",
+                  letterSpacing: 1,
+                }}
+              >
+                COMPANY INFO
+              </Text>
             </View>
-            {!!companyPhone && <Text style={{ fontSize: 11 * fontScale, color: monoText(mode, '#333333'), marginBottom: 3 }}>{companyPhone}</Text>}
-            {!!companyEmail && <Text style={{ fontSize: 11 * fontScale, color: monoText(mode, '#333333'), marginBottom: 3 }}>{companyEmail}</Text>}
+            {!!companyPhone && (
+              <Text
+                style={{
+                  fontSize: 11 * fontScale,
+                  color: monoText(mode, "#333333"),
+                  marginBottom: 3,
+                }}
+              >
+                {companyPhone}
+              </Text>
+            )}
+            {!!companyEmail && (
+              <Text
+                style={{
+                  fontSize: 11 * fontScale,
+                  color: monoText(mode, "#333333"),
+                  marginBottom: 3,
+                }}
+              >
+                {companyEmail}
+              </Text>
+            )}
           </View>
-          
+
           <View style={{ flex: 1 }}>
-            <View style={{ backgroundColor: monoFill(mode, accentColor), paddingVertical: 6, paddingHorizontal: 12, alignSelf: 'flex-end', marginBottom: 12, minWidth: 150 }}>
-              <Text style={{ color: monoText(mode, '#ffffff'), fontSize: 10 * fontScale, fontWeight: 'bold', textAlign: 'right', textTransform: 'uppercase', letterSpacing: 1 }}>BILL TO</Text>
+            <View
+              style={{
+                backgroundColor: monoFill(mode, accentColor),
+                paddingVertical: 6,
+                paddingHorizontal: 12,
+                alignSelf: "flex-end",
+                marginBottom: 12,
+                minWidth: 150,
+              }}
+            >
+              <Text
+                style={{
+                  color: monoText(mode, "#ffffff"),
+                  fontSize: 10 * fontScale,
+                  fontWeight: "bold",
+                  textAlign: "right",
+                  textTransform: "uppercase",
+                  letterSpacing: 1,
+                }}
+              >
+                BILL TO
+              </Text>
             </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={{ fontSize: 12 * fontScale, fontWeight: 'bold', color: monoText(mode, '#111111'), marginBottom: 4 }}>{resolvedRecipientName}</Text>
-              {!!resolvedRecipientAddress && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'right', lineHeight: 1.4 }}>{resolvedRecipientAddress}</Text>}
-              {!!resolvedRecipientPhone && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'right', marginTop: 2 }}>{resolvedRecipientPhone}</Text>}
+            <View style={{ alignItems: "flex-end" }}>
+              <Text
+                style={{
+                  fontSize: 12 * fontScale,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#111111"),
+                  marginBottom: 4,
+                }}
+              >
+                {resolvedRecipientName}
+              </Text>
+              {!!resolvedRecipientAddress && (
+                <Text
+                  style={{
+                    fontSize: 10 * fontScale,
+                    color: monoText(mode, "#333333"),
+                    textAlign: "right",
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {resolvedRecipientAddress}
+                </Text>
+              )}
+              {!!resolvedRecipientPhone && (
+                <Text
+                  style={{
+                    fontSize: 10 * fontScale,
+                    color: monoText(mode, "#333333"),
+                    textAlign: "right",
+                    marginTop: 2,
+                  }}
+                >
+                  {resolvedRecipientPhone}
+                </Text>
+              )}
             </View>
           </View>
         </View>
 
         {/* Table representation */}
         <View style={{ marginBottom: 15 }}>
-          <View style={{ flexDirection: 'row', backgroundColor: monoFill(mode, accentColor), paddingVertical: 8, paddingHorizontal: 4, alignItems: 'center' }}>
-            <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), textAlign: 'center' }}>SN</Text>
-            <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff') }}>Description</Text>
-            <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), textAlign: 'right' }}>Qty</Text>
-            <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), textAlign: 'right' }}>Price</Text>
-            <Text style={{ width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), textAlign: 'right' }}>Amount</Text>
+          <View
+            style={{
+              flexDirection: "row",
+              backgroundColor: monoFill(mode, accentColor),
+              paddingVertical: 8,
+              paddingHorizontal: 4,
+              alignItems: "center",
+            }}
+          >
+            <Text
+              style={{
+                width: 44,
+                paddingHorizontal: 4,
+                fontSize: 11 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#ffffff"),
+                textAlign: "center",
+              }}
+            >
+              SN
+            </Text>
+            <Text
+              style={{
+                flex: 2.2,
+                paddingHorizontal: 4,
+                fontSize: 11 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#ffffff"),
+              }}
+            >
+              Description
+            </Text>
+            <Text
+              style={{
+                width: 60,
+                paddingHorizontal: 4,
+                fontSize: 11 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#ffffff"),
+                textAlign: "right",
+              }}
+            >
+              Qty
+            </Text>
+            <Text
+              style={{
+                width: 110,
+                paddingHorizontal: 4,
+                fontSize: 11 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#ffffff"),
+                textAlign: "right",
+              }}
+            >
+              Price
+            </Text>
+            <Text
+              style={{
+                width: 110,
+                paddingHorizontal: 4,
+                fontSize: 11 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#ffffff"),
+                textAlign: "right",
+              }}
+            >
+              Amount
+            </Text>
           </View>
           {items.map(renderRow)}
-          
+
           {/* Total Payment Gray Row */}
-          <View style={{ flexDirection: 'row', backgroundColor: monoFill(mode, '#D9DEDE'), paddingVertical: 8, paddingHorizontal: 4, alignItems: 'center', marginTop: 4 }}>
-            <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 11 * fontScale, color: monoText(mode, '#111111'), textAlign: 'center' }}>-</Text>
-            <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#111111') }}>Total Payment</Text>
-            <Text style={{ width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, color: monoText(mode, '#111111'), textAlign: 'right' }}>-</Text>
-            <Text style={{ width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, color: monoText(mode, '#111111'), textAlign: 'right' }}>-</Text>
-            <Text style={{ width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: 'bold', color: monoText(mode, '#111111'), textAlign: 'right' }}>{currency} {subtotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+          <View
+            style={{
+              flexDirection: "row",
+              backgroundColor: monoFill(mode, "#D9DEDE"),
+              paddingVertical: 8,
+              paddingHorizontal: 4,
+              alignItems: "center",
+              marginTop: 4,
+            }}
+          >
+            <Text
+              style={{
+                width: 44,
+                paddingHorizontal: 4,
+                fontSize: 11 * fontScale,
+                color: monoText(mode, "#111111"),
+                textAlign: "center",
+              }}
+            >
+              -
+            </Text>
+            <Text
+              style={{
+                flex: 2.2,
+                paddingHorizontal: 4,
+                fontSize: 11 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#111111"),
+              }}
+            >
+              Total Payment
+            </Text>
+            <Text
+              style={{
+                width: 60,
+                paddingHorizontal: 4,
+                fontSize: 11 * fontScale,
+                color: monoText(mode, "#111111"),
+                textAlign: "right",
+              }}
+            >
+              -
+            </Text>
+            <Text
+              style={{
+                width: 100,
+                paddingHorizontal: 4,
+                fontSize: 11 * fontScale,
+                color: monoText(mode, "#111111"),
+                textAlign: "right",
+              }}
+            >
+              -
+            </Text>
+            <Text
+              style={{
+                width: 100,
+                paddingHorizontal: 4,
+                fontSize: 11 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#111111"),
+                textAlign: "right",
+              }}
+            >
+              {currency}{" "}
+              {subtotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+            </Text>
           </View>
         </View>
 
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 15 }}>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            marginTop: 15,
+          }}
+        >
           {/* Notes Bottom Left */}
           <View style={{ width: 200 }}>
-              {!!dataAny.notes && (
-                 <View style={{ marginTop: 10 }}>
-                    <Text style={{ fontSize: 12 * fontScale, fontWeight: 'bold', color: monoText(mode, '#111111'), marginBottom: 6 }}>Notes:</Text>
-                    <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#333333'), lineHeight: 1.5 }}>{String(dataAny.notes)}</Text>
-                    <View style={{ width: '100%', height: 1, backgroundColor: monoFill(mode, '#111111'), marginTop: 15 }} />
-                 </View>
-              )}
+            {!!dataAny.notes && (
+              <View style={{ marginTop: 10 }}>
+                <Text
+                  style={{
+                    fontSize: 12 * fontScale,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#111111"),
+                    marginBottom: 6,
+                  }}
+                >
+                  Notes:
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 10 * fontScale,
+                    color: monoText(mode, "#333333"),
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {String(dataAny.notes)}
+                </Text>
+                <View
+                  style={{
+                    width: "100%",
+                    height: 1,
+                    backgroundColor: monoFill(mode, "#111111"),
+                    marginTop: 15,
+                  }}
+                />
+              </View>
+            )}
           </View>
 
           {/* Totals Section */}
           <View style={{ width: 220 }}>
             {tax > 0 && (
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, paddingRight: 4 }}>
-                <Text style={{ color: monoText(mode, '#333333'), fontSize: 11 * fontScale }}>Tax</Text>
-                <Text style={{ color: monoText(mode, '#333333'), fontSize: 11 * fontScale }}>{currency} {tax.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  paddingVertical: 6,
+                  paddingRight: 4,
+                }}
+              >
+                <Text
+                  style={{
+                    color: monoText(mode, "#333333"),
+                    fontSize: 11 * fontScale,
+                  }}
+                >
+                  Tax
+                </Text>
+                <Text
+                  style={{
+                    color: monoText(mode, "#333333"),
+                    fontSize: 11 * fontScale,
+                  }}
+                >
+                  {currency}{" "}
+                  {tax.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                </Text>
               </View>
             )}
             {discount > 0 && (
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, paddingRight: 4 }}>
-                <Text style={{ color: monoText(mode, '#333333'), fontSize: 11 * fontScale }}>{discountLabel}</Text>
-                <Text style={{ color: monoText(mode, '#333333'), fontSize: 11 * fontScale }}>-{currency} {discount.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  paddingVertical: 6,
+                  paddingRight: 4,
+                }}
+              >
+                <Text
+                  style={{
+                    color: monoText(mode, "#333333"),
+                    fontSize: 11 * fontScale,
+                  }}
+                >
+                  {discountLabel}
+                </Text>
+                <Text
+                  style={{
+                    color: monoText(mode, "#333333"),
+                    fontSize: 11 * fontScale,
+                  }}
+                >
+                  -{currency}{" "}
+                  {discount.toLocaleString("en-US", {
+                    minimumFractionDigits: 2,
+                  })}
+                </Text>
               </View>
             )}
             {dataAny.roundingDifference ? (
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, paddingRight: 4 }}>
-                <Text style={{ color: monoText(mode, '#333333'), fontSize: 11 * fontScale }}>Rounding{dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ''}</Text>
-                <Text style={{ color: monoText(mode, '#333333'), fontSize: 11 * fontScale }}>{currency} {Number(dataAny.roundingDifference).toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  paddingVertical: 6,
+                  paddingRight: 4,
+                }}
+              >
+                <Text
+                  style={{
+                    color: monoText(mode, "#333333"),
+                    fontSize: 11 * fontScale,
+                  }}
+                >
+                  Rounding
+                  {dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ""}
+                </Text>
+                <Text
+                  style={{
+                    color: monoText(mode, "#333333"),
+                    fontSize: 11 * fontScale,
+                  }}
+                >
+                  {currency}{" "}
+                  {Number(dataAny.roundingDifference).toLocaleString("en-US", {
+                    minimumFractionDigits: 2,
+                  })}
+                </Text>
               </View>
             ) : null}
             {amountPaid > 0 && (
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, paddingRight: 4 }}>
-                <Text style={{ color: monoText(mode, '#333333'), fontSize: 11 * fontScale }}>Amount Paid</Text>
-                <Text style={{ color: monoText(mode, '#333333'), fontSize: 11 * fontScale }}>-{currency} {amountPaid.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  paddingVertical: 6,
+                  paddingRight: 4,
+                }}
+              >
+                <Text
+                  style={{
+                    color: monoText(mode, "#333333"),
+                    fontSize: 11 * fontScale,
+                  }}
+                >
+                  Amount Paid
+                </Text>
+                <Text
+                  style={{
+                    color: monoText(mode, "#333333"),
+                    fontSize: 11 * fontScale,
+                  }}
+                >
+                  -{currency}{" "}
+                  {amountPaid.toLocaleString("en-US", {
+                    minimumFractionDigits: 2,
+                  })}
+                </Text>
               </View>
             )}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', backgroundColor: monoFill(mode, '#Dce1e1'), paddingVertical: 8, paddingHorizontal: 6, marginTop: 4 }}>
-              <Text style={{ color: monoText(mode, '#111111'), fontWeight: 'bold', fontSize: 12 * fontScale }}>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                backgroundColor: monoFill(mode, "#Dce1e1"),
+                paddingVertical: 8,
+                paddingHorizontal: 6,
+                marginTop: 4,
+              }}
+            >
+              <Text
+                style={{
+                  color: monoText(mode, "#111111"),
+                  fontWeight: "bold",
+                  fontSize: 12 * fontScale,
+                }}
+              >
                 Balance Due
               </Text>
-              <Text style={{ color: monoText(mode, '#111111'), fontWeight: 'bold', fontSize: 12 * fontScale }}>
-                {currency} {(totalAmount - amountPaid).toLocaleString('en-US', {minimumFractionDigits: 2})}
+              <Text
+                style={{
+                  color: monoText(mode, "#111111"),
+                  fontWeight: "bold",
+                  fontSize: 12 * fontScale,
+                }}
+              >
+                {currency}{" "}
+                {(totalAmount - amountPaid).toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                })}
               </Text>
             </View>
-            
           </View>
         </View>
 
         {/* Outstanding Balance Statement */}
-        {type === 'INVOICE' && showInvoiceBalances && Number(dataAny?.totalCustomerOutstanding || 0) > 0 && (() => {
-          const totalOutstanding = Number(dataAny.totalCustomerOutstanding || 0);
-          const todayStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-          return (
-            <View style={{ marginTop: 15, padding: 8, backgroundColor: monoFill(mode, '#f0f9ff'), borderRadius: 4, borderLeftWidth: 3, borderLeftColor: monoLine(mode, '#0ea5e9') }} wrap={false}>
-              <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#0369a1'), lineHeight: 1.4 }}>
-                {'Your overall outstanding balance is '}
-                <Text style={{ fontWeight: 'bold' }}>{currency} {totalOutstanding.toLocaleString('en-US', { minimumFractionDigits: 2 })}</Text>
-                {` as of ${todayStr}`}
-              </Text>
-            </View>
-          );
-        })()}
+        {type === "INVOICE" &&
+          showInvoiceBalances &&
+          Number(dataAny?.totalCustomerOutstanding || 0) > 0 &&
+          (() => {
+            const totalOutstanding = Number(
+              dataAny.totalCustomerOutstanding || 0,
+            );
+            const todayStr = new Date().toLocaleDateString("en-GB", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            });
+            return (
+              <View
+                style={{
+                  marginTop: 15,
+                  padding: 8,
+                  backgroundColor: monoFill(mode, "#f0f9ff"),
+                  borderRadius: 4,
+                  borderLeftWidth: 3,
+                  borderLeftColor: monoLine(mode, "#0ea5e9"),
+                }}
+                wrap={false}
+              >
+                <Text
+                  style={{
+                    fontSize: 10 * fontScale,
+                    color: monoText(mode, "#0369a1"),
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {"Your overall outstanding balance is "}
+                  <Text style={{ fontWeight: "bold" }}>
+                    {currency}{" "}
+                    {totalOutstanding.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                    })}
+                  </Text>
+                  {` as of ${todayStr}`}
+                </Text>
+              </View>
+            );
+          })()}
 
         {/* Footer info (QR and Signature) */}
-        <View wrap={false} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 15, flex: 1, gap: 20 }}>
-          <View style={{ flexDirection: 'column', flex: 1 }}>
+        <View
+          wrap={false}
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            marginTop: 15,
+            flex: 1,
+            gap: 20,
+          }}
+        >
+          <View style={{ flexDirection: "column", flex: 1 }}>
             {showAccountSummary ? (
-              <InvoiceInfoPanel colorMode={mode}
+              <InvoiceInfoPanel
+                colorMode={mode}
                 type="account_summary"
                 settings={templateSettings}
                 data={dataAny}
@@ -1238,7 +2954,8 @@ const ModernInvoiceTemplate = ({
                 fontScale={fontScale}
               />
             ) : templateSettings.showPaymentTerms ? (
-              <InvoiceInfoPanel colorMode={mode}
+              <InvoiceInfoPanel
+                colorMode={mode}
                 type="payment_terms"
                 settings={templateSettings}
                 data={dataAny}
@@ -1246,33 +2963,120 @@ const ModernInvoiceTemplate = ({
                 fontScale={fontScale}
               />
             ) : null}
-            
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginTop: 10, gap: 12 }}>
+
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "flex-start",
+                marginTop: 10,
+                gap: 12,
+              }}
+            >
               <View>
-                {renderQrImage(qrCodeDataUrl, 56, false) || <View style={{ width: 56, height: 56, backgroundColor: monoFill(mode, '#eeeeee') }} />}
+                {renderQrImage(qrCodeDataUrl, 56, false) || (
+                  <View
+                    style={{
+                      width: 56,
+                      height: 56,
+                      backgroundColor: monoFill(mode, "#eeeeee"),
+                    }}
+                  />
+                )}
               </View>
-              <View style={{ justifyContent: 'center', flex: 1 }}>
-                <Text style={{ fontWeight: 'bold', fontSize: 11 * fontScale, color: monoText(mode, '#111111'), marginBottom: 4 }}>More Info:</Text>
-                {!!companyPhone && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#333333'), marginBottom: 2 }}>{companyPhone}</Text>}
-                {!!companyEmail && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#333333') }}>{companyEmail}</Text>}
+              <View style={{ justifyContent: "center", flex: 1 }}>
+                <Text
+                  style={{
+                    fontWeight: "bold",
+                    fontSize: 11 * fontScale,
+                    color: monoText(mode, "#111111"),
+                    marginBottom: 4,
+                  }}
+                >
+                  More Info:
+                </Text>
+                {!!companyPhone && (
+                  <Text
+                    style={{
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#333333"),
+                      marginBottom: 2,
+                    }}
+                  >
+                    {companyPhone}
+                  </Text>
+                )}
+                {!!companyEmail && (
+                  <Text
+                    style={{
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#333333"),
+                    }}
+                  >
+                    {companyEmail}
+                  </Text>
+                )}
               </View>
             </View>
           </View>
 
-          <View style={{ alignItems: 'center', minWidth: 160 }}>
-            <Text style={{ fontSize: 11 * fontScale, color: monoText(mode, '#222222'), marginBottom: 8 }}>{showDueDate && dueDate ? `Due Date: ${formatDateOnly(dueDate)}` : `Date: ${invoiceDate}`}</Text>
-            <View style={{ width: '100%', height: 30, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{fontFamily: templateSettings.fontFamily, fontStyle: 'italic', fontSize: 22, color: monoText(mode, '#111111')}}>{companyName.split(' ')[0]}</Text>
+          <View style={{ alignItems: "center", minWidth: 160 }}>
+            <Text
+              style={{
+                fontSize: 11 * fontScale,
+                color: monoText(mode, "#222222"),
+                marginBottom: 8,
+              }}
+            >
+              {showDueDate && dueDate
+                ? `Due Date: ${formatDateOnly(dueDate)}`
+                : `Date: ${invoiceDate}`}
+            </Text>
+            <View
+              style={{
+                width: "100%",
+                height: 30,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Text
+                style={{
+                  fontFamily: templateSettings.fontFamily,
+                  fontStyle: "italic",
+                  fontSize: 22,
+                  color: monoText(mode, "#111111"),
+                }}
+              >
+                {companyName.split(" ")[0]}
+              </Text>
             </View>
-            <View style={{ width: '100%', height: 1.5, backgroundColor: monoFill(mode, '#444444'), marginTop: 8, marginBottom: 4 }} />
+            <View
+              style={{
+                width: "100%",
+                height: 1.5,
+                backgroundColor: monoFill(mode, "#444444"),
+                marginTop: 8,
+                marginBottom: 4,
+              }}
+            />
             {dataAny.createdAtIso || dataAny.createdAt ? (
-              <Text style={{ fontSize: 8 * fontScale, color: monoText(mode, '#666666') }}>
-                Ref: {String(dataAny.invoiceNumber || dataAny.orderNumber || dataAny.number || 'N/A')}
+              <Text
+                style={{
+                  fontSize: 8 * fontScale,
+                  color: monoText(mode, "#666666"),
+                }}
+              >
+                Ref:{" "}
+                {String(
+                  dataAny.invoiceNumber ||
+                    dataAny.orderNumber ||
+                    dataAny.number ||
+                    "N/A",
+                )}
               </Text>
             ) : null}
           </View>
         </View>
-
       </Page>
     </Document>
   );
@@ -1284,50 +3088,109 @@ const ProfessionalInvoiceTemplate = ({
   config,
   templateSettings,
   channel,
-  mode = 'brand',
+  mode = "brand",
 }: {
   type: string;
   data: Record<string, unknown>;
   config: CompanyConfig | null;
   templateSettings: ReturnType<typeof resolvePrimeTemplateSettings>;
-  channel?: 'erp' | 'portal';
+  channel?: "erp" | "portal";
   mode?: PrimeColorMode;
 }) => {
   const dataAny = data;
   const fontScale = templateSettings.bodyFontSize / 12;
 
   // Company Details
-  const { companyName, companyAddress, formattedPhone, companyPhone, companyEmail } = normalizeCompanyIdentity(config);
-  const currency = config?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || 'K';
-  
-  const logo = resolvePdfLogoSource(config, templateSettings.showCompanyLogo);
-  const accentColor = templateSettings.accentColor || '#E8450A';
+  const {
+    companyName,
+    companyAddress,
+    formattedPhone,
+    companyPhone,
+    companyEmail,
+  } = normalizeCompanyIdentity(config);
+  const currency =
+    config?.currencySymbol ||
+    currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol ||
+    "K";
 
-  let docTitle = 'INVOICE';
-  if (type === 'QUOTATION') docTitle = 'QUOTATION';
-  else if (type === 'ORDER' || type === 'SALES_ORDER') docTitle = 'SALES ORDER';
-  else if (type === 'PO') docTitle = 'PURCHASE ORDER';
-  else if (type === 'SUBSCRIPTION') docTitle = 'RECURRING INVOICE';
+  const logo = resolvePdfLogoSource(config, templateSettings.showCompanyLogo);
+  const accentColor = templateSettings.accentColor || "#E8450A";
+
+  let docTitle = "INVOICE";
+  if (type === "QUOTATION") docTitle = "QUOTATION";
+  else if (type === "ORDER" || type === "SALES_ORDER") docTitle = "SALES ORDER";
+  else if (type === "PO") docTitle = "PURCHASE ORDER";
+  else if (type === "SUBSCRIPTION") docTitle = "RECURRING INVOICE";
 
   const pod = dataAny.proofOfDelivery as Record<string, unknown> | undefined;
 
   // Invoice Details
-  const invoiceNumber = String(dataAny.invoiceNumber || dataAny.orderNumber || dataAny.number || dataAny.quotationNumber || new Date().getTime());
+  const invoiceNumber = String(
+    dataAny.invoiceNumber ||
+      dataAny.orderNumber ||
+      dataAny.number ||
+      dataAny.quotationNumber ||
+      new Date().getTime(),
+  );
   const invoiceDate = String(dataAny.date || new Date().toLocaleDateString());
   const dueDate = dataAny.dueDate ? String(dataAny.dueDate) : undefined;
-  
+
   const docTitleForMeta = `${docTitle} ${invoiceNumber}`;
-  
+
   // Recipient Details
   const resolvedRecipientName = String(
-    dataAny.clientName || dataAny.customerName || dataAny.customer_name || dataAny.schoolName || dataAny.school_name || dataAny.recipientName || dataAny.recipient_name || dataAny.vendorName || dataAny.vendor_name || dataAny.supplierName || dataAny.supplier_name || pod?.receivedBy || dataAny.receivedBy || ''
+    dataAny.clientName ||
+      dataAny.customerName ||
+      dataAny.customer_name ||
+      dataAny.schoolName ||
+      dataAny.school_name ||
+      dataAny.recipientName ||
+      dataAny.recipient_name ||
+      dataAny.vendorName ||
+      dataAny.vendor_name ||
+      dataAny.supplierName ||
+      dataAny.supplier_name ||
+      pod?.receivedBy ||
+      dataAny.receivedBy ||
+      "",
   ).trim();
   const resolvedRecipientAddress = String(
-    dataAny.address || dataAny.customerAddress || dataAny.customer_address || dataAny.billingAddress || dataAny.billing_address || dataAny.shippingAddress || dataAny.shipping_address || dataAny.schoolAddress || dataAny.school_address || dataAny.vendorAddress || dataAny.vendor_address || dataAny.supplierAddress || dataAny.supplier_address || pod?.address || pod?.deliveryLocation || ''
+    dataAny.address ||
+      dataAny.customerAddress ||
+      dataAny.customer_address ||
+      dataAny.billingAddress ||
+      dataAny.billing_address ||
+      dataAny.shippingAddress ||
+      dataAny.shipping_address ||
+      dataAny.schoolAddress ||
+      dataAny.school_address ||
+      dataAny.vendorAddress ||
+      dataAny.vendor_address ||
+      dataAny.supplierAddress ||
+      dataAny.supplier_address ||
+      pod?.address ||
+      pod?.deliveryLocation ||
+      "",
   ).trim();
-  const resolvedRecipientPhone = formatPhone(String(
-    dataAny.phone || dataAny.customerPhone || dataAny.customer_phone || dataAny.schoolPhone || dataAny.school_phone || dataAny.vendorPhone || dataAny.vendor_phone || dataAny.supplierPhone || dataAny.supplier_phone || dataAny.recipientPhone || dataAny.recipient_phone || pod?.receiverPhone || pod?.recipientPhone || pod?.phone || ''
-  ).trim());
+  const resolvedRecipientPhone = formatPhone(
+    String(
+      dataAny.phone ||
+        dataAny.customerPhone ||
+        dataAny.customer_phone ||
+        dataAny.schoolPhone ||
+        dataAny.school_phone ||
+        dataAny.vendorPhone ||
+        dataAny.vendor_phone ||
+        dataAny.supplierPhone ||
+        dataAny.supplier_phone ||
+        dataAny.recipientPhone ||
+        dataAny.recipient_phone ||
+        pod?.receiverPhone ||
+        pod?.recipientPhone ||
+        pod?.phone ||
+        "",
+    ).trim(),
+  );
 
   // Financials
   const items = (dataAny.items || []) as Array<Record<string, unknown>>;
@@ -1336,17 +3199,40 @@ const ProfessionalInvoiceTemplate = ({
   const totalAmount = Number(dataAny.totalAmount) || subtotal;
   const tax = Number(dataAny.tax) || 0;
   const discount = Number(dataAny.discount) || 0;
-  const discountPercentage = discount > 0 && subtotal > 0 ? Number(((discount / subtotal) * 100).toFixed(2)) : 0;
-  const discountLabel = discountPercentage > 0 ? `Discount (${discountPercentage}%)` : 'Discount';
-  
+  const discountPercentage =
+    discount > 0 && subtotal > 0
+      ? Number(((discount / subtotal) * 100).toFixed(2))
+      : 0;
+  const discountLabel =
+    discountPercentage > 0 ? `Discount (${discountPercentage}%)` : "Discount";
+
   const showDueDate = templateSettings.showDueDate;
   const showInvoiceBalances = templateSettings.showOutstandingAndWalletBalances;
-  const resolvedOutstandingBalance = Math.max(0, Number(dataAny.totalAmount || 0) - Number(dataAny.amountPaid || 0));
-  const outstandingDisplay = showInvoiceBalances && type === 'INVOICE' ? resolvedOutstandingBalance : (totalAmount - amountPaid);
-  
+  const resolvedOutstandingBalance = Math.max(
+    0,
+    Number(dataAny.totalAmount || 0) - Number(dataAny.amountPaid || 0),
+  );
+  const outstandingDisplay =
+    showInvoiceBalances && type === "INVOICE"
+      ? resolvedOutstandingBalance
+      : totalAmount - amountPaid;
+
   const renderRow = (item: any, i: number) => {
-    const isService = item.category === 'service' || item.type === 'service' || item.isService === true;
-    let formattedDesc = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || '';
+    const isService =
+      item.category === "service" ||
+      item.type === "service" ||
+      item.isService === true;
+    let formattedDesc =
+      item.name ||
+      item.productName ||
+      item.product_name ||
+      item.itemName ||
+      item.item_name ||
+      item.title ||
+      item.label ||
+      item.desc ||
+      item.description ||
+      "";
     let qty: string | number = item.qty;
     let unitPrice = item.price || (item.qty ? item.total / item.qty : 0);
     let total = item.total;
@@ -1358,25 +3244,100 @@ const ProfessionalInvoiceTemplate = ({
       qty = display.qty;
       unitPrice = display.unitPrice;
       const storedTotal = Number(item.total);
-      total = Number.isFinite(storedTotal) && storedTotal > 0 ? storedTotal : display.amount;
+      total =
+        Number.isFinite(storedTotal) && storedTotal > 0
+          ? storedTotal
+          : display.amount;
       // Rate appears exactly once (Price column) — never in the name.
       formattedDesc = display.name;
     } else if (isService) {
       const totalPages = item.totalPages || item.pages || 0;
       const copies = item.copies || item.qty || 1;
-      const itemName = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || 'Service';
+      const itemName =
+        item.name ||
+        item.productName ||
+        item.product_name ||
+        item.itemName ||
+        item.item_name ||
+        item.title ||
+        item.label ||
+        item.desc ||
+        item.description ||
+        "Service";
       if (totalPages > 0) {
         formattedDesc = `${itemName} (${totalPages} pages × ${copies} copies)`;
       }
     }
 
     return (
-      <View key={i} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: monoLine(mode, '#eeeeee'), minHeight: 24, alignItems: 'center', paddingVertical: 5 }}>
-        <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'center' }}>{i + 1}</Text>
-        <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333') }}>{formattedDesc}</Text>
-        <Text style={{ width: 50, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'right' }}>{qty}</Text>
-        <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'right' }}>{isQP ? formatQuickPhotocopyPriceLabel(unitPrice, currency) : `${currency} ${unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}</Text>
-        <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, '#333333'), textAlign: 'right' }}>{currency} {total.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+      <View
+        key={i}
+        style={{
+          flexDirection: "row",
+          borderBottomWidth: 0.5,
+          borderBottomColor: monoLine(mode, "#eeeeee"),
+          minHeight: 24,
+          alignItems: "center",
+          paddingVertical: 5,
+        }}
+      >
+        <Text
+          style={{
+            width: 44,
+            paddingHorizontal: 4,
+            fontSize: 10 * fontScale,
+            color: monoText(mode, "#333333"),
+            textAlign: "center",
+          }}
+        >
+          {i + 1}
+        </Text>
+        <Text
+          style={{
+            flex: 2.2,
+            paddingHorizontal: 4,
+            fontSize: 10 * fontScale,
+            color: monoText(mode, "#333333"),
+          }}
+        >
+          {formattedDesc}
+        </Text>
+        <Text
+          style={{
+            width: 50,
+            paddingHorizontal: 4,
+            fontSize: 10 * fontScale,
+            color: monoText(mode, "#333333"),
+            textAlign: "right",
+          }}
+        >
+          {qty}
+        </Text>
+        <Text
+          style={{
+            width: 80,
+            paddingHorizontal: 4,
+            fontSize: 10 * fontScale,
+            color: monoText(mode, "#333333"),
+            textAlign: "right",
+          }}
+        >
+          {isQP
+            ? formatQuickPhotocopyPriceLabel(unitPrice, currency)
+            : `${currency} ${unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
+        </Text>
+        <Text
+          style={{
+            width: 80,
+            paddingHorizontal: 4,
+            fontSize: 10 * fontScale,
+            color: monoText(mode, "#333333"),
+            textAlign: "right",
+          }}
+        >
+          {currency}{" "}
+          {total.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+        </Text>
       </View>
     );
   };
@@ -1385,157 +3346,706 @@ const ProfessionalInvoiceTemplate = ({
 
   return (
     <Document title={docTitleForMeta} author={companyName}>
-      <Page size="A4" style={{ padding: 40, fontFamily: templateSettings.fontFamily, backgroundColor: '#ffffff' }}>
-        {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+      <Page
+        size="A4"
+        style={{
+          padding: 40,
+          fontFamily: templateSettings.fontFamily,
+          backgroundColor: "#ffffff",
+        }}
+      >
+        {channel === "portal" && <PortalCopyWatermark colorMode={mode} />}
         {isCancelled && <CancelledWatermark colorMode={mode} />}
         {/* Top Row */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15 }}>
-          <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            marginBottom: 15,
+          }}
+        >
+          <View style={{ alignItems: "center", justifyContent: "center" }}>
             {!!logo ? (
               <Image src={logo} style={{ width: templateSettings.logoWidth }} />
             ) : (
-              <Text style={{ color: monoText(mode, '#222222'), fontSize: templateSettings.logoWidth * 0.4, fontWeight: 'bold' }}>{companyName.charAt(0)}</Text>
+              <Text
+                style={{
+                  color: monoText(mode, "#222222"),
+                  fontSize: templateSettings.logoWidth * 0.4,
+                  fontWeight: "bold",
+                }}
+              >
+                {companyName.charAt(0)}
+              </Text>
             )}
           </View>
-          <View style={{ textAlign: 'right', alignItems: 'flex-end' }}>
-            <Text style={{ fontSize: 13 * fontScale, fontWeight: 'bold', color: monoText(mode, '#111111'), marginBottom: 2 }}>{companyName}</Text>
-            {!!companyAddress && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#444444'), lineHeight: 1.4 }}>{companyAddress}</Text>}
-            {!!companyPhone && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#444444'), lineHeight: 1.4 }}>{companyPhone}</Text>}
-            {!!companyEmail && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#444444'), lineHeight: 1.4 }}>{companyEmail}</Text>}
+          <View style={{ textAlign: "right", alignItems: "flex-end" }}>
+            <Text
+              style={{
+                fontSize: 13 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#111111"),
+                marginBottom: 2,
+              }}
+            >
+              {companyName}
+            </Text>
+            {!!companyAddress && (
+              <Text
+                style={{
+                  fontSize: 10 * fontScale,
+                  color: monoText(mode, "#444444"),
+                  lineHeight: 1.4,
+                }}
+              >
+                {companyAddress}
+              </Text>
+            )}
+            {!!companyPhone && (
+              <Text
+                style={{
+                  fontSize: 10 * fontScale,
+                  color: monoText(mode, "#444444"),
+                  lineHeight: 1.4,
+                }}
+              >
+                {companyPhone}
+              </Text>
+            )}
+            {!!companyEmail && (
+              <Text
+                style={{
+                  fontSize: 10 * fontScale,
+                  color: monoText(mode, "#444444"),
+                  lineHeight: 1.4,
+                }}
+              >
+                {companyEmail}
+              </Text>
+            )}
           </View>
         </View>
 
         {/* Main Row / Client Info */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 25 }}>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            marginBottom: 25,
+          }}
+        >
           <View>
-            <Text style={{ fontSize: 9 * fontScale, color: monoText(mode, '#999999'), letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 4 }}>Client</Text>
-            <Text style={{ fontSize: 14 * fontScale, fontWeight: 'bold', color: monoText(mode, '#111111'), marginBottom: 2 }}>{resolvedRecipientName}</Text>
-            {!!resolvedRecipientAddress && <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#444444'), lineHeight: 1.4 }}>{resolvedRecipientAddress}</Text>}
+            <Text
+              style={{
+                fontSize: 9 * fontScale,
+                color: monoText(mode, "#999999"),
+                letterSpacing: 1.2,
+                textTransform: "uppercase",
+                marginBottom: 4,
+              }}
+            >
+              Client
+            </Text>
+            <Text
+              style={{
+                fontSize: 14 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#111111"),
+                marginBottom: 2,
+              }}
+            >
+              {resolvedRecipientName}
+            </Text>
+            {!!resolvedRecipientAddress && (
+              <Text
+                style={{
+                  fontSize: 10 * fontScale,
+                  color: monoText(mode, "#444444"),
+                  lineHeight: 1.4,
+                }}
+              >
+                {resolvedRecipientAddress}
+              </Text>
+            )}
           </View>
           <View>
-            <Text style={{ fontSize: 32 * fontScale, fontWeight: 'bold', color: monoText(mode, '#cccccc'), letterSpacing: 2 }}>{docTitle}</Text>
+            <Text
+              style={{
+                fontSize: 32 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#cccccc"),
+                letterSpacing: 2,
+              }}
+            >
+              {docTitle}
+            </Text>
           </View>
         </View>
 
         {/* Due Row */}
-        <View style={{ flexDirection: 'row', alignItems: 'stretch', marginBottom: 25 }}>
-          <View style={{ backgroundColor: monoFill(mode, accentColor), paddingVertical: 12, paddingHorizontal: 16, flex: 1, justifyContent: 'center' }}>
-            {type !== 'QUOTATION' && type !== 'SUBSCRIPTION' ? (
-              <Text style={{ fontSize: 16 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), letterSpacing: 1 }}>
-                {type === 'INVOICE' && showInvoiceBalances ? 'OUTSTANDING' : 'DUE'} — {currency} {outstandingDisplay.toLocaleString('en-US', {minimumFractionDigits: 2})}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "stretch",
+            marginBottom: 25,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: monoFill(mode, accentColor),
+              paddingVertical: 12,
+              paddingHorizontal: 16,
+              flex: 1,
+              justifyContent: "center",
+            }}
+          >
+            {type !== "QUOTATION" && type !== "SUBSCRIPTION" ? (
+              <Text
+                style={{
+                  fontSize: 16 * fontScale,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#ffffff"),
+                  letterSpacing: 1,
+                }}
+              >
+                {type === "INVOICE" && showInvoiceBalances
+                  ? "OUTSTANDING"
+                  : "DUE"}{" "}
+                — {currency}{" "}
+                {outstandingDisplay.toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                })}
               </Text>
             ) : (
-              <Text style={{ fontSize: 16 * fontScale, fontWeight: 'bold', color: monoText(mode, '#ffffff'), letterSpacing: 1 }}>
-                TOTAL — {currency} {totalAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}
+              <Text
+                style={{
+                  fontSize: 16 * fontScale,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#ffffff"),
+                  letterSpacing: 1,
+                }}
+              >
+                TOTAL — {currency}{" "}
+                {totalAmount.toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                })}
               </Text>
             )}
           </View>
-          <View style={{ backgroundColor: '#ffffff', borderWidth: 1, borderColor: monoLine(mode, accentColor), paddingVertical: 10, paddingHorizontal: 14, minWidth: 160, justifyContent: 'center' }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-              <Text style={{ color: monoText(mode, '#999999'), fontSize: 10 * fontScale }}>Date</Text>
-              <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#444444') }}>{invoiceDate}</Text>
+          <View
+            style={{
+              backgroundColor: "#ffffff",
+              borderWidth: 1,
+              borderColor: monoLine(mode, accentColor),
+              paddingVertical: 10,
+              paddingHorizontal: 14,
+              minWidth: 160,
+              justifyContent: "center",
+            }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                marginBottom: 4,
+              }}
+            >
+              <Text
+                style={{
+                  color: monoText(mode, "#999999"),
+                  fontSize: 10 * fontScale,
+                }}
+              >
+                Date
+              </Text>
+              <Text
+                style={{
+                  fontSize: 10 * fontScale,
+                  color: monoText(mode, "#444444"),
+                }}
+              >
+                {invoiceDate}
+              </Text>
             </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <Text style={{ color: monoText(mode, '#999999'), fontSize: 10 * fontScale }}>Ref #</Text>
-              <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#444444') }}>{invoiceNumber}</Text>
+            <View
+              style={{ flexDirection: "row", justifyContent: "space-between" }}
+            >
+              <Text
+                style={{
+                  color: monoText(mode, "#999999"),
+                  fontSize: 10 * fontScale,
+                }}
+              >
+                Ref #
+              </Text>
+              <Text
+                style={{
+                  fontSize: 10 * fontScale,
+                  color: monoText(mode, "#444444"),
+                }}
+              >
+                {invoiceNumber}
+              </Text>
             </View>
             {Boolean(showDueDate) && !!dueDate && (
-               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
-                 <Text style={{ color: monoText(mode, '#999999'), fontSize: 10 * fontScale }}>Due</Text>
-                 <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#444444') }}>{formatDateOnly(dueDate)}</Text>
-               </View>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  marginTop: 4,
+                }}
+              >
+                <Text
+                  style={{
+                    color: monoText(mode, "#999999"),
+                    fontSize: 10 * fontScale,
+                  }}
+                >
+                  Due
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 10 * fontScale,
+                    color: monoText(mode, "#444444"),
+                  }}
+                >
+                  {formatDateOnly(dueDate)}
+                </Text>
+              </View>
             )}
           </View>
         </View>
 
         {/* Table representation */}
         <View style={{ marginBottom: 15 }}>
-          <View style={{ flexDirection: 'row', borderBottomWidth: 1.5, borderBottomColor: monoLine(mode, '#222222'), paddingBottom: 6 }}>
-            <Text style={{ width: 44, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: monoText(mode, '#666666'), letterSpacing: 1, textTransform: 'uppercase', textAlign: 'center' }}>SN</Text>
-            <Text style={{ flex: 2.2, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: monoText(mode, '#666666'), letterSpacing: 1, textTransform: 'uppercase' }}>Description</Text>
-            <Text style={{ width: 50, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: monoText(mode, '#666666'), letterSpacing: 1, textTransform: 'uppercase', textAlign: 'right' }}>Qty</Text>
-            <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: monoText(mode, '#666666'), letterSpacing: 1, textTransform: 'uppercase', textAlign: 'right' }}>Price</Text>
-            <Text style={{ width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: 'bold', color: monoText(mode, '#666666'), letterSpacing: 1, textTransform: 'uppercase', textAlign: 'right' }}>Amount</Text>
+          <View
+            style={{
+              flexDirection: "row",
+              borderBottomWidth: 1.5,
+              borderBottomColor: monoLine(mode, "#222222"),
+              paddingBottom: 6,
+            }}
+          >
+            <Text
+              style={{
+                width: 44,
+                paddingHorizontal: 4,
+                fontSize: 9 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#666666"),
+                letterSpacing: 1,
+                textTransform: "uppercase",
+                textAlign: "center",
+              }}
+            >
+              SN
+            </Text>
+            <Text
+              style={{
+                flex: 2.2,
+                paddingHorizontal: 4,
+                fontSize: 9 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#666666"),
+                letterSpacing: 1,
+                textTransform: "uppercase",
+              }}
+            >
+              Description
+            </Text>
+            <Text
+              style={{
+                width: 50,
+                paddingHorizontal: 4,
+                fontSize: 9 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#666666"),
+                letterSpacing: 1,
+                textTransform: "uppercase",
+                textAlign: "right",
+              }}
+            >
+              Qty
+            </Text>
+            <Text
+              style={{
+                width: 80,
+                paddingHorizontal: 4,
+                fontSize: 9 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#666666"),
+                letterSpacing: 1,
+                textTransform: "uppercase",
+                textAlign: "right",
+              }}
+            >
+              Price
+            </Text>
+            <Text
+              style={{
+                width: 80,
+                paddingHorizontal: 4,
+                fontSize: 9 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#666666"),
+                letterSpacing: 1,
+                textTransform: "uppercase",
+                textAlign: "right",
+              }}
+            >
+              Amount
+            </Text>
           </View>
           {items.map(renderRow)}
         </View>
 
         {/* Totals Section */}
-        <View style={{ alignSelf: 'flex-end', width: 220, marginBottom: 25 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 }}>
-            <Text style={{ color: monoText(mode, '#999999'), fontSize: 10 * fontScale }}>Sub Total —</Text>
-            <Text style={{ color: monoText(mode, '#555555'), fontSize: 10 * fontScale }}>{currency} {subtotal.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+        <View style={{ alignSelf: "flex-end", width: 220, marginBottom: 25 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              paddingVertical: 3,
+            }}
+          >
+            <Text
+              style={{
+                color: monoText(mode, "#999999"),
+                fontSize: 10 * fontScale,
+              }}
+            >
+              Sub Total —
+            </Text>
+            <Text
+              style={{
+                color: monoText(mode, "#555555"),
+                fontSize: 10 * fontScale,
+              }}
+            >
+              {currency}{" "}
+              {subtotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+            </Text>
           </View>
           {tax > 0 && (
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 }}>
-              <Text style={{ color: monoText(mode, '#999999'), fontSize: 10 * fontScale }}>Tax —</Text>
-              <Text style={{ color: monoText(mode, '#555555'), fontSize: 10 * fontScale }}>{currency} {tax.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                paddingVertical: 3,
+              }}
+            >
+              <Text
+                style={{
+                  color: monoText(mode, "#999999"),
+                  fontSize: 10 * fontScale,
+                }}
+              >
+                Tax —
+              </Text>
+              <Text
+                style={{
+                  color: monoText(mode, "#555555"),
+                  fontSize: 10 * fontScale,
+                }}
+              >
+                {currency}{" "}
+                {tax.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+              </Text>
             </View>
           )}
           {discount > 0 && (
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 }}>
-              <Text style={{ color: monoText(mode, '#999999'), fontSize: 10 * fontScale }}>{discountLabel} —</Text>
-              <Text style={{ color: monoText(mode, '#555555'), fontSize: 10 * fontScale }}>-{currency} {discount.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                paddingVertical: 3,
+              }}
+            >
+              <Text
+                style={{
+                  color: monoText(mode, "#999999"),
+                  fontSize: 10 * fontScale,
+                }}
+              >
+                {discountLabel} —
+              </Text>
+              <Text
+                style={{
+                  color: monoText(mode, "#555555"),
+                  fontSize: 10 * fontScale,
+                }}
+              >
+                -{currency}{" "}
+                {discount.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+              </Text>
             </View>
           )}
           {dataAny.roundingDifference ? (
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 }}>
-              <Text style={{ color: monoText(mode, '#999999'), fontSize: 10 * fontScale }}>Rounding{dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ''} —</Text>
-              <Text style={{ color: monoText(mode, '#555555'), fontSize: 10 * fontScale }}>{currency} {Number(dataAny.roundingDifference).toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                paddingVertical: 3,
+              }}
+            >
+              <Text
+                style={{
+                  color: monoText(mode, "#999999"),
+                  fontSize: 10 * fontScale,
+                }}
+              >
+                Rounding
+                {dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ""} —
+              </Text>
+              <Text
+                style={{
+                  color: monoText(mode, "#555555"),
+                  fontSize: 10 * fontScale,
+                }}
+              >
+                {currency}{" "}
+                {Number(dataAny.roundingDifference).toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                })}
+              </Text>
             </View>
           ) : null}
           {amountPaid > 0 && (
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 }}>
-              <Text style={{ color: monoText(mode, '#999999'), fontSize: 10 * fontScale }}>Amount Paid —</Text>
-              <Text style={{ color: monoText(mode, '#555555'), fontSize: 10 * fontScale }}>-{currency} {amountPaid.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                paddingVertical: 3,
+              }}
+            >
+              <Text
+                style={{
+                  color: monoText(mode, "#999999"),
+                  fontSize: 10 * fontScale,
+                }}
+              >
+                Amount Paid —
+              </Text>
+              <Text
+                style={{
+                  color: monoText(mode, "#555555"),
+                  fontSize: 10 * fontScale,
+                }}
+              >
+                -{currency}{" "}
+                {amountPaid.toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                })}
+              </Text>
             </View>
           )}
-          {(type === 'INVOICE' || type === 'ORDER' || (type as string) === 'SALES_ORDER') ? (
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 3, paddingTop: 6, borderTopWidth: 0.5, borderTopColor: monoLine(mode, '#dddddd') }}>
-              <Text style={{ color: monoText(mode, accentColor), fontWeight: 'bold', fontSize: 12 * fontScale }}>Due Balance —</Text>
-              <Text style={{ color: monoText(mode, accentColor), fontWeight: 'bold', fontSize: 12 * fontScale }}>{currency} {(totalAmount - amountPaid).toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+          {type === "INVOICE" ||
+          type === "ORDER" ||
+          (type as string) === "SALES_ORDER" ? (
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                marginTop: 3,
+                paddingTop: 6,
+                borderTopWidth: 0.5,
+                borderTopColor: monoLine(mode, "#dddddd"),
+              }}
+            >
+              <Text
+                style={{
+                  color: monoText(mode, accentColor),
+                  fontWeight: "bold",
+                  fontSize: 12 * fontScale,
+                }}
+              >
+                Due Balance —
+              </Text>
+              <Text
+                style={{
+                  color: monoText(mode, accentColor),
+                  fontWeight: "bold",
+                  fontSize: 12 * fontScale,
+                }}
+              >
+                {currency}{" "}
+                {(totalAmount - amountPaid).toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                })}
+              </Text>
             </View>
           ) : (
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 3, paddingTop: 6, borderTopWidth: 0.5, borderTopColor: monoLine(mode, '#dddddd') }}>
-              <Text style={{ color: monoText(mode, accentColor), fontWeight: 'bold', fontSize: 12 * fontScale }}>Total Grand —</Text>
-              <Text style={{ color: monoText(mode, accentColor), fontWeight: 'bold', fontSize: 12 * fontScale }}>{currency} {totalAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}</Text>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                marginTop: 3,
+                paddingTop: 6,
+                borderTopWidth: 0.5,
+                borderTopColor: monoLine(mode, "#dddddd"),
+              }}
+            >
+              <Text
+                style={{
+                  color: monoText(mode, accentColor),
+                  fontWeight: "bold",
+                  fontSize: 12 * fontScale,
+                }}
+              >
+                Total Grand —
+              </Text>
+              <Text
+                style={{
+                  color: monoText(mode, accentColor),
+                  fontWeight: "bold",
+                  fontSize: 12 * fontScale,
+                }}
+              >
+                {currency}{" "}
+                {totalAmount.toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                })}
+              </Text>
             </View>
           )}
         </View>
 
         {/* Bottom Row */}
-        <View wrap={false} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 10, paddingTop: 15, borderTopWidth: 0.5, borderTopColor: monoLine(mode, '#eeeeee'), flex: 1, gap: 20 }}>
+        <View
+          wrap={false}
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            marginTop: 10,
+            paddingTop: 15,
+            borderTopWidth: 0.5,
+            borderTopColor: monoLine(mode, "#eeeeee"),
+            flex: 1,
+            gap: 20,
+          }}
+        >
           <View style={{ flex: 1 }}>
             {!!dataAny.notes && (
               <View wrap={false} style={{ marginBottom: 15 }}>
-                <Text style={{ fontSize: 9 * fontScale, fontWeight: 'bold', color: monoText(mode, '#999999'), textTransform: 'uppercase', marginBottom: 4, letterSpacing: 1 }}>Notes</Text>
-                <Text style={{ fontSize: 10 * fontScale, color: monoText(mode, '#444444'), lineHeight: 1.4 }}>{String(dataAny.notes)}</Text>
+                <Text
+                  style={{
+                    fontSize: 9 * fontScale,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#999999"),
+                    textTransform: "uppercase",
+                    marginBottom: 4,
+                    letterSpacing: 1,
+                  }}
+                >
+                  Notes
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 10 * fontScale,
+                    color: monoText(mode, "#444444"),
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {String(dataAny.notes)}
+                </Text>
               </View>
             )}
 
             <View style={{ marginTop: 10 }}>
-              <Text style={{ fontStyle: 'italic', fontSize: 15 * fontScale, color: monoText(mode, '#555555'), marginBottom: 4, fontFamily: templateSettings.fontFamily }}>{companyName}</Text>
-              <Text style={{ fontWeight: 'bold', fontSize: 10 * fontScale, color: monoText(mode, '#111111') }}>{companyName}</Text>
-              <Text style={{ fontSize: 9 * fontScale, color: monoText(mode, accentColor), letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>Authorized Signatory</Text>
+              <Text
+                style={{
+                  fontStyle: "italic",
+                  fontSize: 15 * fontScale,
+                  color: monoText(mode, "#555555"),
+                  marginBottom: 4,
+                  fontFamily: templateSettings.fontFamily,
+                }}
+              >
+                {companyName}
+              </Text>
+              <Text
+                style={{
+                  fontWeight: "bold",
+                  fontSize: 10 * fontScale,
+                  color: monoText(mode, "#111111"),
+                }}
+              >
+                {companyName}
+              </Text>
+              <Text
+                style={{
+                  fontSize: 9 * fontScale,
+                  color: monoText(mode, accentColor),
+                  letterSpacing: 1,
+                  textTransform: "uppercase",
+                  marginTop: 2,
+                }}
+              >
+                Authorized Signatory
+              </Text>
             </View>
           </View>
 
-           <View style={{ flex: 1, alignItems: 'flex-end', textAlign: 'right' }}>
-              {templateSettings.showPaymentTerms && config?.transactionSettings?.defaultPaymentTermsDays !== undefined && (
+          <View style={{ flex: 1, alignItems: "flex-end", textAlign: "right" }}>
+            {templateSettings.showPaymentTerms &&
+              config?.transactionSettings?.defaultPaymentTermsDays !==
+                undefined && (
                 <View wrap={false} style={{ marginBottom: 10 }}>
-                  <Text style={{ fontSize: 9 * fontScale, fontWeight: 'bold', color: monoText(mode, '#999999'), letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>Payment Method / Terms</Text>
-                  <Text style={{ fontSize: 9 * fontScale, color: monoText(mode, '#666666'), lineHeight: 1.6 }}>{getDefaultPaymentTermsLabel(config)}</Text>
+                  <Text
+                    style={{
+                      fontSize: 9 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#999999"),
+                      letterSpacing: 1,
+                      textTransform: "uppercase",
+                      marginBottom: 3,
+                    }}
+                  >
+                    Payment Method / Terms
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 9 * fontScale,
+                      color: monoText(mode, "#666666"),
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    {getDefaultPaymentTermsLabel(config)}
+                  </Text>
                 </View>
               )}
-              
-              <View style={{ alignItems: 'flex-start', width: '100%' }}>
-               <Text style={{ fontSize: 8 * fontScale, color: monoText(mode, '#aaaaaa'), lineHeight: 1.4, textAlign: 'left', marginTop: 4 }}>
-                   {resolveFooterText(config, getDefaultPaymentTermsLabel(config), templateSettings.showPaymentTerms)}
-                 </Text>
-                 <Text style={{ fontSize: 8 * fontScale, color: monoText(mode, '#aaaaaa'), lineHeight: 1.4, textAlign: 'left', marginTop: 1 }}>
-                   {buildFooterContactLine(config)}
-                </Text>
-             </View>
+
+            <View style={{ alignItems: "flex-start", width: "100%" }}>
+              <Text
+                style={{
+                  fontSize: 8 * fontScale,
+                  color: monoText(mode, "#aaaaaa"),
+                  lineHeight: 1.4,
+                  textAlign: "left",
+                  marginTop: 4,
+                }}
+              >
+                {resolveFooterText(
+                  config,
+                  getDefaultPaymentTermsLabel(config),
+                  templateSettings.showPaymentTerms,
+                )}
+              </Text>
+              <Text
+                style={{
+                  fontSize: 8 * fontScale,
+                  color: monoText(mode, "#aaaaaa"),
+                  lineHeight: 1.4,
+                  textAlign: "left",
+                  marginTop: 1,
+                }}
+              >
+                {buildFooterContactLine(config)}
+              </Text>
+            </View>
           </View>
         </View>
       </Page>
@@ -1543,52 +4053,110 @@ const ProfessionalInvoiceTemplate = ({
   );
 };
 
-export const PrimeDocument = ({ type, data, configOverride = null, customers = [], channel = 'erp', colorMode = 'brand' }: DocProps & { customers?: any[] }) => {
-  const mode: PrimeColorMode = colorMode ?? 'brand';
+export const PrimeDocument = ({
+  type,
+  data,
+  configOverride = null,
+  customers = [],
+  channel = "erp",
+  colorMode = "brand",
+}: DocProps & { customers?: any[] }) => {
+  const mode: PrimeColorMode = colorMode ?? "brand";
   // Brand vs black-and-white print style set. Preview/download use brand;
   // the Print action re-renders with colorMode 'mono' (text black, fills
   // grayscale so backgrounds stay visible, rules black — logo is converted
   // to grayscale upstream, QR images are never recolored).
-  const s = mode === 'mono' ? docStylesMono : docStyles;
-  const isFinancial = type === 'INVOICE' || type === 'PO' || type === 'QUOTATION' || type === 'ORDER' || (type as string) === 'SALES_ORDER' || type === 'SUBSCRIPTION';
+  const s = mode === "mono" ? docStylesMono : docStyles;
+  const isFinancial =
+    type === "INVOICE" ||
+    type === "PO" ||
+    type === "QUOTATION" ||
+    type === "ORDER" ||
+    (type as string) === "SALES_ORDER" ||
+    type === "SUBSCRIPTION";
   const dataAny = data as Record<string, unknown>;
   const pod = dataAny.proofOfDelivery as Record<string, unknown> | undefined;
   const config = configOverride || getStoredCompanyConfig();
   const templateSettings = resolvePrimeTemplateSettings(config);
 
-  if (isFinancial && templateSettings.engine === 'Clean') {
-    return <CleanInvoiceTemplate type={type} data={dataAny} config={config} templateSettings={templateSettings} channel={channel} mode={mode} />;
+  if (isFinancial && templateSettings.engine === "Clean") {
+    return (
+      <CleanInvoiceTemplate
+        type={type}
+        data={dataAny}
+        config={config}
+        templateSettings={templateSettings}
+        channel={channel}
+        mode={mode}
+      />
+    );
   }
 
-  if (isFinancial && templateSettings.engine === 'Professional') {
-    return <ProfessionalInvoiceTemplate type={type} data={dataAny} config={config} templateSettings={templateSettings} channel={channel} mode={mode} />;
+  if (isFinancial && templateSettings.engine === "Professional") {
+    return (
+      <ProfessionalInvoiceTemplate
+        type={type}
+        data={dataAny}
+        config={config}
+        templateSettings={templateSettings}
+        channel={channel}
+        mode={mode}
+      />
+    );
   }
 
-  if (isFinancial && templateSettings.engine === 'Modern') {
-    return <ModernInvoiceTemplate type={type} data={dataAny} config={config} templateSettings={templateSettings} channel={channel} mode={mode} />;
+  if (isFinancial && templateSettings.engine === "Modern") {
+    return (
+      <ModernInvoiceTemplate
+        type={type}
+        data={dataAny}
+        config={config}
+        templateSettings={templateSettings}
+        channel={channel}
+        mode={mode}
+      />
+    );
   }
 
   const fontScale = templateSettings.bodyFontSize / 12;
   const showDueDate = templateSettings.showDueDate;
   const showPaymentTerms = templateSettings.showPaymentTerms;
   const showAccountSummary = templateSettings.showAccountSummary;
-  const showConversionHistory = templateSettings.showConversionHistory !== false;
-  const paymentTermsLabel = String(dataAny?.paymentTerms || '').trim() || getDefaultPaymentTermsLabel(config);
-  const { companyName, companyAddress, formattedPhone, companyPhone, companyEmail } = normalizeCompanyIdentity(config);
+  const showConversionHistory =
+    templateSettings.showConversionHistory !== false;
+  const paymentTermsLabel =
+    String(dataAny?.paymentTerms || "").trim() ||
+    getDefaultPaymentTermsLabel(config);
+  const {
+    companyName,
+    companyAddress,
+    formattedPhone,
+    companyPhone,
+    companyEmail,
+  } = normalizeCompanyIdentity(config);
 
-  const companyContact = [formattedPhone, companyEmail].filter(Boolean).join(' | ');
+  const companyContact = [formattedPhone, companyEmail]
+    .filter(Boolean)
+    .join(" | ");
   // Receipts print the street line only (no city/country suffix); every other
   // document keeps the full companyAddress block.
   const receiptCompanyAddress = buildReceiptCompanyAddress(config);
-  const legalFooterLine1 = resolveFooterText(config, paymentTermsLabel, showPaymentTerms);
+  const legalFooterLine1 = resolveFooterText(
+    config,
+    paymentTermsLabel,
+    showPaymentTerms,
+  );
   const legalFooterLine2 = buildFooterContactLine(config);
-  const currency = config?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || 'K';
+  const currency =
+    config?.currencySymbol ||
+    currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol ||
+    "K";
   const logo = resolvePdfLogoSource(config, templateSettings.showCompanyLogo);
   const showInvoiceBalances = templateSettings.showOutstandingAndWalletBalances;
   const resolvedWalletBalance = Number(dataAny?.walletBalance || 0);
   const resolvedOutstandingBalance = Math.max(
     0,
-    Number(dataAny?.totalAmount || 0) - Number(dataAny?.amountPaid || 0)
+    Number(dataAny?.totalAmount || 0) - Number(dataAny?.amountPaid || 0),
   );
   const pageStyle = {
     fontFamily: templateSettings.fontFamily,
@@ -1597,7 +4165,7 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
   const brandTextStyle = {
     fontFamily: templateSettings.fontFamily,
     fontSize: templateSettings.companyNameFontSize,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   };
   const titleStyle = {
     fontSize: 27.75 * fontScale,
@@ -1607,106 +4175,141 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
   // geometry: the same company-name shrink-to-fit and the same 18pt title
   // scale, so the two documents read as a matched pair.
   const contractPreambleTitleFontSize = scaledFont(18);
-  const contractPreambleNameGutter = !!logo ? templateSettings.logoWidth + 12 : 0;
-  const contractPreambleNameAvailWidth = RECEIPT_CONTENT_WIDTH - (!!logo ? (templateSettings.logoWidth + 12) * 2 : 24);
+  const contractPreambleNameGutter = !!logo
+    ? templateSettings.logoWidth + 12
+    : 0;
+  const contractPreambleNameAvailWidth =
+    RECEIPT_CONTENT_WIDTH -
+    (!!logo ? (templateSettings.logoWidth + 12) * 2 : 24);
   const contractPreambleNameFontSize = Math.max(
     8.5,
-    Math.min(templateSettings.companyNameFontSize, contractPreambleNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6))
+    Math.min(
+      templateSettings.companyNameFontSize,
+      contractPreambleNameAvailWidth /
+        (Math.max(String(companyName).length, 1) * 0.6),
+    ),
   );
-  const renderBrandMark = (alignment: 'left' | 'right' = 'right') => (
-    !!logo
-      ? (
-        <Image
-          src={logo}
-          style={{
-            width: templateSettings.logoWidth,
-            marginBottom: alignment === 'right' ? 0 : 10,
-            // Statements and left-header documents pin the logo to the left margin
-            ...(alignment === 'left' ? { alignSelf: 'flex-start', marginLeft: 0 } : null),
-          }}
-        />
-      )
-      : (
-        <Text
-          style={[
-            brandTextStyle,
-            alignment === 'left' ? { marginBottom: 5 } : null,
-          ]}
-        >
-          {companyName}
-        </Text>
-      )
-  );
+  const renderBrandMark = (alignment: "left" | "right" = "right") =>
+    !!logo ? (
+      <Image
+        src={logo}
+        style={{
+          width: templateSettings.logoWidth,
+          marginBottom: alignment === "right" ? 0 : 10,
+          // Statements and left-header documents pin the logo to the left margin
+          ...(alignment === "left"
+            ? { alignSelf: "flex-start", marginLeft: 0 }
+            : null),
+        }}
+      />
+    ) : (
+      <Text
+        style={[
+          brandTextStyle,
+          alignment === "left" ? { marginBottom: 5 } : null,
+        ]}
+      >
+        {companyName}
+      </Text>
+    );
 
-  const isRightAligned = ['INVOICE', 'QUOTATION', 'ORDER', 'SALES_ORDER', 'PO', 'DELIVERY_NOTE', 'EXAMINATION_INVOICE', 'SALES_EXCHANGE', 'SUBSCRIPTION'].includes(type);
-  const recipientSectionEnabledTypes = ['INVOICE', 'PO', 'WORK_ORDER', 'DELIVERY_NOTE', 'QUOTATION', 'EXAMINATION_INVOICE', 'ORDER', 'SALES_ORDER', 'SUBSCRIPTION'];
+  const isRightAligned = [
+    "INVOICE",
+    "QUOTATION",
+    "ORDER",
+    "SALES_ORDER",
+    "PO",
+    "DELIVERY_NOTE",
+    "EXAMINATION_INVOICE",
+    "SALES_EXCHANGE",
+    "SUBSCRIPTION",
+  ].includes(type);
+  const recipientSectionEnabledTypes = [
+    "INVOICE",
+    "PO",
+    "WORK_ORDER",
+    "DELIVERY_NOTE",
+    "QUOTATION",
+    "EXAMINATION_INVOICE",
+    "ORDER",
+    "SALES_ORDER",
+    "SUBSCRIPTION",
+  ];
   const resolvedRecipientName = String(
-    dataAny.clientName
-    || dataAny.customerName
-    || dataAny.customer_name
-    || dataAny.schoolName
-    || dataAny.school_name
-    || dataAny.recipientName
-    || dataAny.recipient_name
-    || dataAny.vendorName
-    || dataAny.vendor_name
-    || dataAny.supplierName
-    || dataAny.supplier_name
-    || pod?.receivedBy
-    || dataAny.receivedBy
-    || ''
+    dataAny.clientName ||
+      dataAny.customerName ||
+      dataAny.customer_name ||
+      dataAny.schoolName ||
+      dataAny.school_name ||
+      dataAny.recipientName ||
+      dataAny.recipient_name ||
+      dataAny.vendorName ||
+      dataAny.vendor_name ||
+      dataAny.supplierName ||
+      dataAny.supplier_name ||
+      pod?.receivedBy ||
+      dataAny.receivedBy ||
+      "",
   ).trim();
   const resolvedRecipientAddress = String(
-    dataAny.address
-    || dataAny.customerAddress
-    || dataAny.customer_address
-    || dataAny.billingAddress
-    || dataAny.billing_address
-    || dataAny.shippingAddress
-    || dataAny.shipping_address
-    || dataAny.schoolAddress
-    || dataAny.school_address
-    || dataAny.vendorAddress
-    || dataAny.vendor_address
-    || dataAny.supplierAddress
-    || dataAny.supplier_address
-    || pod?.address
-    || pod?.deliveryLocation
-    || ''
+    dataAny.address ||
+      dataAny.customerAddress ||
+      dataAny.customer_address ||
+      dataAny.billingAddress ||
+      dataAny.billing_address ||
+      dataAny.shippingAddress ||
+      dataAny.shipping_address ||
+      dataAny.schoolAddress ||
+      dataAny.school_address ||
+      dataAny.vendorAddress ||
+      dataAny.vendor_address ||
+      dataAny.supplierAddress ||
+      dataAny.supplier_address ||
+      pod?.address ||
+      pod?.deliveryLocation ||
+      "",
   ).trim();
-  const resolvedRecipientPhone = formatPhone(String(
-    dataAny.phone
-    || dataAny.customerPhone
-    || dataAny.customer_phone
-    || dataAny.schoolPhone
-    || dataAny.school_phone
-    || dataAny.vendorPhone
-    || dataAny.vendor_phone
-    || dataAny.supplierPhone
-    || dataAny.supplier_phone
-    || dataAny.recipientPhone
-    || dataAny.recipient_phone
-    || pod?.receiverPhone
-    || pod?.recipientPhone
-    || pod?.phone
-    || ''
-  ).trim());
-  const shouldRenderRecipientSection = Boolean(
-    recipientSectionEnabledTypes.includes(type) || resolvedRecipientName || resolvedRecipientAddress || resolvedRecipientPhone
+  const resolvedRecipientPhone = formatPhone(
+    String(
+      dataAny.phone ||
+        dataAny.customerPhone ||
+        dataAny.customer_phone ||
+        dataAny.schoolPhone ||
+        dataAny.school_phone ||
+        dataAny.vendorPhone ||
+        dataAny.vendor_phone ||
+        dataAny.supplierPhone ||
+        dataAny.supplier_phone ||
+        dataAny.recipientPhone ||
+        dataAny.recipient_phone ||
+        pod?.receiverPhone ||
+        pod?.recipientPhone ||
+        pod?.phone ||
+        "",
+    ).trim(),
   );
-  const recipientLabel = type === 'PO'
-    ? 'To Vendor'
-    : type === 'EXAMINATION_INVOICE'
-      ? 'Customer'
-      : 'Bill To:';
+  const shouldRenderRecipientSection = Boolean(
+    recipientSectionEnabledTypes.includes(type) ||
+    resolvedRecipientName ||
+    resolvedRecipientAddress ||
+    resolvedRecipientPhone,
+  );
+  const recipientLabel =
+    type === "PO"
+      ? "To Vendor"
+      : type === "EXAMINATION_INVOICE"
+        ? "Customer"
+        : "Bill To:";
   const resolveConversionSourceNumber = (doc: any) => {
-    if (!doc?.conversionDetails) return 'N/A';
-    if (doc.conversionDetails.sourceNumber === 'N/A' && 'invoiceNumber' in doc) return doc.invoiceNumber;
-    if (doc.conversionDetails.sourceNumber === 'N/A' && 'orderNumber' in doc) return doc.orderNumber;
-    return doc.conversionDetails.sourceNumber || 'N/A';
+    if (!doc?.conversionDetails) return "N/A";
+    if (doc.conversionDetails.sourceNumber === "N/A" && "invoiceNumber" in doc)
+      return doc.invoiceNumber;
+    if (doc.conversionDetails.sourceNumber === "N/A" && "orderNumber" in doc)
+      return doc.orderNumber;
+    return doc.conversionDetails.sourceNumber || "N/A";
   };
 
-  if (type === 'SALES_EXCHANGE') {
+  if (type === "SALES_EXCHANGE") {
     const d = data as Record<string, unknown>;
     const items = (d.items || []) as Array<Record<string, unknown>>;
     const cd = d.conversionDetails as Record<string, unknown> | undefined;
@@ -1714,18 +4317,29 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     const isCancelled = isCancelledStatus(d.status, d);
 
     return (
-      <Document title={`Sales Exchange - ${String(d.exchangeNumber)}`} author={companyName}>
+      <Document
+        title={`Sales Exchange - ${String(d.exchangeNumber)}`}
+        author={companyName}
+      >
         <Page size="A4" style={[s.page, pageStyle]}>
-          {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+          {channel === "portal" && <PortalCopyWatermark colorMode={mode} />}
           {isCancelled && <CancelledWatermark colorMode={mode} />}
-          <PaginationFurniture colorMode={mode}
-            identity={paginationIdentity(type, d, resolvedRecipientName || '')}
+          <PaginationFurniture
+            colorMode={mode}
+            identity={paginationIdentity(type, d, resolvedRecipientName || "")}
             companyName={companyName}
           />
           {showConversionHistory && Boolean(d.isConverted) && !!cd && (
-            <View style={[s.conversionBox, { position: 'absolute', top: 40, right: 40, zIndex: 10 }]}>
+            <View
+              style={[
+                s.conversionBox,
+                { position: "absolute", top: 40, right: 40, zIndex: 10 },
+              ]}
+            >
               <Text style={s.conversionTitle}>Conversion History</Text>
-              <Text>Converted from {String(cd.sourceType)} {String(cd.sourceNumber)}</Text>
+              <Text>
+                Converted from {String(cd.sourceType)} {String(cd.sourceNumber)}
+              </Text>
               <Text>on {String(cd.date)}</Text>
             </View>
           )}
@@ -1739,20 +4353,56 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
                 <Text>Ref Invoice : {String(d.invoiceNumber)}</Text>
               </View>
             </View>
-            <View style={s.headerRight}>
-              {renderBrandMark('right')}
-            </View>
+            <View style={s.headerRight}>{renderBrandMark("right")}</View>
           </View>
 
           <View style={[s.billingSection, { marginTop: 10 }]}>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Customer</Text>
-              <Text style={{ fontSize: 12, fontWeight: 'bold' }}>{String(d.customerName)}</Text>
-              <Text style={{ fontSize: 10, color: monoText(mode, '#475569'), marginTop: 4 }}>{resolvedRecipientAddress || 'N/A'}</Text>
-              <Text style={{ fontSize: 10, color: monoText(mode, '#475569'), marginTop: 2 }}>{resolvedRecipientPhone || 'N/A'}</Text>
+              <Text
+                style={{
+                  fontWeight: "bold",
+                  marginBottom: 5,
+                  fontSize: 10,
+                  textTransform: "uppercase",
+                  color: monoText(mode, "#64748b"),
+                }}
+              >
+                Customer
+              </Text>
+              <Text style={{ fontSize: 12, fontWeight: "bold" }}>
+                {String(d.customerName)}
+              </Text>
+              <Text
+                style={{
+                  fontSize: 10,
+                  color: monoText(mode, "#475569"),
+                  marginTop: 4,
+                }}
+              >
+                {resolvedRecipientAddress || "N/A"}
+              </Text>
+              <Text
+                style={{
+                  fontSize: 10,
+                  color: monoText(mode, "#475569"),
+                  marginTop: 2,
+                }}
+              >
+                {resolvedRecipientPhone || "N/A"}
+              </Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Reason for Exchange</Text>
+              <Text
+                style={{
+                  fontWeight: "bold",
+                  marginBottom: 5,
+                  fontSize: 10,
+                  textTransform: "uppercase",
+                  color: monoText(mode, "#64748b"),
+                }}
+              >
+                Reason for Exchange
+              </Text>
               <Text style={{ fontSize: 11 }}>{String(d.reason)}</Text>
             </View>
           </View>
@@ -1767,10 +4417,18 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
             {items.map((item: Record<string, unknown>, i: number) => (
               <View key={i} style={s.row}>
                 <Text style={[s.colSn, { fontSize: 10 }]}>{i + 1}</Text>
-                <Text style={[s.colDesc, { fontSize: 10 }]}>{String(item.desc || 'N/A')}</Text>
-                <Text style={[s.colQty, { width: 60, fontSize: 10 }]}>{Number(item.qtyReturned)}</Text>
-                <Text style={[s.colQty, { width: 60, fontSize: 10 }]}>{Number(item.qtyReplaced)}</Text>
-                <Text style={[s.colTotal, { fontSize: 10, fontWeight: 'bold' }]}>
+                <Text style={[s.colDesc, { fontSize: 10 }]}>
+                  {String(item.desc || "N/A")}
+                </Text>
+                <Text style={[s.colQty, { width: 60, fontSize: 10 }]}>
+                  {Number(item.qtyReturned)}
+                </Text>
+                <Text style={[s.colQty, { width: 60, fontSize: 10 }]}>
+                  {Number(item.qtyReplaced)}
+                </Text>
+                <Text
+                  style={[s.colTotal, { fontSize: 10, fontWeight: "bold" }]}
+                >
                   {currency} {formatAmount(Number(item.priceDiff))}
                 </Text>
               </View>
@@ -1778,30 +4436,78 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
           </View>
 
           {!!d.remarks && (
-            <View style={{ marginTop: 20, padding: 12, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 6, borderLeftWidth: 3, borderLeftColor: monoLine(mode, '#3b82f6') }}>
-              <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 5, textTransform: 'uppercase', color: monoText(mode, '#475569') }}>Remarks / Special Instructions:</Text>
-              <Text style={{ fontSize: 10, color: monoText(mode, '#1e293b'), lineHeight: 1.5 }}>{String(d.remarks)}</Text>
+            <View
+              style={{
+                marginTop: 20,
+                padding: 12,
+                backgroundColor: monoFill(mode, "#f8fafc"),
+                borderRadius: 6,
+                borderLeftWidth: 3,
+                borderLeftColor: monoLine(mode, "#3b82f6"),
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 10,
+                  fontWeight: "bold",
+                  marginBottom: 5,
+                  textTransform: "uppercase",
+                  color: monoText(mode, "#475569"),
+                }}
+              >
+                Remarks / Special Instructions:
+              </Text>
+              <Text
+                style={{
+                  fontSize: 10,
+                  color: monoText(mode, "#1e293b"),
+                  lineHeight: 1.5,
+                }}
+              >
+                {String(d.remarks)}
+              </Text>
             </View>
           )}
 
           <View style={{ marginTop: 60 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <View style={{ width: 180, alignItems: 'center' }}>
-                <View style={{ width: '100%', borderTopWidth: 1, borderColor: '#000', marginBottom: 5 }} />
+            <View
+              style={{ flexDirection: "row", justifyContent: "space-between" }}
+            >
+              <View style={{ width: 180, alignItems: "center" }}>
+                <View
+                  style={{
+                    width: "100%",
+                    borderTopWidth: 1,
+                    borderColor: "#000",
+                    marginBottom: 5,
+                  }}
+                />
                 <Text style={{ fontSize: 10 }}>Customer Signature</Text>
-                <Text style={{ fontSize: 8, color: monoText(mode, '#666') }}>I accept the replacement items</Text>
+                <Text style={{ fontSize: 8, color: monoText(mode, "#666") }}>
+                  I accept the replacement items
+                </Text>
               </View>
-              <View style={{ width: 180, alignItems: 'center' }}>
-                <View style={{ width: '100%', borderTopWidth: 1, borderColor: '#000', marginBottom: 5 }} />
+              <View style={{ width: 180, alignItems: "center" }}>
+                <View
+                  style={{
+                    width: "100%",
+                    borderTopWidth: 1,
+                    borderColor: "#000",
+                    marginBottom: 5,
+                  }}
+                />
                 <Text style={{ fontSize: 10 }}>Authorized Officer</Text>
-                <Text style={{ fontSize: 8, color: monoText(mode, '#666') }}>Exchange approved & processed</Text>
+                <Text style={{ fontSize: 8, color: monoText(mode, "#666") }}>
+                  Exchange approved & processed
+                </Text>
               </View>
             </View>
           </View>
 
           <View wrap={false} style={{ marginTop: 10 }}>
             <VerificationLabel fontScale={fontScale} />
-            <SecurityFooter colorMode={mode}
+            <SecurityFooter
+              colorMode={mode}
               data={d}
               companyName={companyName}
               legalFooterLine1="This is a computer-generated Sales Exchange Note. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222."
@@ -1815,12 +4521,13 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     );
   }
 
-  if (type === 'RECEIPT') {
+  if (type === "RECEIPT") {
     const rc = data as ReceiptDoc;
     // Boolean-only: a numeric 0 here would render as an orphan "0" text
     // child outside <Text> (react-pdf warns and drops it).
-    const isPartial = rc.paymentStatus === 'PARTIALLY PAID' || Number(rc.balanceDue || 0) > 0;
-    const isOverpaid = rc.paymentStatus === 'OVERPAID';
+    const isPartial =
+      rc.paymentStatus === "PARTIALLY PAID" || Number(rc.balanceDue || 0) > 0;
+    const isOverpaid = rc.paymentStatus === "OVERPAID";
     const overpaymentAmount = rc.overpaymentAmount || rc.walletDeposit || 0;
 
     const isCancelled = isCancelledStatus(rc.paymentStatus || rc.status, rc);
@@ -1828,12 +4535,14 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     // received (PAYMENT RECEIVED), never the invoice settlement state.
     // The invoice balance remains separately visible in the
     // Outstanding Balance row below.
-    const receiptBadge = resolveReceiptPaymentBadge(rc as unknown as {
-      paymentStatus?: string;
-      status?: string;
-      isCancelled?: boolean;
-      cancelled?: boolean;
-    });
+    const receiptBadge = resolveReceiptPaymentBadge(
+      rc as unknown as {
+        paymentStatus?: string;
+        status?: string;
+        isCancelled?: boolean;
+        cancelled?: boolean;
+      },
+    );
     // Allocation reference for the metadata row. The row is single-purpose
     // and never lists identifiers: one allocation shows its reference,
     // several collapse to "Multiple … (N)", none shows "—". The Payment
@@ -1841,18 +4550,19 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     // (orders first) matches the details table.
     const appliedOrderRefs = rc.appliedOrders || [];
     const appliedInvoiceRefs = rc.appliedInvoices || [];
-    const allocationRef = appliedOrderRefs.length === 1
-      ? String(appliedOrderRefs[0])
-      : appliedOrderRefs.length > 1
-        ? `Multiple orders (${appliedOrderRefs.length})`
-        : appliedInvoiceRefs.length === 1
-          ? String(appliedInvoiceRefs[0])
-          : appliedInvoiceRefs.length > 1
-            ? `Multiple invoices (${appliedInvoiceRefs.length})`
-            : '—';
+    const allocationRef =
+      appliedOrderRefs.length === 1
+        ? String(appliedOrderRefs[0])
+        : appliedOrderRefs.length > 1
+          ? `Multiple orders (${appliedOrderRefs.length})`
+          : appliedInvoiceRefs.length === 1
+            ? String(appliedInvoiceRefs[0])
+            : appliedInvoiceRefs.length > 1
+              ? `Multiple invoices (${appliedInvoiceRefs.length})`
+              : "—";
     // Payment account display name, resolved from the stored accountId by
     // the doc builder. '' when the payment carries no account.
-    const receiptAccount = String(rc.account || '').trim();
+    const receiptAccount = String(rc.account || "").trim();
     // Payment Details table figures. The two money columns answer two
     // different questions and must never print the same number:
     //   Line Total → the invoice total being settled
@@ -1863,12 +4573,14 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     const receiptAmountReceived = Number(rc.amountReceived ?? 0) || 0;
     const receiptAmountApplied = Number(rc.amountApplied ?? 0) || 0;
     const receiptBalanceDue = Math.max(0, Number(rc.balanceDue ?? 0) || 0);
-    const receiptInvoiceTotal = Number(rc.invoiceTotal ?? 0) > 0
-      ? Number(rc.invoiceTotal)
-      : receiptAmountApplied + receiptBalanceDue;
+    const receiptInvoiceTotal =
+      Number(rc.invoiceTotal ?? 0) > 0
+        ? Number(rc.invoiceTotal)
+        : receiptAmountApplied + receiptBalanceDue;
     // No allocation recorded (unallocated/wallet payment): the whole tender
     // is what was paid against the invoice(s).
-    const receiptPaid = receiptAmountApplied > 0 ? receiptAmountApplied : receiptAmountReceived;
+    const receiptPaid =
+      receiptAmountApplied > 0 ? receiptAmountApplied : receiptAmountReceived;
     // Single-row company name: capped by the CONFIGURED Company Name Font Size
     // plus a hard one-line clamp (maxLines + ellipsis are first-class layout
     // props) so the identity line never wraps, however long the registered
@@ -1881,11 +4593,15 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     // (receiptTitleFontSize, 20 * fontScale). Those are two independent
     // settings; tying the identity line to the title size silently overrode
     // the company's configured header size.
-    const receiptNameAvailWidth = 515 - (!!logo ? (templateSettings.logoWidth + 12) * 2 : 24);
+    const receiptNameAvailWidth =
+      515 - (!!logo ? (templateSettings.logoWidth + 12) * 2 : 24);
     const receiptTitleFontSize = 20 * fontScale;
     const receiptNameFontSize = Math.max(
       8.5,
-      Math.min(templateSettings.companyNameFontSize, receiptNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6))
+      Math.min(
+        templateSettings.companyNameFontSize,
+        receiptNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6),
+      ),
     );
     const receiptNameGutter = !!logo ? templateSettings.logoWidth + 12 : 0;
     // ONE type scale for the whole receipt body. The acknowledgment line set
@@ -1917,22 +4633,30 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     //      breaking the header's rhythm.
     // The estimate only ever SHRINKS the name, so a short name prints at the
     // body size and looks identical to every other metadata row.
-    const customerNameLabel = 'Customer Name: ';
-    const customerNameText = String(rc.customerName || 'N/A');
+    const customerNameLabel = "Customer Name: ";
+    const customerNameText = String(rc.customerName || "N/A");
     const RECEIPT_MIN_META_FONT_SIZE = 7;
     // Indent of the right-hand metadata column. Declared once because it also
     // decides how much width the flexbox leaves the LEFT column (the padding
     // is charged against the shared free space) — the reason the customer name
     // gets its own full-width row instead of a grid slot.
-    const receiptMetaRightIndent = Math.min(RECEIPT_META_INDENT * fontScale, 128);
+    const receiptMetaRightIndent = Math.min(
+      RECEIPT_META_INDENT * fontScale,
+      128,
+    );
     const customerNameAvailWidth = Math.max(
       24,
-      RECEIPT_CONTENT_WIDTH - measureTextWidth(customerNameLabel, receiptBodyFontSize, true)
+      RECEIPT_CONTENT_WIDTH -
+        measureTextWidth(customerNameLabel, receiptBodyFontSize, true),
     );
-    const receiptCustomerNameFontSize = fitFontSize(customerNameText, customerNameAvailWidth, {
-      maxSize: receiptBodyFontSize,
-      minSize: RECEIPT_MIN_META_FONT_SIZE,
-    });
+    const receiptCustomerNameFontSize = fitFontSize(
+      customerNameText,
+      customerNameAvailWidth,
+      {
+        maxSize: receiptBodyFontSize,
+        minSize: RECEIPT_MIN_META_FONT_SIZE,
+      },
+    );
     // Fallback note for a payload that reaches the renderer with no stored
     // narrative. Composed by the same helper the doc builder uses, so the two
     // paths cannot drift apart in wording or in the optional balance sentence.
@@ -1945,8 +4669,14 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     // Compact inline metadata row ("Label: value") used by the formal
     // two-column receipt header. Values only — no new data sources.
     const receiptMetaRow = (label: string, value: string, valueStyle?: any) => (
-      <Text style={{ fontSize: receiptBodyFontSize, color: monoText(mode, '#111111'), marginBottom: 4 }}>
-        <Text style={{ fontWeight: 'bold' }}>{label}: </Text>
+      <Text
+        style={{
+          fontSize: receiptBodyFontSize,
+          color: monoText(mode, "#111111"),
+          marginBottom: 4,
+        }}
+      >
+        <Text style={{ fontWeight: "bold" }}>{label}: </Text>
         <Text style={valueStyle}>{value}</Text>
       </Text>
     );
@@ -1955,19 +4685,37 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     // so long it hits the minimum size — it degrades to an ellipsized single
     // line rather than breaking the header's four-row rhythm.
     const receiptCustomerNameRow = () => (
-      <Text style={{ fontSize: receiptBodyFontSize, color: monoText(mode, '#111111'), marginBottom: 4, maxLines: 1, textOverflow: 'ellipsis' }}>
-        <Text style={{ fontWeight: 'bold' }}>{customerNameLabel}</Text>
-        <Text style={{ fontSize: receiptCustomerNameFontSize }}>{customerNameText}</Text>
+      <Text
+        style={{
+          fontSize: receiptBodyFontSize,
+          color: monoText(mode, "#111111"),
+          marginBottom: 4,
+          maxLines: 1,
+          textOverflow: "ellipsis",
+        }}
+      >
+        <Text style={{ fontWeight: "bold" }}>{customerNameLabel}</Text>
+        <Text style={{ fontSize: receiptCustomerNameFontSize }}>
+          {customerNameText}
+        </Text>
       </Text>
     );
 
     return (
-      <Document title={`Payment Receipt - ${rc.receiptNumber}`} author={companyName}>
+      <Document
+        title={`Payment Receipt - ${rc.receiptNumber}`}
+        author={companyName}
+      >
         <Page size="A4" style={[s.page, pageStyle]}>
-          {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+          {channel === "portal" && <PortalCopyWatermark colorMode={mode} />}
           {isCancelled && <CancelledWatermark colorMode={mode} />}
-          <PaginationFurniture colorMode={mode}
-            identity={paginationIdentity(type, rc as unknown as Record<string, unknown>, resolvedRecipientName || '')}
+          <PaginationFurniture
+            colorMode={mode}
+            identity={paginationIdentity(
+              type,
+              rc as unknown as Record<string, unknown>,
+              resolvedRecipientName || "",
+            )}
             companyName={companyName}
           />
 
@@ -1978,29 +4726,122 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               stays page-centered and can never slide under the logo. The
               name is shrink-to-fit plus a hard one-line clamp — always a
               single row. Address/contact lines below it. */}
-          <View style={{ position: 'relative', alignItems: 'center', marginBottom: 6, paddingTop: 2 }}>
+          <View
+            style={{
+              position: "relative",
+              alignItems: "center",
+              marginBottom: 6,
+              paddingTop: 2,
+            }}
+          >
             {!!logo && (
-              <Image src={logo} style={{ position: 'absolute', left: 0, top: 0, width: templateSettings.logoWidth }} />
+              <Image
+                src={logo}
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  width: templateSettings.logoWidth,
+                }}
+              />
             )}
-            <View style={{ alignItems: 'center', width: '100%', paddingLeft: receiptNameGutter, paddingRight: receiptNameGutter }}>
-              <Text style={{ fontSize: receiptNameFontSize, fontWeight: 'bold', color: monoText(mode, '#000'), textAlign: 'center', maxLines: 1, textOverflow: 'ellipsis' }}>{companyName}</Text>
+            <View
+              style={{
+                alignItems: "center",
+                width: "100%",
+                paddingLeft: receiptNameGutter,
+                paddingRight: receiptNameGutter,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: receiptNameFontSize,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#000"),
+                  textAlign: "center",
+                  maxLines: 1,
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {companyName}
+              </Text>
               {!!receiptCompanyAddress && (
-                <Text style={{ fontSize: receiptBodyFontSize, color: monoText(mode, '#334155'), textAlign: 'center', marginTop: 2 }}>{receiptCompanyAddress}</Text>
+                <Text
+                  style={{
+                    fontSize: receiptBodyFontSize,
+                    color: monoText(mode, "#334155"),
+                    textAlign: "center",
+                    marginTop: 2,
+                  }}
+                >
+                  {receiptCompanyAddress}
+                </Text>
               )}
               {!!companyContact && (
-                <Text style={{ fontSize: receiptBodyFontSize, color: monoText(mode, '#334155'), textAlign: 'center', marginTop: 2 }}>{companyContact}</Text>
+                <Text
+                  style={{
+                    fontSize: receiptBodyFontSize,
+                    color: monoText(mode, "#334155"),
+                    textAlign: "center",
+                    marginTop: 2,
+                  }}
+                >
+                  {companyContact}
+                </Text>
               )}
             </View>
           </View>
 
-          <Text style={{ fontSize: receiptTitleFontSize, fontWeight: 'bold', color: monoText(mode, '#000'), textAlign: 'center', marginTop: 8, marginBottom: 8 }}>Payment Receipt</Text>
-          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 10 }} />
+          <Text
+            style={{
+              fontSize: receiptTitleFontSize,
+              fontWeight: "bold",
+              color: monoText(mode, "#000"),
+              textAlign: "center",
+              marginTop: 8,
+              marginBottom: 8,
+            }}
+          >
+            Payment Receipt
+          </Text>
+          <View
+            style={{
+              height: 1,
+              backgroundColor: monoLine(mode, "#9ca3af"),
+              marginBottom: 10,
+            }}
+          />
 
           {isOverpaid && (
-            <View style={{ backgroundColor: monoFill(mode, '#fef2f2'), padding: 10, borderRadius: 4, marginBottom: 15, borderLeftWidth: 4, borderLeftColor: monoLine(mode, '#ef4444') }}>
-              <Text style={{ color: monoText(mode, '#991b1b'), fontSize: 12, fontWeight: 'bold', lineHeight: 1.4 }}>OVERPAYMENT NOTICE</Text>
-              <Text style={{ color: monoText(mode, '#b91c1c'), fontSize: 12, lineHeight: 1.4 }}>
-                This payment exceeds the invoice total. The excess has been credited to your wallet.
+            <View
+              style={{
+                backgroundColor: monoFill(mode, "#fef2f2"),
+                padding: 10,
+                borderRadius: 4,
+                marginBottom: 15,
+                borderLeftWidth: 4,
+                borderLeftColor: monoLine(mode, "#ef4444"),
+              }}
+            >
+              <Text
+                style={{
+                  color: monoText(mode, "#991b1b"),
+                  fontSize: 12,
+                  fontWeight: "bold",
+                  lineHeight: 1.4,
+                }}
+              >
+                OVERPAYMENT NOTICE
+              </Text>
+              <Text
+                style={{
+                  color: monoText(mode, "#b91c1c"),
+                  fontSize: 12,
+                  lineHeight: 1.4,
+                }}
+              >
+                This payment exceeds the invoice total. The excess has been
+                credited to your wallet.
               </Text>
             </View>
           )}
@@ -2009,64 +4850,238 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               always print on ONE row (see the sizing note above). It sits
               directly under the title because it is who the receipt is for;
               the two-column grid below carries the payment facts. */}
-          <View style={{ marginBottom: 8 }}>
-            {receiptCustomerNameRow()}
-          </View>
+          <View style={{ marginBottom: 8 }}>{receiptCustomerNameRow()}</View>
 
           {/* Formal two-column metadata block: Receipt No / Reference /
               Currency at left; Date / Payment Method / Account / Status at
               right. The right column is indented two tab stops so the payment
               facts read as a distinct group. Account resolves from the stored
               payment accountId and is omitted when there is none. */}
-          <View style={{ flexDirection: 'row', gap: RECEIPT_META_GAP, marginBottom: 10 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              gap: RECEIPT_META_GAP,
+              marginBottom: 10,
+            }}
+          >
             <View style={{ flex: 1 }}>
-              {receiptMetaRow('Receipt No', rc.receiptNumber)}
-              {receiptMetaRow('Reference', allocationRef)}
-              {receiptMetaRow('Currency', resolveReceiptCurrencyLabel(currency))}
+              {receiptMetaRow("Receipt No", rc.receiptNumber)}
+              {receiptMetaRow("Reference", allocationRef)}
+              {receiptMetaRow(
+                "Currency",
+                resolveReceiptCurrencyLabel(currency),
+              )}
             </View>
             <View style={{ flex: 1, paddingLeft: receiptMetaRightIndent }}>
-              {receiptMetaRow('Date', rc.date)}
-              {receiptMetaRow('Payment Method', rc.paymentMethod)}
-              {!!receiptAccount && receiptMetaRow('Account', receiptAccount)}
-              {receiptMetaRow('Status', receiptBadge.label, { fontWeight: 'bold', color: monoText(mode, receiptBadge.color) })}
+              {receiptMetaRow("Date", rc.date)}
+              {receiptMetaRow("Payment Method", rc.paymentMethod)}
+              {!!receiptAccount && receiptMetaRow("Account", receiptAccount)}
+              {receiptMetaRow("Status", receiptBadge.label, {
+                fontWeight: "bold",
+                color: monoText(mode, receiptBadge.color),
+              })}
             </View>
           </View>
-          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 10 }} />
+          <View
+            style={{
+              height: 1,
+              backgroundColor: monoLine(mode, "#9ca3af"),
+              marginBottom: 10,
+            }}
+          />
 
-          <Text style={{ fontSize: receiptBodyFontSize, fontWeight: 'bold', color: monoText(mode, '#111111'), marginBottom: 6 }}>Payment Details Table</Text>
-          <View style={{ borderWidth: 0.5, borderColor: monoLine(mode, '#9ca3af'), marginBottom: 10 }}>
-            <View style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>
-              <Text style={{ flex: 3, fontSize: receiptBodyFontSize, fontWeight: 'bold', color: monoText(mode, '#111111'), padding: 5, borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>Description</Text>
-              <Text style={{ flex: 1, fontSize: receiptBodyFontSize, fontWeight: 'bold', color: monoText(mode, '#111111'), padding: 5, textAlign: 'right', borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>Line Total</Text>
-              <Text style={{ flex: 1, fontSize: receiptBodyFontSize, fontWeight: 'bold', color: monoText(mode, '#111111'), padding: 5, textAlign: 'right' }}>Paid</Text>
-            </View>
-            <View style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>
-              <Text style={{ flex: 3, fontSize: receiptBodyFontSize, color: monoText(mode, '#111111'), padding: 5, borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>
-                {(rc.appliedOrders || []).length > 0
-                  ? `Payment for Orders: ${(rc.appliedOrders || []).join(', ')}`
-                  : `Payment for Invoices: ${(rc.appliedInvoices || []).join(', ')}`}
+          <Text
+            style={{
+              fontSize: receiptBodyFontSize,
+              fontWeight: "bold",
+              color: monoText(mode, "#111111"),
+              marginBottom: 6,
+            }}
+          >
+            Payment Details Table
+          </Text>
+          <View
+            style={{
+              borderWidth: 0.5,
+              borderColor: monoLine(mode, "#9ca3af"),
+              marginBottom: 10,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                borderBottomWidth: 0.5,
+                borderColor: monoLine(mode, "#9ca3af"),
+              }}
+            >
+              <Text
+                style={{
+                  flex: 3,
+                  fontSize: receiptBodyFontSize,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#111111"),
+                  padding: 5,
+                  borderRightWidth: 0.5,
+                  borderColor: monoLine(mode, "#9ca3af"),
+                }}
+              >
+                Description
               </Text>
-              <Text style={{ flex: 1, fontSize: receiptBodyFontSize, color: monoText(mode, '#111111'), padding: 5, textAlign: 'right', borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>{currency} {formatAmount(receiptInvoiceTotal)}</Text>
-              <Text style={{ flex: 1, fontSize: receiptBodyFontSize, color: monoText(mode, '#111111'), padding: 5, textAlign: 'right' }}>{currency} {formatAmount(receiptPaid)}</Text>
+              <Text
+                style={{
+                  flex: 1,
+                  fontSize: receiptBodyFontSize,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#111111"),
+                  padding: 5,
+                  textAlign: "right",
+                  borderRightWidth: 0.5,
+                  borderColor: monoLine(mode, "#9ca3af"),
+                }}
+              >
+                Line Total
+              </Text>
+              <Text
+                style={{
+                  flex: 1,
+                  fontSize: receiptBodyFontSize,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#111111"),
+                  padding: 5,
+                  textAlign: "right",
+                }}
+              >
+                Paid
+              </Text>
             </View>
-            <View style={{ flexDirection: 'row', padding: 5 }}>
-              <Text style={{ flex: 4, fontSize: receiptBodyFontSize, fontWeight: 'bold', color: monoText(mode, '#111111'), textAlign: 'right' }}>Amount Received</Text>
-              <Text style={{ flex: 1, fontSize: receiptBodyFontSize, fontWeight: 'bold', color: monoText(mode, '#111111'), textAlign: 'right' }}>{currency} {formatAmount(rc.amountReceived)}</Text>
+            <View
+              style={{
+                flexDirection: "row",
+                borderBottomWidth: 0.5,
+                borderColor: monoLine(mode, "#9ca3af"),
+              }}
+            >
+              <Text
+                style={{
+                  flex: 3,
+                  fontSize: receiptBodyFontSize,
+                  color: monoText(mode, "#111111"),
+                  padding: 5,
+                  borderRightWidth: 0.5,
+                  borderColor: monoLine(mode, "#9ca3af"),
+                }}
+              >
+                {(rc.appliedOrders || []).length > 0
+                  ? `Payment for Orders: ${(rc.appliedOrders || []).join(", ")}`
+                  : `Payment for Invoices: ${(rc.appliedInvoices || []).join(", ")}`}
+              </Text>
+              <Text
+                style={{
+                  flex: 1,
+                  fontSize: receiptBodyFontSize,
+                  color: monoText(mode, "#111111"),
+                  padding: 5,
+                  textAlign: "right",
+                  borderRightWidth: 0.5,
+                  borderColor: monoLine(mode, "#9ca3af"),
+                }}
+              >
+                {currency} {formatAmount(receiptInvoiceTotal)}
+              </Text>
+              <Text
+                style={{
+                  flex: 1,
+                  fontSize: receiptBodyFontSize,
+                  color: monoText(mode, "#111111"),
+                  padding: 5,
+                  textAlign: "right",
+                }}
+              >
+                {currency} {formatAmount(receiptPaid)}
+              </Text>
+            </View>
+            <View style={{ flexDirection: "row", padding: 5 }}>
+              <Text
+                style={{
+                  flex: 4,
+                  fontSize: receiptBodyFontSize,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#111111"),
+                  textAlign: "right",
+                }}
+              >
+                Amount Received
+              </Text>
+              <Text
+                style={{
+                  flex: 1,
+                  fontSize: receiptBodyFontSize,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#111111"),
+                  textAlign: "right",
+                }}
+              >
+                {currency} {formatAmount(rc.amountReceived)}
+              </Text>
             </View>
             {isPartial && (
-              <View style={{ flexDirection: 'row', padding: 5 }}>
-                <Text style={{ flex: 4, fontSize: receiptBodyFontSize, color: monoText(mode, '#ef4444'), textAlign: 'right' }}>Outstanding Balance</Text>
-                <Text style={{ flex: 1, fontSize: receiptBodyFontSize, color: monoText(mode, '#ef4444'), textAlign: 'right' }}>{currency} {formatAmount(rc.balanceDue)}</Text>
+              <View style={{ flexDirection: "row", padding: 5 }}>
+                <Text
+                  style={{
+                    flex: 4,
+                    fontSize: receiptBodyFontSize,
+                    color: monoText(mode, "#ef4444"),
+                    textAlign: "right",
+                  }}
+                >
+                  Outstanding Balance
+                </Text>
+                <Text
+                  style={{
+                    flex: 1,
+                    fontSize: receiptBodyFontSize,
+                    color: monoText(mode, "#ef4444"),
+                    textAlign: "right",
+                  }}
+                >
+                  {currency} {formatAmount(rc.balanceDue)}
+                </Text>
               </View>
             )}
             {isOverpaid && overpaymentAmount > 0 && (
-              <View style={{ flexDirection: 'row', padding: 5 }}>
-                <Text style={{ flex: 4, fontSize: receiptBodyFontSize, fontWeight: 'bold', color: monoText(mode, '#10b981'), textAlign: 'right' }}>Wallet Credit</Text>
-                <Text style={{ flex: 1, fontSize: receiptBodyFontSize, fontWeight: 'bold', color: monoText(mode, '#10b981'), textAlign: 'right' }}>{currency} {formatAmount(overpaymentAmount)}</Text>
+              <View style={{ flexDirection: "row", padding: 5 }}>
+                <Text
+                  style={{
+                    flex: 4,
+                    fontSize: receiptBodyFontSize,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#10b981"),
+                    textAlign: "right",
+                  }}
+                >
+                  Wallet Credit
+                </Text>
+                <Text
+                  style={{
+                    flex: 1,
+                    fontSize: receiptBodyFontSize,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#10b981"),
+                    textAlign: "right",
+                  }}
+                >
+                  {currency} {formatAmount(overpaymentAmount)}
+                </Text>
               </View>
             )}
           </View>
-          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 10 }} />
+          <View
+            style={{
+              height: 1,
+              backgroundColor: monoLine(mode, "#9ca3af"),
+              marginBottom: 10,
+            }}
+          />
 
           {/* Formal notes section — the single acknowledgment sentence, either the
               stored narrative or receiptNoteFallback (same helper, so wording
@@ -2075,29 +5090,64 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               restated balance. No signature block: validity is carried by the
               digital verification footer below. */}
           <View style={{ marginTop: 4 }}>
-            <Text style={{ fontSize: receiptBodyFontSize, fontWeight: 'bold', color: monoText(mode, '#111111'), marginBottom: 6 }}>Notes Section</Text>
-            <View style={{ padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
-              <Text style={{ fontSize: receiptBodyFontSize, lineHeight: 1.6, color: monoText(mode, '#334155') }}>
+            <Text
+              style={{
+                fontSize: receiptBodyFontSize,
+                fontWeight: "bold",
+                color: monoText(mode, "#111111"),
+                marginBottom: 6,
+              }}
+            >
+              Notes Section
+            </Text>
+            <View
+              style={{
+                padding: 10,
+                backgroundColor: monoFill(mode, "#f8fafc"),
+                borderRadius: 8,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: receiptBodyFontSize,
+                  lineHeight: 1.6,
+                  color: monoText(mode, "#334155"),
+                }}
+              >
                 {rc.narrative || receiptNoteFallback}
               </Text>
             </View>
           </View>
-          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginTop: 10, marginBottom: 10 }} />
+          <View
+            style={{
+              height: 1,
+              backgroundColor: monoLine(mode, "#9ca3af"),
+              marginTop: 10,
+              marginBottom: 10,
+            }}
+          />
 
-            {/* Receipt thank-you carries the company name only (the full
+          {/* Receipt thank-you carries the company name only (the full
                 address block already appears in the header above). */}
-            <View wrap={false} style={{ marginTop: 10, alignItems: 'center' }}>
-              <Text style={{ fontSize: scaledFont(12), color: monoText(mode, '#334155') }}>
-                Thank you for choosing <Text style={{ fontWeight: 'bold' }}>{companyName}</Text>
-              </Text>
-            </View>
+          <View wrap={false} style={{ marginTop: 10, alignItems: "center" }}>
+            <Text
+              style={{
+                fontSize: scaledFont(12),
+                color: monoText(mode, "#334155"),
+              }}
+            >
+              Thank you for choosing{" "}
+              <Text style={{ fontWeight: "bold" }}>{companyName}</Text>
+            </Text>
+          </View>
 
           <View wrap={false} style={{ marginTop: 10 }}>
             <VerificationLabel fontScale={fontScale} />
-            <SecurityFooter colorMode={mode}
+            <SecurityFooter
+              colorMode={mode}
               data={rc}
               companyName={companyName}
-              legalFooterLine1={resolveFooterText(config, '', false)}
+              legalFooterLine1={resolveFooterText(config, "", false)}
               legalFooterLine2={buildFooterContactLine(config)}
               fontScale={fontScale}
               flowing
@@ -2108,182 +5158,1205 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     );
   }
 
-  if (type === 'PRINTING_CONTRACT') {
+  if (type === "PRINTING_CONTRACT") {
     const pc = data as PrintingContractDoc;
-    const cancelled = isCancelledStatus((pc as unknown as { status?: string }).status, pc as unknown as Record<string, unknown>);
+    const cancelled = isCancelledStatus(
+      (pc as unknown as { status?: string }).status,
+      pc as unknown as Record<string, unknown>,
+    );
+    const fullySigned = Boolean(pc.fullySigned);
+
+    // ── One palette, one font family ────────────────────────────────────
+    // Every colour is routed through the print-mode helpers (mono print copy
+    // degrades to black/greyscale). The page inherits the company template
+    // font from Settings so the contract matches the company's other
+    // documents; every descendant (including continuation pages) inherits it
+    // from the Page style.
+    const ink = monoText(mode, "#0f172a");
+    const softInk = monoText(mode, "#334155");
+    const muted = monoText(mode, "#64748b");
+    const accent = monoText(mode, "#1e3a8a");
+    const hairline = monoLine(mode, "#e2e8f0");
+    const strongRule = monoLine(mode, "#cbd5e1");
+    const headerFill = monoFill(mode, "#f1f5f9");
+    const softFill = monoFill(mode, "#f8fafc");
+    const pageBackground = "#ffffff";
+    const bodySize = 9.5;
+
+    const money = (value: number) =>
+      `${currency} ${formatAmount(Number(value) || 0)}`;
+    // One date style throughout the contract ("19 Oct 2026"). Instants are
+    // formatted timezone-safely from their ISO date part; the builder's
+    // already-localised en-GB `date` string is converted the same way so the
+    // header, term row and signature dates cannot disagree.
+    const readableDate = (value?: string) => {
+      const raw = String(value || "").trim();
+      if (!raw) return "";
+      const dmy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(raw);
+      if (dmy) {
+        const iso = `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+        return formatIsoDate(iso) || raw;
+      }
+      return formatIsoDate(raw) || formatDateOnly(raw);
+    };
+    const dateText = readableDate;
+
+    const lifecycleStatus = String(pc.status || "")
+      .trim()
+      .toLowerCase();
+    const statusLabel =
+      lifecycleStatus === "voided"
+        ? "Voided"
+        : lifecycleStatus === "cancelled" || lifecycleStatus === "canceled"
+          ? "Cancelled"
+          : lifecycleStatus === "expired"
+            ? "Expired"
+            : lifecycleStatus === "completed"
+              ? "Completed"
+              : lifecycleStatus === "suspended"
+                ? "Suspended"
+                : fullySigned
+                  ? "Active"
+                  : "Pending signature";
+    const statusTone = cancelled
+      ? {
+          border: monoLine(mode, "#b91c1c"),
+          text: monoText(mode, "#b91c1c"),
+          fill: monoFill(mode, "#fef2f2"),
+        }
+      : fullySigned
+        ? { border: accent, text: accent, fill: monoFill(mode, "#eff6ff") }
+        : { border: strongRule, text: muted, fill: headerFill };
 
     const renderableSignature = (raw: unknown): string | null => {
-      const validated = normalizeSignatureDataUrl(String(raw || ''));
-      const mime = (validated?.match(/^data:([^;]+);base64,/i)?.[1] || '').toLowerCase();
-      return validated && (mime === 'image/png' || mime === 'image/jpeg' || mime === 'image/jpg')
+      const validated = normalizeSignatureDataUrl(String(raw || ""));
+      const mime = (
+        validated?.match(/^data:([^;]+);base64,/i)?.[1] || ""
+      ).toLowerCase();
+      return validated &&
+        (mime === "image/png" || mime === "image/jpeg" || mime === "image/jpg")
         ? validated
         : null;
     };
 
-    const signatureCell = (
+    const sectionHeading = (label: string, style?: any) => (
+      <Text
+        style={[
+          {
+            fontSize: 9.5,
+            fontWeight: "bold",
+            letterSpacing: 0.8,
+            textTransform: "uppercase",
+            color: accent,
+            marginBottom: 5,
+          },
+          style,
+        ]}
+      >
+        {label}
+      </Text>
+    );
+
+    const partyLine = (label: string, value?: string) =>
+      value ? (
+        <View style={{ flexDirection: "row", marginTop: 2 }}>
+          <Text
+            style={{
+              width: 62,
+              fontSize: 7.5,
+              color: muted,
+              letterSpacing: 0.4,
+              textTransform: "uppercase",
+            }}
+          >
+            {label}
+          </Text>
+          <Text
+            style={{ flex: 1, fontSize: 8.8, color: softInk, lineHeight: 1.3 }}
+          >
+            {value}
+          </Text>
+        </View>
+      ) : null;
+
+    const termCell = (label: string, value: string) => (
+      <View
+        style={{
+          flex: 1,
+          paddingHorizontal: 8,
+          paddingVertical: 6,
+          borderRightWidth: 0.5,
+          borderColor: hairline,
+        }}
+      >
+        <Text
+          style={{
+            fontSize: 7.2,
+            letterSpacing: 0.5,
+            textTransform: "uppercase",
+            color: muted,
+          }}
+        >
+          {label}
+        </Text>
+        <Text
+          style={{
+            fontSize: 9.2,
+            color: ink,
+            fontWeight: "bold",
+            marginTop: 2,
+          }}
+        >
+          {value}
+        </Text>
+      </View>
+    );
+
+    const summaryLine = (
       label: string,
-      block: { name: string; role: string; signatureDataUrl?: string | null; signedAt: string } | null | undefined,
+      value: string,
+      options: { strong?: boolean; top?: boolean } = {},
+    ) => (
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "center",
+          paddingVertical: options.strong ? 4 : 2.5,
+          marginTop: options.top ? 3 : 0,
+          borderTopWidth: options.top ? 0.8 : 0,
+          borderColor: strongRule,
+        }}
+      >
+        <Text
+          style={{
+            fontSize: options.strong ? 10 : 8.8,
+            fontWeight: options.strong ? "bold" : "normal",
+            color: options.strong ? ink : muted,
+          }}
+        >
+          {label}
+        </Text>
+        <Text
+          style={{
+            fontSize: options.strong ? 10.5 : 9,
+            fontWeight: options.strong ? "bold" : "normal",
+            color: ink,
+            textAlign: "right",
+          }}
+        >
+          {value}
+        </Text>
+      </View>
+    );
+
+    const specRow = (label: string, value: string) => (
+      <View
+        key={`${label}:${value}`}
+        style={{
+          flexDirection: "row",
+          borderTopWidth: 0.5,
+          borderColor: hairline,
+          paddingVertical: 3.2,
+        }}
+      >
+        <Text
+          style={{ width: 136, fontSize: 8.5, color: muted, paddingRight: 8 }}
+        >
+          {label}
+        </Text>
+        <Text
+          style={{ flex: 1, fontSize: 9.2, color: softInk, lineHeight: 1.3 }}
+        >
+          {value}
+        </Text>
+      </View>
+    );
+
+    const clause = (index: number, title: string, body: string) => (
+      <View
+        key={`${index}:${title}`}
+        style={{ flexDirection: "row", marginTop: 4.5 }}
+      >
+        <Text
+          style={{
+            width: 20,
+            fontSize: bodySize,
+            lineHeight: 1.4,
+            fontWeight: "bold",
+            color: accent,
+          }}
+        >
+          {index}.
+        </Text>
+        <Text
+          style={{
+            flex: 1,
+            fontSize: bodySize,
+            lineHeight: 1.4,
+            color: softInk,
+          }}
+        >
+          <Text style={{ fontWeight: "bold", color: ink }}>{title}. </Text>
+          {body}
+        </Text>
+      </View>
+    );
+
+    const signatureCard = (
+      label: string,
+      block:
+        | {
+            name: string;
+            role: string;
+            signatureDataUrl?: string | null;
+            signedAt: string;
+          }
+        | null
+        | undefined,
+      fallbackRole: string,
+      fallbackSignedAt?: string,
     ) => {
       const img = block ? renderableSignature(block.signatureDataUrl) : null;
+      // The date is auto-filled: the recorded signature instant when one
+      // exists, otherwise the contract's own issue date. An unsigned card
+      // therefore still carries the date the document was produced, never a
+      // blank underline.
+      const signedAt = block?.signedAt || fallbackSignedAt || "";
       return (
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>{label}</Text>
-          <View style={{ height: 70, borderBottomWidth: 1, borderColor: '#000', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 5 }}>
+        <View
+          style={{
+            flex: 1,
+            borderWidth: 0.5,
+            borderColor: strongRule,
+            borderRadius: 3,
+            padding: 9,
+            backgroundColor: pageBackground,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 7.5,
+              fontWeight: "bold",
+              letterSpacing: 1,
+              textTransform: "uppercase",
+              color: muted,
+            }}
+          >
+            {label}
+          </Text>
+          <Text
+            style={{
+              fontSize: 10,
+              fontWeight: "bold",
+              color: ink,
+              marginTop: 5,
+            }}
+          >
+            {block?.name || "____________________________"}
+          </Text>
+          <Text style={{ fontSize: 8.5, color: muted, marginTop: 1 }}>
+            {block?.role || fallbackRole}
+          </Text>
+          <View
+            style={{
+              height: 42,
+              justifyContent: "flex-end",
+              alignItems: "center",
+              marginTop: 8,
+              borderBottomWidth: 0.5,
+              borderColor: strongRule,
+            }}
+          >
             {img ? (
-              <Image src={img} style={{ width: 120, height: 48, objectFit: 'contain', marginBottom: 2 }} />
+              <Image
+                src={img}
+                style={{
+                  width: 118,
+                  height: 34,
+                  objectFit: "contain",
+                  marginBottom: 2,
+                }}
+              />
             ) : (
-              <Text style={{ fontSize: 10, color: monoText(mode, '#94a3b8'), fontStyle: 'italic', marginBottom: 6 }}>Not signed</Text>
+              <Text
+                style={{
+                  fontSize: 8.5,
+                  color: muted,
+                  fontStyle: "italic",
+                  marginBottom: 6,
+                }}
+              >
+                Not signed
+              </Text>
             )}
           </View>
-          <Text style={{ fontSize: 11, fontWeight: 'bold' }}>{block?.name || '____________________'}</Text>
-          <Text style={{ fontSize: 9, color: monoText(mode, '#475569'), marginTop: 2 }}>
-            {block ? `${block.role || 'Signatory'} · signed ${formatDateOnly(block.signedAt)}` : 'Signature + date'}
+          <Text
+            style={{
+              fontSize: 7,
+              letterSpacing: 0.4,
+              textTransform: "uppercase",
+              color: muted,
+              marginTop: 2,
+            }}
+          >
+            Signature
           </Text>
+          <View
+            style={{
+              flexDirection: "row",
+              marginTop: 8,
+              alignItems: "flex-end",
+            }}
+          >
+            <Text style={{ fontSize: 8, color: muted }}>Date: </Text>
+            <Text style={{ fontSize: 8.5, color: ink }}>
+              {signedAt ? readableDate(signedAt) : "—"}
+            </Text>
+          </View>
         </View>
       );
     };
 
+    // Recorded free text is ADDITIVE. Short operator stubs such as
+    // "42 learners 1900" are not terms and must not replace the standard
+    // clauses; a real recorded term is printed as clause 11.
+    const recordedTerms = String(pc.terms || "").trim();
+    const termsAreStub =
+      !recordedTerms ||
+      (recordedTerms.length <= 48 &&
+        /^(?:\d[\d,.\s]*\s*)?(?:learners?|candidates?|pupils?|students?|assessments?)?(?:\s*[\d,.\s]*)?$/i.test(
+          recordedTerms,
+        ));
+
+    const clientSchool =
+      pc.schoolName &&
+      pc.schoolName.trim().toLowerCase() !==
+        pc.customerName.trim().toLowerCase()
+        ? pc.schoolName.trim()
+        : "";
+    const clientLocation = [pc.customerAddress, pc.schoolZone]
+      .filter(Boolean)
+      .join(" · ");
+    const deliveryPlace = [pc.deliveryMethod, pc.deliveryTimeline]
+      .filter(Boolean)
+      .join(", ");
+
+    // The company's standing signature is configured once in Settings. The
+    // contract's recorded company block still supplies the signer's printed
+    // name and signature date when one was captured; the image itself is the
+    // configured signature so every contract is signed consistently.
+    const companySettingsSignature = renderableSignature(
+      resolvePdfSignatureSource(config),
+    );
+    const recordedCompanySignature = pc.signatures?.company;
+    const companySignatureBlock = companySettingsSignature
+      ? {
+          name: recordedCompanySignature?.name || companyName,
+          role: recordedCompanySignature?.role || "Authorised signatory",
+          signatureDataUrl: companySettingsSignature,
+          signedAt: recordedCompanySignature?.signedAt || "",
+        }
+      : recordedCompanySignature;
+
+    const lineSubtotal = (pc.lines || []).reduce(
+      (sum, line) => sum + (Number(line.total) || 0),
+      0,
+    );
+    const vatAmount = Math.max(0, Number(pc.vatAmount) || 0);
+    const totalAmount =
+      lineSubtotal > 0
+        ? lineSubtotal + vatAmount
+        : Math.max(0, Number(pc.prepaidAmount) || 0);
+    const prepaidAmount = Math.max(0, Number(pc.prepaidAmount) || 0);
+    const balanceDue = Math.max(0, totalAmount - prepaidAmount);
+
+    const specRows: Array<[string, string]> = [];
+    const candidature =
+      pc.totalCandidature !== undefined
+        ? pc.totalCandidature
+        : pc.maxAssessments;
+    if (candidature !== undefined && Number(candidature) > 0)
+      specRows.push(["Candidates", String(candidature)]);
+    if (pc.printPaperSummary)
+      specRows.push(["Paper / pages", pc.printPaperSummary]);
+    if (pc.printColorSummary) specRows.push(["Print", pc.printColorSummary]);
+    if (pc.printTypeSummary)
+      specRows.push(["Paper type / orientation", pc.printTypeSummary]);
+    if (!pc.printPaperSummary && !pc.printColorSummary && pc.printSpecSummary) {
+      specRows.push(["Printing specification", pc.printSpecSummary]);
+    }
+    const unitPrice =
+      pc.chargePerCandidate !== undefined
+        ? pc.chargePerCandidate
+        : pc.assessmentPrice;
+    if (Number(unitPrice) > 0) {
+      specRows.push([
+        "Pricing",
+        `${money(Number(unitPrice))} per ${pc.chargePerCandidate !== undefined ? "candidate" : "assessment"}`,
+      ]);
+    }
+    if (deliveryPlace) specRows.push(["Delivery", deliveryPlace]);
+    if (pc.deliveryAddress)
+      specRows.push(["Delivery point", pc.deliveryAddress]);
+    if (pc.printFinishing) specRows.push(["Finishing", pc.printFinishing]);
+    if (pc.printPackaging) specRows.push(["Packaging", pc.printPackaging]);
+    if (pc.assessmentSittings)
+      specRows.push(["Sittings", pc.assessmentSittings]);
+    if (pc.assessmentSpec)
+      specRows.push(["Assessment specification", pc.assessmentSpec]);
+    const pricingNotes = stripChargePerCandidateSubstring(
+      String(pc.pricingRulesSummary || ""),
+    );
+    // "Per candidate" is already stated by the Pricing row above; printing it
+    // again as a note is duplication, not information. Keep the substantive
+    // bits (discount, urgency, tax handling, free-form notes).
+    const unitLabel =
+      pc.chargePerCandidate !== undefined ? "candidate" : "assessment";
+    const unitEchoRe = new RegExp(`^per[\\s_-]*${unitLabel}s?$`, "i");
+    const pricingSegments = pricingNotes
+      .split(" · ")
+      .map((part) => part.trim())
+      .filter(Boolean);
+    if (pricingSegments.length > 1 && unitEchoRe.test(pricingSegments[0]))
+      pricingSegments.shift();
+    const informativePricingNotes = pricingSegments.join(" · ");
+    if (informativePricingNotes && !unitEchoRe.test(informativePricingNotes)) {
+      specRows.push(["Pricing notes", informativePricingNotes]);
+    }
+    if (!deliveryPlace && pc.deliveryTermsSummary)
+      specRows.push(["Delivery", pc.deliveryTermsSummary]);
+    if (pc.deliveryNotes) specRows.push(["Delivery notes", pc.deliveryNotes]);
+    if (pc.notes) specRows.push(["Contract notes", pc.notes]);
+    if (specRows.length === 0)
+      specRows.push(["Specification", "As agreed between the parties."]);
+
+    // ── Integrity block geometry ────────────────────────────────────────
+    // The QR owns the verification URL, so the URL is never printed as text.
+    // The full digest is printed as SELECTABLE text, split into two lines of
+    // four 8-character blocks (single spaces) so it can be compared by eye
+    // without being mistaken for an image.
+    const qrCodeDataUrl = resolvePdfQrCodeSource(
+      String((pc as any).securityQrCodeDataUrl || ""),
+    );
+    const verificationUrl = /^https?:\/\//i.test(
+      String((pc as any).securityQrPayload || ""),
+    )
+      ? String((pc as any).securityQrPayload)
+      : "";
+    const verifyOrigin =
+      (/^https?:\/\/([^/?#]+)/i.exec(verificationUrl) || [])[1] || "";
+    const verifyAddress = verifyOrigin
+      ? `${verifyOrigin}/verify`
+      : "the address in the QR code";
+    const contentHash = String(pc.contentHash || "")
+      .trim()
+      .toLowerCase();
+    const hashGroups = contentHash.match(/.{1,8}/g) || [];
+    const hashLines = [
+      hashGroups.slice(0, 4).join(" "),
+      hashGroups.slice(4, 8).join(" "),
+    ].filter(Boolean);
+    const shortCode =
+      String(pc.integrityShortCode || "").trim() ||
+      (hashGroups.length >= 2
+        ? `${contentHash.slice(0, 4)}-${contentHash.slice(4, 8)}-${contentHash.slice(8, 12)}`
+        : "");
+    const generatedOn = (() => {
+      const raw = String(pc.date || "").trim();
+      const dmy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(raw);
+      if (dmy)
+        return `${dmy[1].padStart(2, "0")}/${dmy[2].padStart(2, "0")}/${dmy[3]}`;
+      const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+      if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+      return raw || "—";
+    })();
+    const metaLabel = (label: string) => (
+      <Text
+        style={{
+          fontSize: 6.8,
+          letterSpacing: 0.5,
+          textTransform: "uppercase",
+          color: muted,
+        }}
+      >
+        {label}
+      </Text>
+    );
+    const metaValue = (value: string, mono = false) => (
+      <Text
+        style={{
+          fontSize: mono ? 8 : 7.8,
+          color: ink,
+          marginTop: 1.5,
+          fontFamily: mono ? PRIME_MONO_FONT_FAMILY : undefined,
+        }}
+      >
+        {value}
+      </Text>
+    );
+
     return (
-      <Document title={`Printing Contract - ${pc.contractNumber}`} author={companyName}>
-        <Page size="A4" style={[s.page, pageStyle]}>
-          {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+      <Document
+        title={`Printing Contract - ${pc.contractNumber}`}
+        author={companyName}
+      >
+        <Page
+          size="A4"
+          style={[
+            s.page,
+            {
+              paddingTop: 50,
+              paddingHorizontal: 56.7,
+              paddingBottom: 86,
+              fontFamily: templateSettings.fontFamily,
+              fontSize: bodySize,
+              color: ink,
+              backgroundColor: pageBackground,
+            },
+          ]}
+        >
+          {channel === "portal" && <PortalCopyWatermark colorMode={mode} />}
           {cancelled && <CancelledWatermark colorMode={mode} />}
-          <PaginationFurniture colorMode={mode}
-            identity={{ title: 'Contract', number: String(pc.contractNumber || ''), customer: String(pc.customerName || '') }}
+          <PaginationFurniture
+            colorMode={mode}
+            identity={{
+              title: "Contract",
+              number: String(pc.contractNumber || ""),
+              customer: String(pc.customerName || ""),
+            }}
             companyName={companyName}
+            pagePrefix={`Contract ${pc.contractNumber}`}
           />
 
-          <View style={s.headerSection}>
-            <View style={s.headerLeft}>
-              <Text style={[s.title, titleStyle, { fontFamily: 'Helvetica' }]}>Printing Contract</Text>
-              <View style={s.infoText}>
-                <Text>Contract # : {pc.contractNumber}</Text>
-                <Text>Date : {formatDateOnly(pc.date)} · Version {pc.version}</Text>
-                <Text>Status : {toTitleCase(String(pc.status || 'draft'))}{pc.fullySigned ? ' · Fully signed' : ''}</Text>
-              </View>
+          {/* ── 1. Header ─────────────────────────────────────────────── */}
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              paddingBottom: 10,
+              borderBottomWidth: 0.8,
+              borderColor: strongRule,
+              marginBottom: 12,
+            }}
+          >
+            <View style={{ flex: 1, paddingRight: 14 }}>
+              {logo ? (
+                <Image
+                  src={logo}
+                  style={{ width: Math.min(templateSettings.logoWidth, 120) }}
+                />
+              ) : (
+                <Text style={{ fontSize: 13, fontWeight: "bold", color: ink }}>
+                  {companyName}
+                </Text>
+              )}
             </View>
-            <View style={s.headerRight}>
-              {renderBrandMark('right')}
+            <View style={{ flex: 1, alignItems: "flex-end" }}>
+              <Text
+                style={{
+                  fontSize: 19,
+                  fontWeight: "bold",
+                  letterSpacing: 0.4,
+                  color: accent,
+                }}
+              >
+                PRINTING CONTRACT
+              </Text>
+              <Text
+                style={{
+                  fontSize: 10,
+                  fontWeight: "bold",
+                  color: ink,
+                  marginTop: 3,
+                }}
+              >
+                {pc.contractNumber}
+              </Text>
+              <Text style={{ fontSize: 8.2, color: muted, marginTop: 2 }}>
+                Issued {readableDate(pc.date)} · Version {pc.version}
+              </Text>
+              <Text style={{ fontSize: 8.2, color: muted, marginTop: 1 }}>
+                {fullySigned ? "Fully signed" : "Awaiting signatures"}
+              </Text>
+              <View
+                style={{
+                  marginTop: 4,
+                  borderWidth: 0.6,
+                  borderColor: statusTone.border,
+                  backgroundColor: statusTone.fill,
+                  borderRadius: 8,
+                  paddingHorizontal: 7,
+                  paddingVertical: 2,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 7.2,
+                    fontWeight: "bold",
+                    letterSpacing: 0.6,
+                    textTransform: "uppercase",
+                    color: statusTone.text,
+                  }}
+                >
+                  {statusLabel}
+                </Text>
+              </View>
             </View>
           </View>
 
-          <View style={[s.billingSection, { marginTop: 0, marginBottom: 12 }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Company</Text>
-              <View style={s.recipientInfoText}>
-                <Text style={s.recipientName}>{companyName}</Text>
-                {companyAddress ? <Text style={s.recipientDetail}>{companyAddress}</Text> : null}
-                {companyContact ? <Text style={s.recipientPhone}>{companyContact}</Text> : null}
-              </View>
+          {/* ── 2. Parties ────────────────────────────────────────────── */}
+          <View style={{ flexDirection: "row", gap: 12 }}>
+            <View
+              style={{
+                flex: 1,
+                borderWidth: 0.5,
+                borderColor: hairline,
+                borderRadius: 3,
+                padding: 9,
+                backgroundColor: softFill,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 7.2,
+                  fontWeight: "bold",
+                  letterSpacing: 1,
+                  textTransform: "uppercase",
+                  color: muted,
+                }}
+              >
+                Service Provider
+              </Text>
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: "bold",
+                  color: ink,
+                  marginTop: 4,
+                }}
+              >
+                {companyName}
+              </Text>
+              {companyAddress ? (
+                <Text
+                  style={{
+                    fontSize: 8.6,
+                    color: softInk,
+                    marginTop: 2,
+                    lineHeight: 1.3,
+                  }}
+                >
+                  {companyAddress}
+                </Text>
+              ) : null}
+              {partyLine("Phone", formattedPhone || companyPhone)}
+              {partyLine("Email", companyEmail)}
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Client</Text>
-              <View style={s.recipientInfoText}>
-                <Text style={s.recipientName}>{pc.customerName || 'N/A'}</Text>
-                {pc.schoolName ? <Text style={s.recipientDetail}>{pc.schoolName}</Text> : null}
-                {(pc.periodStart || pc.periodEnd) ? (
-                  <Text style={s.recipientDetail}>
-                    {formatDateOnly(pc.periodStart)} → {pc.periodEnd ? formatDateOnly(pc.periodEnd) : 'open'}
-                  </Text>
-                ) : null}
-              </View>
+            <View
+              style={{
+                flex: 1,
+                borderWidth: 0.5,
+                borderColor: hairline,
+                borderRadius: 3,
+                padding: 9,
+                backgroundColor: softFill,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 7.2,
+                  fontWeight: "bold",
+                  letterSpacing: 1,
+                  textTransform: "uppercase",
+                  color: muted,
+                }}
+              >
+                Client
+              </Text>
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: "bold",
+                  color: ink,
+                  marginTop: 4,
+                }}
+              >
+                {pc.customerName || "N/A"}
+              </Text>
+              {clientSchool ? (
+                <Text style={{ fontSize: 8.8, color: softInk, marginTop: 1 }}>
+                  {clientSchool}
+                </Text>
+              ) : null}
+              {partyLine("Contact", pc.customerContact)}
+              {partyLine("Phone", pc.customerPhone)}
+              {partyLine("Address", clientLocation)}
+              {pc.customerReference ? (
+                <Text
+                  style={{
+                    fontSize: 7.2,
+                    color: muted,
+                    marginTop: 4,
+                    letterSpacing: 0.3,
+                  }}
+                >
+                  Customer ref: {pc.customerReference}
+                </Text>
+              ) : null}
             </View>
           </View>
 
-          <View style={{ marginTop: 8 }}>
-            <View style={s.tableHeader}>
-              <Text style={{ flex: 3 }}>Description</Text>
-              <Text style={{ flex: 1, textAlign: 'right' }}>Qty</Text>
-              <Text style={{ flex: 1, textAlign: 'right' }}>Unit Price</Text>
-              <Text style={{ flex: 1, textAlign: 'right' }}>Amount</Text>
+          {/* ── 3. Contract term ──────────────────────────────────────── */}
+          <View
+            style={{
+              flexDirection: "row",
+              marginTop: 10,
+              borderWidth: 0.5,
+              borderColor: hairline,
+              borderRadius: 3,
+            }}
+          >
+            {termCell(
+              "Effective date",
+              dateText(pc.periodStart) || "Not stated",
+            )}
+            {termCell(
+              "Expiry date",
+              pc.periodEnd ? dateText(pc.periodEnd) : "Open-ended",
+            )}
+            <View style={{ flex: 1, paddingHorizontal: 8, paddingVertical: 6 }}>
+              <Text
+                style={{
+                  fontSize: 7.2,
+                  letterSpacing: 0.5,
+                  textTransform: "uppercase",
+                  color: muted,
+                }}
+              >
+                Delivery / pickup
+              </Text>
+              <Text
+                style={{
+                  fontSize: 9.2,
+                  color: ink,
+                  fontWeight: "bold",
+                  marginTop: 2,
+                }}
+              >
+                {deliveryPlace || "As agreed"}
+              </Text>
             </View>
-            {(pc.lines || []).map((line: { desc: string; qty: number; price: number; total: number }, i: number) => (
-              <View key={i} style={s.row}>
-                <Text style={{ flex: 3 }}>{line.desc}</Text>
-                <Text style={{ flex: 1, textAlign: 'right' }}>{line.qty}</Text>
-                <Text style={{ flex: 1, textAlign: 'right' }}>{currency} {formatAmount(line.price)}</Text>
-                <Text style={{ flex: 1, textAlign: 'right' }}>{currency} {formatAmount(line.total)}</Text>
+          </View>
+
+          {/* ── 4. Order summary + totals ─────────────────────────────── */}
+          <View style={{ marginTop: 12 }}>
+            {sectionHeading("Order summary")}
+            <View
+              style={{
+                flexDirection: "row",
+                backgroundColor: headerFill,
+                paddingVertical: 4,
+                paddingHorizontal: 5,
+              }}
+            >
+              <Text
+                style={{
+                  flex: 3,
+                  fontSize: 7.2,
+                  fontWeight: "bold",
+                  letterSpacing: 0.5,
+                  textTransform: "uppercase",
+                  color: accent,
+                }}
+              >
+                Description
+              </Text>
+              <Text
+                style={{
+                  width: 42,
+                  fontSize: 7.2,
+                  fontWeight: "bold",
+                  letterSpacing: 0.5,
+                  textTransform: "uppercase",
+                  color: accent,
+                  textAlign: "right",
+                }}
+              >
+                Qty
+              </Text>
+              <Text
+                style={{
+                  width: 88,
+                  fontSize: 7.2,
+                  fontWeight: "bold",
+                  letterSpacing: 0.5,
+                  textTransform: "uppercase",
+                  color: accent,
+                  textAlign: "right",
+                }}
+              >
+                Unit price
+              </Text>
+              <Text
+                style={{
+                  width: 94,
+                  fontSize: 7.2,
+                  fontWeight: "bold",
+                  letterSpacing: 0.5,
+                  textTransform: "uppercase",
+                  color: accent,
+                  textAlign: "right",
+                }}
+              >
+                Amount
+              </Text>
+            </View>
+            {(pc.lines || []).map((line, i) => (
+              <View
+                key={`${line.desc}:${i}`}
+                style={{
+                  flexDirection: "row",
+                  borderBottomWidth: 0.5,
+                  borderColor: hairline,
+                  paddingVertical: 4.5,
+                  paddingHorizontal: 5,
+                }}
+              >
+                <Text
+                  style={{
+                    flex: 3,
+                    fontSize: 9.2,
+                    color: softInk,
+                    lineHeight: 1.3,
+                  }}
+                >
+                  {line.desc}
+                </Text>
+                <Text
+                  style={{
+                    width: 42,
+                    fontSize: 9.2,
+                    color: ink,
+                    textAlign: "right",
+                  }}
+                >
+                  {line.qty}
+                </Text>
+                <Text
+                  style={{
+                    width: 88,
+                    fontSize: 9.2,
+                    color: ink,
+                    textAlign: "right",
+                  }}
+                >
+                  {money(line.price)}
+                </Text>
+                <Text
+                  style={{
+                    width: 94,
+                    fontSize: 9.2,
+                    color: ink,
+                    textAlign: "right",
+                  }}
+                >
+                  {money(line.total)}
+                </Text>
               </View>
             ))}
-          </View>
-
-          <View style={[s.summaryContainer, { justifyContent: 'flex-end' }]}>
-            <View style={{ width: 280 }}>
-              <View style={[s.totalRow]}>
-                <Text style={{ flex: 1, fontWeight: 'bold' }}>Prepaid Amount</Text>
-                <Text style={{ fontWeight: 'bold', textAlign: 'right' }}>{currency} {formatAmount(pc.prepaidAmount)}</Text>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "flex-end",
+                marginTop: 6,
+              }}
+            >
+              <View style={{ width: 250 }}>
+                {summaryLine("Subtotal", money(lineSubtotal))}
+                {vatAmount > 0 ? summaryLine("VAT", money(vatAmount)) : null}
+                {summaryLine("Total", money(totalAmount), {
+                  strong: true,
+                  top: true,
+                })}
+                {summaryLine("Prepaid", money(prepaidAmount))}
+                {summaryLine("Balance due", money(balanceDue), {
+                  strong: true,
+                })}
               </View>
-              <View style={[s.totalRow]}>
-                <Text style={{ flex: 1 }}>Entitlement</Text>
-                <Text style={{ textAlign: 'right' }}>{pc.maxAssessments} assessments · {currency} {formatAmount(pc.assessmentPrice)} each</Text>
+            </View>
+          </View>
+
+          {/* ── 5. Agreed specification ───────────────────────────────── */}
+          <View style={{ marginTop: 12 }}>
+            {sectionHeading("Agreed specification")}
+            <View
+              style={{
+                flexDirection: "row",
+                backgroundColor: headerFill,
+                paddingVertical: 3.5,
+                paddingHorizontal: 4,
+              }}
+            >
+              <Text
+                style={{
+                  width: 136,
+                  fontSize: 7.2,
+                  fontWeight: "bold",
+                  letterSpacing: 0.5,
+                  textTransform: "uppercase",
+                  color: accent,
+                }}
+              >
+                Item
+              </Text>
+              <Text
+                style={{
+                  flex: 1,
+                  fontSize: 7.2,
+                  fontWeight: "bold",
+                  letterSpacing: 0.5,
+                  textTransform: "uppercase",
+                  color: accent,
+                }}
+              >
+                Detail
+              </Text>
+            </View>
+            {specRows.map(([label, value]) => specRow(label, value))}
+          </View>
+
+          {/* ── 6. Numbered terms ─────────────────────────────────────── */}
+          <View style={{ marginTop: 12 }}>
+            {sectionHeading("Terms & Conditions")}
+            <Text style={{ fontSize: 8.2, color: muted, marginBottom: 1 }}>
+              These terms form part of the contract and apply to all work
+              performed under it.
+            </Text>
+            {PRINTING_CONTRACT_STANDARD_TERMS.map((term, index) =>
+              clause(index + 1, term.title, term.body),
+            )}
+            {!termsAreStub
+              ? clause(
+                  PRINTING_CONTRACT_STANDARD_TERMS.length + 1,
+                  "Additional agreed terms",
+                  recordedTerms,
+                )
+              : null}
+          </View>
+
+          {/* ── 7–9. Signatures + verification (kept together) ────────── */}
+          <View wrap={false} style={{ marginTop: 14 }}>
+            <View>
+              {sectionHeading("Signatures")}
+              <Text style={{ fontSize: 8.2, color: muted, marginBottom: 6 }}>
+                Signed for and on behalf of the parties. This contract takes
+                effect when both parties have signed.
+              </Text>
+              <View style={{ flexDirection: "row", gap: 12 }}>
+                {signatureCard(
+                  "Company",
+                  companySignatureBlock,
+                  "Authorised signatory",
+                  pc.date,
+                )}
+                {signatureCard(
+                  "Client",
+                  pc.signatures?.customer,
+                  "Authorised signatory",
+                  pc.date,
+                )}
               </View>
             </View>
-          </View>
 
-          {(pc.totalCandidature !== undefined || pc.assessmentSpec || pc.chargePerCandidate !== undefined || pc.assessmentSittings || pc.printSpecSummary || pc.pricingRulesSummary || pc.deliveryTermsSummary) ? (
-            <View style={{ marginTop: 8, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 4, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Agreed specification</Text>
-              {pc.totalCandidature !== undefined ? <Text style={{ fontSize: 11, color: monoText(mode, '#334155') }}>Candidature: {pc.totalCandidature}{pc.assessmentSittings ? ` · ${pc.assessmentSittings}` : ''}{pc.assessmentSpec ? ` · ${pc.assessmentSpec}` : ''}</Text> : null}
-              {pc.totalCandidature === undefined && (pc.assessmentSittings || pc.assessmentSpec) ? <Text style={{ fontSize: 11, color: monoText(mode, '#334155') }}>Candidature: {[pc.assessmentSittings, pc.assessmentSpec].filter(Boolean).join(' · ')}</Text> : null}
-              {pc.printSpecSummary ? <Text style={{ fontSize: 11, color: monoText(mode, '#334155') }}>Printing: {pc.printSpecSummary}</Text> : null}
-              {pc.chargePerCandidate !== undefined || pc.pricingRulesSummary ? <Text style={{ fontSize: 11, color: monoText(mode, '#334155') }}>Pricing: {pc.chargePerCandidate !== undefined ? `Charge per candidate: ${currency} ${formatAmount(pc.chargePerCandidate)}` : ''}{pc.chargePerCandidate !== undefined && pc.pricingRulesSummary ? ` · ${stripChargePerCandidateSubstring(pc.pricingRulesSummary)}` : (pc.pricingRulesSummary || '')}</Text> : null}
-              {pc.deliveryTermsSummary ? <Text style={{ fontSize: 11, color: monoText(mode, '#334155') }}>Delivery: {pc.deliveryTermsSummary}</Text> : null}
+            {/* ── Document integrity (one unbreakable block) ──────────── */}
+            <View
+              wrap={false}
+              style={{
+                marginTop: 12,
+                borderTopWidth: 0.5,
+                borderColor: strongRule,
+                paddingTop: 7,
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 8.5,
+                    fontWeight: "bold",
+                    letterSpacing: 0.8,
+                    color: accent,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Document integrity
+                </Text>
+                <View
+                  style={{
+                    borderWidth: 0.5,
+                    borderColor: accent,
+                    borderRadius: 8,
+                    paddingHorizontal: 6,
+                    paddingVertical: 2,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 6.6,
+                      fontWeight: "bold",
+                      letterSpacing: 0.5,
+                      color: accent,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Digitally generated
+                  </Text>
+                </View>
+              </View>
+
+              <View
+                style={{
+                  flexDirection: "row",
+                  marginTop: 7,
+                  borderTopWidth: 0.5,
+                  borderColor: hairline,
+                  paddingTop: 7,
+                }}
+              >
+                {/* Left: QR at ~28 mm (79.4 pt) with a 4-module quiet zone
+                    already baked into the PNG bytes. Black on white. */}
+                <View
+                  style={{
+                    width: 96,
+                    alignItems: "center",
+                    paddingRight: 12,
+                    borderRightWidth: 0.5,
+                    borderColor: hairline,
+                  }}
+                >
+                  {qrCodeDataUrl ? (
+                    <Image
+                      src={qrCodeDataUrl}
+                      style={{ width: 79, height: 79 }}
+                    />
+                  ) : (
+                    <View
+                      style={{
+                        width: 79,
+                        height: 79,
+                        borderWidth: 0.5,
+                        borderColor: hairline,
+                      }}
+                    />
+                  )}
+                  <Text style={{ fontSize: 6.8, color: muted, marginTop: 3 }}>
+                    Scan to verify
+                  </Text>
+                </View>
+
+                {/* Right: full hash (2 lines x 4 blocks), short code and the
+                    human-readable verification address. */}
+                <View style={{ flex: 1, paddingLeft: 12 }}>
+                  <Text
+                    style={{
+                      fontSize: 6.8,
+                      letterSpacing: 0.5,
+                      textTransform: "uppercase",
+                      color: muted,
+                    }}
+                  >
+                    SHA-256 content hash
+                  </Text>
+                  <View
+                    style={{
+                      marginTop: 3,
+                      borderWidth: 0.5,
+                      borderColor: hairline,
+                      borderRadius: 3,
+                      backgroundColor: "#f8fafc",
+                      paddingVertical: 5,
+                      paddingHorizontal: 6,
+                    }}
+                  >
+                    {hashLines.length > 0 ? (
+                      hashLines.map((line, index) => (
+                        <Text
+                          key={`hash-line-${index}`}
+                          style={{
+                            fontFamily: PRIME_MONO_FONT_FAMILY,
+                            fontSize: 8,
+                            letterSpacing: 0.3,
+                            color: softInk,
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          {line}
+                        </Text>
+                      ))
+                    ) : (
+                      <Text
+                        style={{
+                          fontFamily: PRIME_MONO_FONT_FAMILY,
+                          fontSize: 8,
+                          color: muted,
+                        }}
+                      >
+                        Not available
+                      </Text>
+                    )}
+                  </View>
+
+                  <View style={{ flexDirection: "row", marginTop: 6 }}>
+                    <View style={{ width: 108 }}>
+                      {metaLabel("Short code")}
+                      {metaValue(shortCode || "—", true)}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      {metaLabel("Verify at")}
+                      {metaValue(verifyAddress)}
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+              <View
+                style={{
+                  marginTop: 7,
+                  borderTopWidth: 0.5,
+                  borderColor: hairline,
+                  paddingTop: 5,
+                }}
+              >
+                <Text style={{ fontSize: 7.2, color: muted, lineHeight: 1.35 }}>
+                  Covers parties, amounts, terms and signatures. Any alteration
+                  changes the hash. Generated {generatedOn} - Contract{" "}
+                  {pc.contractNumber}
+                </Text>
+              </View>
             </View>
-          ) : null}
-
-          <View style={{ marginTop: 8, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
-            <Text style={{ fontWeight: 'bold', marginBottom: 4, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Terms &amp; Conditions</Text>
-            <Text style={{ fontSize: 11, lineHeight: 1.6, color: monoText(mode, '#334155') }}>
-              {pc.terms || 'No specific terms recorded on this contract.'}
-            </Text>
-            {pc.notes ? (
-              <Text style={{ fontSize: 11, lineHeight: 1.6, color: monoText(mode, '#334155'), marginTop: 6 }}>
-                Notes: {pc.notes}
-              </Text>
-            ) : null}
-          </View>
-
-          <View style={[s.signatureBlock, { marginTop: 24, alignItems: 'flex-start', gap: 24 }]}>
-            {signatureCell('Company', pc.signatures?.company)}
-            {signatureCell('Customer', pc.signatures?.customer)}
-          </View>
-
-          <View wrap={false} style={{ marginTop: 16, borderTopWidth: 0.5, borderColor: monoLine(mode, '#e2e8f0'), paddingTop: 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={{ fontSize: 10.5, fontWeight: 'bold', color: monoText(mode, '#1e3a8a'), letterSpacing: 0.4 }}>
-                DOCUMENT INTEGRITY
-              </Text>
-            </View>
-            <Text style={{ marginTop: 6, fontSize: 9, color: monoText(mode, '#1e3a8a'), lineHeight: 1.45 }}>
-              Content hash: {pc.contentHash}
-            </Text>
-            <Text style={{ marginTop: 4, fontSize: 9, color: monoText(mode, '#475569'), lineHeight: 1.45 }}>
-              This hash covers the agreed parties, commercial lines, totals, terms and both
-              signatures. Any alteration changes the hash. Quote the contract number and hash
-              to verify with {companyName}.
-            </Text>
-          </View>
-
-          <View wrap={false} style={{ marginTop: 10 }}>
-            <VerificationLabel fontScale={fontScale} />
-            <SecurityFooter colorMode={mode}
-              data={pc}
-              companyName={companyName}
-              legalFooterLine1={resolveFooterText(config, '', false)}
-              legalFooterLine2={buildFooterContactLine(config)}
-              fontScale={fontScale}
-              flowing
-            />
           </View>
         </Page>
       </Document>
     );
   }
 
-  if (type === 'CONTRACT_SCHEDULE') {
+  if (type === "CONTRACT_SCHEDULE") {
     const cs = data as ContractScheduleDoc;
-    const cancelled = isCancelledStatus(String(cs.status || ''), cs as unknown as Record<string, unknown>);
-    const scheduleCurrency = config?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || 'K';
+    const cancelled = isCancelledStatus(
+      String(cs.status || ""),
+      cs as unknown as Record<string, unknown>,
+    );
+    const scheduleCurrency =
+      config?.currencySymbol ||
+      currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol ||
+      "K";
 
     // ── Preamble geometry (modelled on the payment receipt) ──────────────
     // The receipt's formal header is centred with the logo pinned out of flow
@@ -2293,17 +6366,25 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     // school or company name can neither wrap nor slide under the logo.
     const preambleFontSize = 12;
     const preambleTitleFontSize = contractPreambleTitleFontSize;
-    const preambleMetaRightIndent = Math.min(RECEIPT_META_INDENT * fontScale, 128);
+    const preambleMetaRightIndent = Math.min(
+      RECEIPT_META_INDENT * fontScale,
+      128,
+    );
     const preambleNameGutter = contractPreambleNameGutter;
     const preambleNameFontSize = contractPreambleNameFontSize;
-    const customerNameLabel = 'Customer Name: ';
+    const customerNameLabel = "Customer Name: ";
     // Resolve against the school name so a stored value that is only the
     // internal id (or an id-prefixed line) still prints the customer.
-    const customerNameText = resolveCustomerDisplayName(cs.customerName, cs.schoolName) || 'N/A';
+    const customerNameText =
+      resolveCustomerDisplayName(cs.customerName, cs.schoolName) || "N/A";
     const customerNameFontSize = fitFontSize(
       customerNameText,
-      Math.max(24, RECEIPT_CONTENT_WIDTH - measureTextWidth(customerNameLabel, preambleFontSize, true)),
-      { maxSize: preambleFontSize, minSize: 7 }
+      Math.max(
+        24,
+        RECEIPT_CONTENT_WIDTH -
+          measureTextWidth(customerNameLabel, preambleFontSize, true),
+      ),
+      { maxSize: preambleFontSize, minSize: 7 },
     );
     // Party descriptors printed beneath the name. A value that merely repeats
     // the customer name is dropped (the common case: the school IS the
@@ -2311,37 +6392,51 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     // repeated values collapse to one.
     const partySeen = new Set([customerNameText.trim().toLowerCase()]);
     const customerSubline = [
-      stripCustomerIdSuffix(String(cs.schoolName || '')),
+      stripCustomerIdSuffix(String(cs.schoolName || "")),
       cs.schoolZone,
       cs.customerPhone,
     ]
-      .map((value) => String(value || '').trim())
+      .map((value) => String(value || "").trim())
       .filter((value) => {
         const key = value.toLowerCase();
         if (!key || partySeen.has(key)) return false;
         partySeen.add(key);
         return true;
       })
-      .join(' · ');
+      .join(" · ");
 
     // Palette indirection: every colour is routed through the print-mode
     // helpers so the mono copy degrades to black/greyscale without a second
     // template (white is preserved on dark fills only).
     const inkTone = (hex: string) => monoText(mode, hex);
-    const hairline = monoLine(mode, '#cbd5e1');
-    const softFill = monoFill(mode, '#f8fafc');
-    const moneyOf = (value: number) => `${scheduleCurrency} ${formatAmount(Number(value) || 0)}`;
+    const hairline = monoLine(mode, "#cbd5e1");
+    const softFill = monoFill(mode, "#f8fafc");
+    const moneyOf = (value: number) =>
+      `${scheduleCurrency} ${formatAmount(Number(value) || 0)}`;
 
     // Schedule lifecycle tones. Deliberately local: getStatusTone() is shaped
     // for invoice payment states (its fallback is "overdue red"), which would
     // paint every reserved/cancelled/consumed assessment the same colour.
     const scheduleTone = (status?: string) => {
-      if (mode === 'mono') return { border: '#000', text: '#000' };
-      const key = String(status || '').trim().toLowerCase();
-      if (['consumed', 'completed', 'active', 'printed'].includes(key)) return { border: '#10b981', text: '#047857' };
-      if (['reserved', 'scheduled', 'processing', 'pending', 'in_progress'].includes(key)) return { border: '#f59e0b', text: '#b45309' };
-      if (['cancelled', 'canceled', 'void'].includes(key)) return { border: '#ef4444', text: '#b91c1c' };
-      return { border: '#94a3b8', text: '#475569' };
+      if (mode === "mono") return { border: "#000", text: "#000" };
+      const key = String(status || "")
+        .trim()
+        .toLowerCase();
+      if (["consumed", "completed", "active", "printed"].includes(key))
+        return { border: "#10b981", text: "#047857" };
+      if (
+        [
+          "reserved",
+          "scheduled",
+          "processing",
+          "pending",
+          "in_progress",
+        ].includes(key)
+      )
+        return { border: "#f59e0b", text: "#b45309" };
+      if (["cancelled", "canceled", "void"].includes(key))
+        return { border: "#ef4444", text: "#b91c1c" };
+      return { border: "#94a3b8", text: "#475569" };
     };
 
     const scheduleRows = cs.schedule || [];
@@ -2350,10 +6445,10 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     // sat inside a window ending 30 Apr. Dates are canonical ISO values, so the
     // label never depends on the browser locale.
     const periodLabel = (() => {
-      if (!cs.periodStart && !cs.periodEnd) return 'Not stated';
+      if (!cs.periodStart && !cs.periodEnd) return "Not stated";
       const start = formatIsoDate(cs.periodStart);
       const end = formatIsoDate(cs.periodEnd);
-      if (!cs.periodStart) return `to ${end || 'Open'}`;
+      if (!cs.periodStart) return `to ${end || "Open"}`;
       if (!cs.periodEnd) return `${start} to Open`;
       return `${start} to ${end}`;
     })();
@@ -2364,31 +6459,71 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     const COL = { seq: 26, scheduled: 70, status: 74, value: 84 };
     const thStyle = {
       fontSize: 7.5 * fontScale,
-      fontWeight: 'bold' as const,
+      fontWeight: "bold" as const,
       letterSpacing: 1,
-      textTransform: 'uppercase' as const,
-      color: inkTone('#64748b'),
+      textTransform: "uppercase" as const,
+      color: inkTone("#64748b"),
     };
 
     const sectionHeading = (label: string) => (
-      <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', letterSpacing: 1.2, textTransform: 'uppercase', color: inkTone('#64748b'), marginBottom: 6 }}>
+      <Text
+        style={{
+          fontSize: 8 * fontScale,
+          fontWeight: "bold",
+          letterSpacing: 1.2,
+          textTransform: "uppercase",
+          color: inkTone("#64748b"),
+          marginBottom: 6,
+        }}
+      >
         {label}
       </Text>
     );
 
     // Inline "Label: value" metadata row — the payment receipt's metadata
     // grammar, kept verbatim so the two documents read as one family.
-    const preambleMetaRow = (label: string, value: string, valueStyle?: any) => (
-      <Text style={{ fontSize: preambleFontSize, color: monoText(mode, '#111111'), marginBottom: 4 }}>
-        <Text style={{ fontWeight: 'bold' }}>{label}: </Text>
+    const preambleMetaRow = (
+      label: string,
+      value: string,
+      valueStyle?: any,
+    ) => (
+      <Text
+        style={{
+          fontSize: preambleFontSize,
+          color: monoText(mode, "#111111"),
+          marginBottom: 4,
+        }}
+      >
+        <Text style={{ fontWeight: "bold" }}>{label}: </Text>
         <Text style={valueStyle}>{value}</Text>
       </Text>
     );
 
     const defRow = (label: string, value: string, withDivider = true) => (
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 3, ...(withDivider ? { borderTopWidth: 0.5, borderColor: hairline } : null) }}>
-        <Text style={{ fontSize: 9 * fontScale, color: inkTone('#475569') }}>{label}</Text>
-        <Text style={{ fontSize: 9.5 * fontScale, fontWeight: 'bold', color: inkTone('#0f172a'), marginLeft: 10, textAlign: 'right', flexShrink: 1 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          paddingVertical: 3,
+          ...(withDivider
+            ? { borderTopWidth: 0.5, borderColor: hairline }
+            : null),
+        }}
+      >
+        <Text style={{ fontSize: 9 * fontScale, color: inkTone("#475569") }}>
+          {label}
+        </Text>
+        <Text
+          style={{
+            fontSize: 9.5 * fontScale,
+            fontWeight: "bold",
+            color: inkTone("#0f172a"),
+            marginLeft: 10,
+            textAlign: "right",
+            flexShrink: 1,
+          }}
+        >
           {value}
         </Text>
       </View>
@@ -2397,9 +6532,26 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     const statusPill = (status: string) => {
       const tone = scheduleTone(status);
       return (
-        <View style={{ borderWidth: 0.6, borderColor: tone.border, borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1.5 }}>
-          <Text style={{ fontSize: 7.5 * fontScale, fontWeight: 'bold', letterSpacing: 0.3, textTransform: 'uppercase', color: tone.text, textAlign: 'center' }}>
-            {toTitleCase(String(status || 'reserved'))}
+        <View
+          style={{
+            borderWidth: 0.6,
+            borderColor: tone.border,
+            borderRadius: 8,
+            paddingHorizontal: 5,
+            paddingVertical: 1.5,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 7.5 * fontScale,
+              fontWeight: "bold",
+              letterSpacing: 0.3,
+              textTransform: "uppercase",
+              color: tone.text,
+              textAlign: "center",
+            }}
+          >
+            {toTitleCase(String(status || "reserved"))}
           </Text>
         </View>
       );
@@ -2407,24 +6559,32 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
 
     // Agreed contract profile (only the terms actually recorded on the contract).
     const profileRows: Array<[string, string]> = [];
-    if (cs.totalCandidature !== undefined) profileRows.push(['Total candidature', String(cs.totalCandidature)]);
-    if (cs.assessmentSpec) profileRows.push(['Printing specification', String(cs.assessmentSpec)]);
-    if (cs.chargePerCandidate !== undefined) profileRows.push(['Charge per candidate', moneyOf(cs.chargePerCandidate)]);
-    if (cs.assessmentSittings) profileRows.push(['Assessment sittings', String(cs.assessmentSittings)]);
+    if (cs.totalCandidature !== undefined)
+      profileRows.push(["Total candidature", String(cs.totalCandidature)]);
+    if (cs.assessmentSpec)
+      profileRows.push(["Printing specification", String(cs.assessmentSpec)]);
+    if (cs.chargePerCandidate !== undefined)
+      profileRows.push([
+        "Charge per candidate",
+        moneyOf(cs.chargePerCandidate),
+      ]);
+    if (cs.assessmentSittings)
+      profileRows.push(["Assessment sittings", String(cs.assessmentSittings)]);
 
     // Progress counts. "Scheduled" means DATED, non-cancelled assessments —
     // a schedule is only agreed once each live assessment carries a date. The
     // undated remainder is stated explicitly so the number can never read as
     // complete when it is not.
     const activeAssessments = cs.activeAssessments ?? cs.totalAssessments;
-    const undatedCount = cs.undatedCount ?? (cs.missingDateSequences || []).length;
+    const undatedCount =
+      cs.undatedCount ?? (cs.missingDateSequences || []).length;
     const progressRows: Array<[string, string]> = [
-      ['Total assessments', String(cs.totalAssessments)],
-      ['Scheduled', String(cs.scheduledCount)],
-      ['Awaiting date', String(undatedCount)],
-      ['Consumed', String(cs.consumedCount)],
-      ['Released', String(cs.releasedCount)],
-      ['Cancelled', String(cs.cancelledCount)],
+      ["Total assessments", String(cs.totalAssessments)],
+      ["Scheduled", String(cs.scheduledCount)],
+      ["Awaiting date", String(undatedCount)],
+      ["Consumed", String(cs.consumedCount)],
+      ["Released", String(cs.releasedCount)],
+      ["Cancelled", String(cs.cancelledCount)],
     ];
     // Fund position — the authoritative `available_funds` generated column
     // (or its exact formula). The label says "commercial value", never
@@ -2435,44 +6595,67 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     const fundInconsistencies = cs.fundInconsistencies || [];
     const releasedAmount = Number(cs.releasedAmount || 0);
     const fundRows: Array<[string, string]> = [
-      ['Contract value (commercial)', moneyOf(cs.prepaidAmount)],
-      ['Reserved', moneyOf(cs.reservedAmount)],
-      ['Consumed', moneyOf(cs.consumedAmount)],
-      [`Available balance${cs.availableFundsSource === 'generated' ? '' : ' (derived)'}`, moneyOf(availableFunds)],
+      ["Contract value (commercial)", moneyOf(cs.prepaidAmount)],
+      ["Reserved", moneyOf(cs.reservedAmount)],
+      ["Consumed", moneyOf(cs.consumedAmount)],
+      [
+        `Available balance${cs.availableFundsSource === "generated" ? "" : " (derived)"}`,
+        moneyOf(availableFunds),
+      ],
       // A released assessment is a MOVEMENT, not a fourth bucket: the money it
       // carried is already inside the available balance above. It is shown as a
       // memo so the customer can see what was returned, never as an addition to
       // the position.
-      ...(releasedAmount > 0 ? [['Released (returned to balance)', moneyOf(releasedAmount)]] as Array<[string, string]> : []),
+      ...(releasedAmount > 0
+        ? ([
+            ["Released (returned to balance)", moneyOf(releasedAmount)],
+          ] as Array<[string, string]>)
+        : []),
     ];
     const missingSequences = cs.missingDateSequences || [];
     // Exceptions printed on the face of the document: a date outside the
     // contract period, a price that disagrees with the agreed pricing basis.
     // Both are disclosed verbatim — never corrected on the document.
     const outOfPeriodRows = cs.outOfPeriodRows || [];
-    const outOfPeriodSequences = new Set(outOfPeriodRows.map((r) => Number(r.sequence)));
+    const outOfPeriodSequences = new Set(
+      outOfPeriodRows.map((r) => Number(r.sequence)),
+    );
     const pricingMismatches = cs.pricingMismatches || [];
     // The assessments the schedule value actually covers: the reserved and the
     // consumed ones. A released assessment is listed but no longer owed, so it
     // is excluded from the value and from the count that labels it.
     const entitledAssessmentCount = scheduleRows.filter((row) => {
-      const status = String(row.status || '').trim().toLowerCase();
-      return status !== 'released'
-        && !['cancelled', 'canceled', 'void', 'voided'].includes(status);
+      const status = String(row.status || "")
+        .trim()
+        .toLowerCase();
+      return (
+        status !== "released" &&
+        !["cancelled", "canceled", "void", "voided"].includes(status)
+      );
     }).length;
     // The currency unit, stated once so the amounts cannot be misread.
-    const baseCurrency = currencyService.getCurrency(currencyService.getBaseCurrency());
+    const baseCurrency = currencyService.getCurrency(
+      currencyService.getBaseCurrency(),
+    );
     const currencyUnitNote = baseCurrency?.code
-      ? `All amounts in ${baseCurrency.code}${baseCurrency.name ? ` (${baseCurrency.name})` : ''}, stated to two decimal places.`
+      ? `All amounts in ${baseCurrency.code}${baseCurrency.name ? ` (${baseCurrency.name})` : ""}, stated to two decimal places.`
       : `All amounts in ${scheduleCurrency}, stated to two decimal places.`;
 
     return (
-      <Document title={`Contract Schedule - ${cs.contractNumber}`} author={companyName}>
+      <Document
+        title={`Contract Schedule - ${cs.contractNumber}`}
+        author={companyName}
+      >
         <Page size="A4" style={[s.page, pageStyle]}>
-          {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+          {channel === "portal" && <PortalCopyWatermark colorMode={mode} />}
           {cancelled && <CancelledWatermark colorMode={mode} />}
-          <PaginationFurniture colorMode={mode}
-            identity={{ title: 'Assessment Schedule', number: String(cs.contractNumber || ''), customer: String(cs.customerName || '') }}
+          <PaginationFurniture
+            colorMode={mode}
+            identity={{
+              title: "Assessment Schedule",
+              number: String(cs.contractNumber || ""),
+              customer: String(cs.customerName || ""),
+            }}
             companyName={companyName}
           />
 
@@ -2481,27 +6664,91 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               identity with the logo pinned to the left margin, centred
               document title, a rule, then the addressee row (full content
               width, hard one line) and the two-column inline metadata grid. ── */}
-          <View style={{ position: 'relative', alignItems: 'center', marginBottom: 4, paddingTop: 0 }}>
+          <View
+            style={{
+              position: "relative",
+              alignItems: "center",
+              marginBottom: 4,
+              paddingTop: 0,
+            }}
+          >
             {!!logo && (
-              <Image src={logo} style={{ position: 'absolute', left: 0, top: 0, width: templateSettings.logoWidth }} />
+              <Image
+                src={logo}
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  width: templateSettings.logoWidth,
+                }}
+              />
             )}
-            <View style={{ alignItems: 'center', width: '100%', paddingLeft: preambleNameGutter, paddingRight: preambleNameGutter }}>
-              <Text style={{ fontSize: preambleNameFontSize, fontWeight: 'bold', color: monoText(mode, '#000'), textAlign: 'center', maxLines: 1, textOverflow: 'ellipsis' }}>
+            <View
+              style={{
+                alignItems: "center",
+                width: "100%",
+                paddingLeft: preambleNameGutter,
+                paddingRight: preambleNameGutter,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: preambleNameFontSize,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#000"),
+                  textAlign: "center",
+                  maxLines: 1,
+                  textOverflow: "ellipsis",
+                }}
+              >
                 {companyName}
               </Text>
               {!!receiptCompanyAddress && (
-                <Text style={{ fontSize: preambleFontSize, color: monoText(mode, '#334155'), textAlign: 'center', marginTop: 1 }}>{receiptCompanyAddress}</Text>
+                <Text
+                  style={{
+                    fontSize: preambleFontSize,
+                    color: monoText(mode, "#334155"),
+                    textAlign: "center",
+                    marginTop: 1,
+                  }}
+                >
+                  {receiptCompanyAddress}
+                </Text>
               )}
               {!!companyContact && (
-                <Text style={{ fontSize: preambleFontSize, color: monoText(mode, '#334155'), textAlign: 'center', marginTop: 1 }}>{companyContact}</Text>
+                <Text
+                  style={{
+                    fontSize: preambleFontSize,
+                    color: monoText(mode, "#334155"),
+                    textAlign: "center",
+                    marginTop: 1,
+                  }}
+                >
+                  {companyContact}
+                </Text>
               )}
             </View>
           </View>
 
-          <Text style={{ fontSize: preambleTitleFontSize, fontWeight: 'bold', color: monoText(mode, '#000'), textAlign: 'center', marginTop: 4, marginBottom: 4 }}>
+          <Text
+            style={{
+              fontSize: preambleTitleFontSize,
+              fontWeight: "bold",
+              color: monoText(mode, "#000"),
+              textAlign: "center",
+              marginTop: 4,
+              marginBottom: 4,
+            }}
+          >
             Assessment Schedule
           </Text>
-          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 6 }} />
+          <View
+            style={{
+              height: 1,
+              backgroundColor: monoLine(mode, "#9ca3af"),
+              marginBottom: 6,
+            }}
+          />
 
           {/* Addressee: who the schedule is issued to. The name takes the full
               content width and prints on ONE row (school names run past 60
@@ -2509,12 +6756,29 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               as the receipt guarantees it. The contract's own party
               descriptors follow on a dimmed line beneath. */}
           <View style={{ marginBottom: 6 }}>
-            <Text style={{ fontSize: preambleFontSize, color: monoText(mode, '#111111'), maxLines: 1, textOverflow: 'ellipsis' }}>
-              <Text style={{ fontWeight: 'bold' }}>{customerNameLabel}</Text>
-              <Text style={{ fontSize: customerNameFontSize }}>{customerNameText}</Text>
+            <Text
+              style={{
+                fontSize: preambleFontSize,
+                color: monoText(mode, "#111111"),
+                maxLines: 1,
+                textOverflow: "ellipsis",
+              }}
+            >
+              <Text style={{ fontWeight: "bold" }}>{customerNameLabel}</Text>
+              <Text style={{ fontSize: customerNameFontSize }}>
+                {customerNameText}
+              </Text>
             </Text>
             {!!customerSubline && (
-              <Text style={{ fontSize: 9 * fontScale, color: inkTone('#64748b'), marginTop: 3 }}>{customerSubline}</Text>
+              <Text
+                style={{
+                  fontSize: 9 * fontScale,
+                  color: inkTone("#64748b"),
+                  marginTop: 3,
+                }}
+              >
+                {customerSubline}
+              </Text>
             )}
           </View>
 
@@ -2524,97 +6788,310 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               carried is still here: contract number, version, issue date,
               contract period and status, plus the currency the money is
               stated in. */}
-          <View style={{ flexDirection: 'row', gap: RECEIPT_META_GAP, marginBottom: 6 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              gap: RECEIPT_META_GAP,
+              marginBottom: 6,
+            }}
+          >
             <View style={{ flex: 1 }}>
-              {preambleMetaRow('Contract No', String(cs.contractNumber || 'Not stated'))}
-              {preambleMetaRow('Branch', String(cs.billedBranch || 'Main Account'))}
-              {preambleMetaRow('Issued', formatIsoDate(cs.date) || 'Not issued')}
+              {preambleMetaRow(
+                "Contract No",
+                String(cs.contractNumber || "Not stated"),
+              )}
+              {preambleMetaRow(
+                "Branch",
+                String(cs.billedBranch || "Main Account"),
+              )}
+              {preambleMetaRow(
+                "Issued",
+                formatIsoDate(cs.date) || "Not issued",
+              )}
             </View>
             <View style={{ flex: 1, paddingLeft: preambleMetaRightIndent }}>
-              {preambleMetaRow('Contract Period', periodLabel)}
-              {preambleMetaRow('Status', toTitleCase(String(cs.status || 'draft')), { fontWeight: 'bold', color: scheduleTone(String(cs.status || 'draft')).text })}
-              {preambleMetaRow('Academic Year', String(cs.academicYear || 'Not stated'))}
+              {preambleMetaRow("Contract Period", periodLabel)}
+              {preambleMetaRow(
+                "Status",
+                toTitleCase(String(cs.status || "draft")),
+                {
+                  fontWeight: "bold",
+                  color: scheduleTone(String(cs.status || "draft")).text,
+                },
+              )}
+              {preambleMetaRow(
+                "Academic Year",
+                String(cs.academicYear || "Not stated"),
+              )}
             </View>
           </View>
-          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 6 }} />
+          <View
+            style={{
+              height: 1,
+              backgroundColor: monoLine(mode, "#9ca3af"),
+              marginBottom: 6,
+            }}
+          />
 
           {/* ── Agreed contract profile (every recorded term, nothing dropped) ── */}
-          <View style={{ borderWidth: 0.8, borderColor: hairline, borderRadius: 3, padding: 8 }}>
-            {sectionHeading('Contract Summary')}
+          <View
+            style={{
+              borderWidth: 0.8,
+              borderColor: hairline,
+              borderRadius: 3,
+              padding: 8,
+            }}
+          >
+            {sectionHeading("Contract Summary")}
             {profileRows.length === 0 ? (
-              <Text style={{ fontSize: 9.5 * fontScale, color: inkTone('#64748b') }}>No agreed profile recorded on this contract.</Text>
+              <Text
+                style={{ fontSize: 9.5 * fontScale, color: inkTone("#64748b") }}
+              >
+                No agreed profile recorded on this contract.
+              </Text>
             ) : (
-              <Text style={{ fontSize: 9 * fontScale, color: inkTone('#334155'), lineHeight: 1.45 }}>
-                {profileRows.map(([label, value]) => `${label}: ${value}`).join('  ·  ')}
+              <Text
+                style={{
+                  fontSize: 9 * fontScale,
+                  color: inkTone("#334155"),
+                  lineHeight: 1.45,
+                }}
+              >
+                {profileRows
+                  .map(([label, value]) => `${label}: ${value}`)
+                  .join("  ·  ")}
               </Text>
             )}
           </View>
 
           {/* ── Assessment schedule ── */}
           <View style={{ marginTop: 10 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-end', borderBottomWidth: 1, borderColor: monoLine(mode, '#0f172a'), paddingBottom: 4 }}>
-              <Text style={[thStyle, { width: COL.seq, textAlign: 'right' }]}>#</Text>
-              <Text style={[thStyle, { flexGrow: 1, flexBasis: 0, marginLeft: 10, marginRight: 8 }]}>Assessment</Text>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "flex-end",
+                borderBottomWidth: 1,
+                borderColor: monoLine(mode, "#0f172a"),
+                paddingBottom: 4,
+              }}
+            >
+              <Text style={[thStyle, { width: COL.seq, textAlign: "right" }]}>
+                #
+              </Text>
+              <Text
+                style={[
+                  thStyle,
+                  { flexGrow: 1, flexBasis: 0, marginLeft: 10, marginRight: 8 },
+                ]}
+              >
+                Assessment
+              </Text>
               <Text style={[thStyle, { width: COL.scheduled }]}>Scheduled</Text>
               <Text style={[thStyle, { width: COL.status }]}>Status</Text>
-              <Text style={[thStyle, { width: COL.value, textAlign: 'right' }]}>Value</Text>
+              <Text style={[thStyle, { width: COL.value, textAlign: "right" }]}>
+                Value
+              </Text>
             </View>
 
             {scheduleRows.map((row, index) => {
-              const qualifiers = [row.grade, row.subject].filter(Boolean).join(' · ');
+              const qualifiers = [row.grade, row.subject]
+                .filter(Boolean)
+                .join(" · ");
               return (
-                <View key={index} wrap={false} style={{ flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 2.5, borderBottomWidth: 0.5, borderColor: hairline, ...(index % 2 === 1 ? { backgroundColor: softFill } : null) }}>
-                  <Text style={{ width: COL.seq, textAlign: 'right', fontSize: 9 * fontScale, color: inkTone('#94a3b8') }}>{row.sequence}</Text>
-                  <View style={{ flexGrow: 1, flexBasis: 0, marginLeft: 10, marginRight: 8 }}>
-                    <Text style={{ fontSize: 9.5 * fontScale, color: inkTone('#0f172a') }}>
+                <View
+                  key={index}
+                  wrap={false}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "flex-start",
+                    paddingVertical: 2.5,
+                    borderBottomWidth: 0.5,
+                    borderColor: hairline,
+                    ...(index % 2 === 1 ? { backgroundColor: softFill } : null),
+                  }}
+                >
+                  <Text
+                    style={{
+                      width: COL.seq,
+                      textAlign: "right",
+                      fontSize: 9 * fontScale,
+                      color: inkTone("#94a3b8"),
+                    }}
+                  >
+                    {row.sequence}
+                  </Text>
+                  <View
+                    style={{
+                      flexGrow: 1,
+                      flexBasis: 0,
+                      marginLeft: 10,
+                      marginRight: 8,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 9.5 * fontScale,
+                        color: inkTone("#0f172a"),
+                      }}
+                    >
                       {row.assessmentName}
-                      {qualifiers ? <Text style={{ fontSize: 8 * fontScale, color: inkTone('#64748b') }}>{`  (${qualifiers})`}</Text> : null}
+                      {qualifiers ? (
+                        <Text
+                          style={{
+                            fontSize: 8 * fontScale,
+                            color: inkTone("#64748b"),
+                          }}
+                        >{`  (${qualifiers})`}</Text>
+                      ) : null}
                     </Text>
                   </View>
-                  <Text style={{ width: COL.scheduled, fontSize: 9 * fontScale, color: inkTone('#334155') }}>
-                    {row.assessmentDate ? formatIsoDate(row.assessmentDate) : 'Not scheduled'}
+                  <Text
+                    style={{
+                      width: COL.scheduled,
+                      fontSize: 9 * fontScale,
+                      color: inkTone("#334155"),
+                    }}
+                  >
+                    {row.assessmentDate
+                      ? formatIsoDate(row.assessmentDate)
+                      : "Not scheduled"}
                     {outOfPeriodSequences.has(Number(row.sequence)) ? (
-                      <Text style={{ fontSize: 7.5 * fontScale, color: inkTone('#b91c1c') }}>{'\n'}outside contract period</Text>
+                      <Text
+                        style={{
+                          fontSize: 7.5 * fontScale,
+                          color: inkTone("#b91c1c"),
+                        }}
+                      >
+                        {"\n"}outside contract period
+                      </Text>
                     ) : null}
                   </Text>
-                  <View style={{ width: COL.status, alignItems: 'flex-start' }}>{statusPill(String(row.status || 'reserved'))}</View>
-                  <Text style={{ width: COL.value, textAlign: 'right', fontSize: 9.5 * fontScale, color: inkTone('#0f172a') }}>
+                  <View style={{ width: COL.status, alignItems: "flex-start" }}>
+                    {statusPill(String(row.status || "reserved"))}
+                  </View>
+                  <Text
+                    style={{
+                      width: COL.value,
+                      textAlign: "right",
+                      fontSize: 9.5 * fontScale,
+                      color: inkTone("#0f172a"),
+                    }}
+                  >
                     {moneyOf(row.unitPrice)}
                   </Text>
                 </View>
               );
             })}
 
-            <View wrap={false} style={{ flexDirection: 'row', alignItems: 'center', paddingTop: 6, borderTopWidth: 1, borderColor: monoLine(mode, '#0f172a') }}>
-              <Text style={{ flexGrow: 1, flexBasis: 0, fontSize: 9 * fontScale, fontWeight: 'bold', letterSpacing: 0.6, textTransform: 'uppercase', color: inkTone('#334155') }}>
+            <View
+              wrap={false}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                paddingTop: 6,
+                borderTopWidth: 1,
+                borderColor: monoLine(mode, "#0f172a"),
+              }}
+            >
+              <Text
+                style={{
+                  flexGrow: 1,
+                  flexBasis: 0,
+                  fontSize: 9 * fontScale,
+                  fontWeight: "bold",
+                  letterSpacing: 0.6,
+                  textTransform: "uppercase",
+                  color: inkTone("#334155"),
+                }}
+              >
                 {(cs.releasedCount || 0) > 0
-                  ? `${entitledAssessmentCount} of ${activeAssessments} active assessment${activeAssessments === 1 ? '' : 's'} · schedule value`
-                  : `${activeAssessments} active assessment${activeAssessments === 1 ? '' : 's'} · schedule value`}
+                  ? `${entitledAssessmentCount} of ${activeAssessments} active assessment${activeAssessments === 1 ? "" : "s"} · schedule value`
+                  : `${activeAssessments} active assessment${activeAssessments === 1 ? "" : "s"} · schedule value`}
               </Text>
-              <Text style={{ fontSize: 10.5 * fontScale, fontWeight: 'bold', color: inkTone('#0f172a') }}>{moneyOf(cs.totalValue)}</Text>
+              <Text
+                style={{
+                  fontSize: 10.5 * fontScale,
+                  fontWeight: "bold",
+                  color: inkTone("#0f172a"),
+                }}
+              >
+                {moneyOf(cs.totalValue)}
+              </Text>
             </View>
             {(cs.cancelledCount || 0) > 0 ? (
-              <Text style={{ fontSize: 8.5 * fontScale, color: inkTone('#64748b'), marginTop: 3 }}>
-                {cs.cancelledCount} cancelled assessment{(cs.cancelledCount || 0) === 1 ? '' : 's'} excluded from the active schedule value{(cs.cancelledValue || 0) > 0 ? ` (cancelled value ${moneyOf(cs.cancelledValue || 0)})` : ''}.
+              <Text
+                style={{
+                  fontSize: 8.5 * fontScale,
+                  color: inkTone("#64748b"),
+                  marginTop: 3,
+                }}
+              >
+                {cs.cancelledCount} cancelled assessment
+                {(cs.cancelledCount || 0) === 1 ? "" : "s"} excluded from the
+                active schedule value
+                {(cs.cancelledValue || 0) > 0
+                  ? ` (cancelled value ${moneyOf(cs.cancelledValue || 0)})`
+                  : ""}
+                .
               </Text>
             ) : null}
             {(cs.releasedCount || 0) > 0 ? (
-              <Text style={{ fontSize: 8.5 * fontScale, color: inkTone('#64748b'), marginTop: 3 }}>
-                {(cs.releasedCount || 0)} released assessment{(cs.releasedCount || 0) === 1 ? '' : 's'} excluded from the schedule value{releasedAmount > 0 ? ` (${moneyOf(releasedAmount)})` : ''}: the reservation was returned to the available balance.
+              <Text
+                style={{
+                  fontSize: 8.5 * fontScale,
+                  color: inkTone("#64748b"),
+                  marginTop: 3,
+                }}
+              >
+                {cs.releasedCount || 0} released assessment
+                {(cs.releasedCount || 0) === 1 ? "" : "s"} excluded from the
+                schedule value
+                {releasedAmount > 0 ? ` (${moneyOf(releasedAmount)})` : ""}: the
+                reservation was returned to the available balance.
               </Text>
             ) : null}
           </View>
 
           {/* ── Schedule completeness (reported, never substituted) ── */}
           {!cs.scheduleComplete ? (
-            <View wrap={false} style={{ marginTop: 10, flexDirection: 'row', borderWidth: 0.8, borderColor: monoLine(mode, '#f59e0b'), borderRadius: 3, backgroundColor: monoFill(mode, '#fffbeb') }}>
-              <View style={{ width: 3, backgroundColor: monoFill(mode, '#f59e0b') }} />
+            <View
+              wrap={false}
+              style={{
+                marginTop: 10,
+                flexDirection: "row",
+                borderWidth: 0.8,
+                borderColor: monoLine(mode, "#f59e0b"),
+                borderRadius: 3,
+                backgroundColor: monoFill(mode, "#fffbeb"),
+              }}
+            >
+              <View
+                style={{ width: 3, backgroundColor: monoFill(mode, "#f59e0b") }}
+              />
               <View style={{ flex: 1, padding: 9 }}>
-                <Text style={{ fontSize: 9.5 * fontScale, fontWeight: 'bold', color: inkTone('#92400e') }}>
-                  Schedule incomplete: {missingSequences.length} of {activeAssessments} active assessment{activeAssessments === 1 ? '' : 's'} have no scheduled date (sequence{missingSequences.length === 1 ? '' : 's'} {missingSequences.join(', ')}).
+                <Text
+                  style={{
+                    fontSize: 9.5 * fontScale,
+                    fontWeight: "bold",
+                    color: inkTone("#92400e"),
+                  }}
+                >
+                  Schedule incomplete: {missingSequences.length} of{" "}
+                  {activeAssessments} active assessment
+                  {activeAssessments === 1 ? "" : "s"} have no scheduled date
+                  (sequence{missingSequences.length === 1 ? "" : "s"}{" "}
+                  {missingSequences.join(", ")}).
                 </Text>
-                <Text style={{ fontSize: 9 * fontScale, color: inkTone('#92400e'), marginTop: 2, lineHeight: 1.4 }}>
-                  This schedule is not yet complete as agreed. Missing dates are reported explicitly and are never substituted.
+                <Text
+                  style={{
+                    fontSize: 9 * fontScale,
+                    color: inkTone("#92400e"),
+                    marginTop: 2,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  This schedule is not yet complete as agreed. Missing dates are
+                  reported explicitly and are never substituted.
                 </Text>
               </View>
             </View>
@@ -2626,25 +7103,74 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               between two facts the customer is looking at. Both are printed
               verbatim: the assessment date and the recorded price are never
               changed to fit the period or the formula. ── */}
-          {(outOfPeriodRows.length > 0 || pricingMismatches.length > 0) ? (
-            <View wrap={false} style={{ marginTop: 10, flexDirection: 'row', borderWidth: 0.8, borderColor: monoLine(mode, '#ef4444'), borderRadius: 3, backgroundColor: monoFill(mode, '#fef2f2') }}>
-              <View style={{ width: 3, backgroundColor: monoFill(mode, '#ef4444') }} />
+          {outOfPeriodRows.length > 0 || pricingMismatches.length > 0 ? (
+            <View
+              wrap={false}
+              style={{
+                marginTop: 10,
+                flexDirection: "row",
+                borderWidth: 0.8,
+                borderColor: monoLine(mode, "#ef4444"),
+                borderRadius: 3,
+                backgroundColor: monoFill(mode, "#fef2f2"),
+              }}
+            >
+              <View
+                style={{ width: 3, backgroundColor: monoFill(mode, "#ef4444") }}
+              />
               <View style={{ flex: 1, padding: 9 }}>
-                <Text style={{ fontSize: 9.5 * fontScale, fontWeight: 'bold', color: inkTone('#991b1b') }}>
+                <Text
+                  style={{
+                    fontSize: 9.5 * fontScale,
+                    fontWeight: "bold",
+                    color: inkTone("#991b1b"),
+                  }}
+                >
                   Schedule needs review
                 </Text>
                 {outOfPeriodRows.map((row) => (
-                  <Text key={`oop-${row.sequence}`} style={{ fontSize: 9 * fontScale, color: inkTone('#991b1b'), marginTop: 2, lineHeight: 1.45 }}>
-                    • Assessment {row.sequence} ({row.assessmentName}) is scheduled for {formatIsoDate(row.assessmentDate)}, which is {row.reason === 'after_period_end' ? 'after the contract period ends' : 'before the contract period starts'}.
+                  <Text
+                    key={`oop-${row.sequence}`}
+                    style={{
+                      fontSize: 9 * fontScale,
+                      color: inkTone("#991b1b"),
+                      marginTop: 2,
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    • Assessment {row.sequence} ({row.assessmentName}) is
+                    scheduled for {formatIsoDate(row.assessmentDate)}, which is{" "}
+                    {row.reason === "after_period_end"
+                      ? "after the contract period ends"
+                      : "before the contract period starts"}
+                    .
                   </Text>
                 ))}
                 {pricingMismatches.map((row) => (
-                  <Text key={`pm-${row.sequence}`} style={{ fontSize: 9 * fontScale, color: inkTone('#991b1b'), marginTop: 2, lineHeight: 1.45 }}>
-                    • Assessment {row.sequence} ({row.assessmentName}) is priced {moneyOf(row.recorded)}, but the agreed pricing basis is {moneyOf(row.expected)}.
+                  <Text
+                    key={`pm-${row.sequence}`}
+                    style={{
+                      fontSize: 9 * fontScale,
+                      color: inkTone("#991b1b"),
+                      marginTop: 2,
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    • Assessment {row.sequence} ({row.assessmentName}) is priced{" "}
+                    {moneyOf(row.recorded)}, but the agreed pricing basis is{" "}
+                    {moneyOf(row.expected)}.
                   </Text>
                 ))}
-                <Text style={{ fontSize: 8.5 * fontScale, color: inkTone('#991b1b'), marginTop: 3, lineHeight: 1.45 }}>
-                  Dates and amounts are shown as recorded and are not adjusted on this document.
+                <Text
+                  style={{
+                    fontSize: 8.5 * fontScale,
+                    color: inkTone("#991b1b"),
+                    marginTop: 3,
+                    lineHeight: 1.45,
+                  }}
+                >
+                  Dates and amounts are shown as recorded and are not adjusted
+                  on this document.
                 </Text>
               </View>
             </View>
@@ -2656,41 +7182,109 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               printed verbatim. Silently clamping it to zero would misstate the
               customer's position on a contractual document. ── */}
           {fundInconsistencies.length > 0 ? (
-            <View wrap={false} style={{ marginTop: 10, flexDirection: 'row', borderWidth: 0.8, borderColor: monoLine(mode, '#ef4444'), borderRadius: 3, backgroundColor: monoFill(mode, '#fef2f2') }}>
-              <View style={{ width: 3, backgroundColor: monoFill(mode, '#ef4444') }} />
+            <View
+              wrap={false}
+              style={{
+                marginTop: 10,
+                flexDirection: "row",
+                borderWidth: 0.8,
+                borderColor: monoLine(mode, "#ef4444"),
+                borderRadius: 3,
+                backgroundColor: monoFill(mode, "#fef2f2"),
+              }}
+            >
+              <View
+                style={{ width: 3, backgroundColor: monoFill(mode, "#ef4444") }}
+              />
               <View style={{ flex: 1, padding: 9 }}>
-                <Text style={{ fontSize: 9.5 * fontScale, fontWeight: 'bold', color: inkTone('#991b1b') }}>
+                <Text
+                  style={{
+                    fontSize: 9.5 * fontScale,
+                    fontWeight: "bold",
+                    color: inkTone("#991b1b"),
+                  }}
+                >
                   Fund position needs review
                 </Text>
                 {fundInconsistencies.map((detail, index) => (
-                  <Text key={index} style={{ fontSize: 9 * fontScale, color: inkTone('#991b1b'), marginTop: 2, lineHeight: 1.45 }}>
+                  <Text
+                    key={index}
+                    style={{
+                      fontSize: 9 * fontScale,
+                      color: inkTone("#991b1b"),
+                      marginTop: 2,
+                      lineHeight: 1.45,
+                    }}
+                  >
                     • {detail}
                   </Text>
                 ))}
-                <Text style={{ fontSize: 8.5 * fontScale, color: inkTone('#991b1b'), marginTop: 3, lineHeight: 1.45 }}>
-                  Figures are shown as recorded and are not adjusted on this document.
+                <Text
+                  style={{
+                    fontSize: 8.5 * fontScale,
+                    color: inkTone("#991b1b"),
+                    marginTop: 3,
+                    lineHeight: 1.45,
+                  }}
+                >
+                  Figures are shown as recorded and are not adjusted on this
+                  document.
                 </Text>
               </View>
             </View>
           ) : null}
 
           {/* ── Lifecycle progress + fund position ── */}
-          <View wrap={false} style={{ flexDirection: 'row', marginTop: 8, borderWidth: 0.8, borderColor: hairline, borderRadius: 3 }}>
+          <View
+            wrap={false}
+            style={{
+              flexDirection: "row",
+              marginTop: 8,
+              borderWidth: 0.8,
+              borderColor: hairline,
+              borderRadius: 3,
+            }}
+          >
             <View style={{ flex: 1, padding: 8 }}>
-              {sectionHeading('Progress')}
+              {sectionHeading("Progress")}
               {/* Two explicit lines, never one wrapped line: react-pdf
                   hyphenates when a line break falls inside a word, and a break
                   after the "·" separator printed a stray "-" on the document.
                   Fixed breaks keep every separator intact. */}
-              <Text style={{ fontSize: 8.5 * fontScale, color: inkTone('#334155'), lineHeight: 1.45 }}>
-                {progressRows.slice(0, 3).map(([label, value]) => `${label} ${value}`).join('  ·  ')}
+              <Text
+                style={{
+                  fontSize: 8.5 * fontScale,
+                  color: inkTone("#334155"),
+                  lineHeight: 1.45,
+                }}
+              >
+                {progressRows
+                  .slice(0, 3)
+                  .map(([label, value]) => `${label} ${value}`)
+                  .join("  ·  ")}
               </Text>
-              <Text style={{ fontSize: 8.5 * fontScale, color: inkTone('#334155'), lineHeight: 1.45 }}>
-                {progressRows.slice(3).map(([label, value]) => `${label} ${value}`).join('  ·  ')}
+              <Text
+                style={{
+                  fontSize: 8.5 * fontScale,
+                  color: inkTone("#334155"),
+                  lineHeight: 1.45,
+                }}
+              >
+                {progressRows
+                  .slice(3)
+                  .map(([label, value]) => `${label} ${value}`)
+                  .join("  ·  ")}
               </Text>
             </View>
-            <View style={{ flex: 1, padding: 8, borderLeftWidth: 0.6, borderColor: hairline }}>
-              {sectionHeading('Fund Position')}
+            <View
+              style={{
+                flex: 1,
+                padding: 8,
+                borderLeftWidth: 0.6,
+                borderColor: hairline,
+              }}
+            >
+              {sectionHeading("Fund Position")}
               {fundRows.map(([label, value], index) => (
                 <View key={label}>{defRow(label, value, index > 0)}</View>
               ))}
@@ -2701,24 +7295,67 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               The statuses are the customer's terms, not ours: what a reserved,
               consumed, released or cancelled assessment means for the money. */}
           <View wrap={false} style={{ marginTop: 5 }}>
-            <Text style={{ fontSize: 7.5 * fontScale, color: inkTone('#64748b'), lineHeight: 1.35 }}>
-              Reserved: committed to a scheduled assessment. Consumed: completed and chargeable. Released: reservation returned to the available balance. Cancelled: excluded from this schedule. {currencyUnitNote}
+            <Text
+              style={{
+                fontSize: 7.5 * fontScale,
+                color: inkTone("#64748b"),
+                lineHeight: 1.35,
+              }}
+            >
+              Reserved: committed to a scheduled assessment. Consumed: completed
+              and chargeable. Released: reservation returned to the available
+              balance. Cancelled: excluded from this schedule.{" "}
+              {currencyUnitNote}
             </Text>
           </View>
 
           {/* ── Agreed terms (carried on the contract, printed here) ── */}
-          {(cs.terms || cs.notes) ? (
-            <View wrap={false} style={{ marginTop: 8, borderWidth: 0.8, borderColor: hairline, borderRadius: 3, padding: 8 }}>
-              {sectionHeading('Terms & Conditions')}
+          {cs.terms || cs.notes ? (
+            <View
+              wrap={false}
+              style={{
+                marginTop: 8,
+                borderWidth: 0.8,
+                borderColor: hairline,
+                borderRadius: 3,
+                padding: 8,
+              }}
+            >
+              {sectionHeading("Terms & Conditions")}
               {cs.terms ? (
-                <Text style={{ fontSize: 9 * fontScale, color: inkTone('#334155'), lineHeight: 1.5 }}>{cs.terms}</Text>
+                <Text
+                  style={{
+                    fontSize: 9 * fontScale,
+                    color: inkTone("#334155"),
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {cs.terms}
+                </Text>
               ) : null}
               {cs.notes ? (
                 <View style={{ marginTop: cs.terms ? 7 : 0 }}>
-                  <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', letterSpacing: 1, textTransform: 'uppercase', color: inkTone('#64748b'), marginBottom: 3 }}>
+                  <Text
+                    style={{
+                      fontSize: 8 * fontScale,
+                      fontWeight: "bold",
+                      letterSpacing: 1,
+                      textTransform: "uppercase",
+                      color: inkTone("#64748b"),
+                      marginBottom: 3,
+                    }}
+                  >
                     Notes
                   </Text>
-                  <Text style={{ fontSize: 9 * fontScale, color: inkTone('#334155'), lineHeight: 1.5 }}>{cs.notes}</Text>
+                  <Text
+                    style={{
+                      fontSize: 9 * fontScale,
+                      color: inkTone("#334155"),
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {cs.notes}
+                  </Text>
                 </View>
               ) : null}
             </View>
@@ -2726,45 +7363,83 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
 
           {/* Closing line — same wording and weight as the payment receipt so
               the two documents close identically. */}
-          <View wrap={false} style={{ marginTop: 6, alignItems: 'center' }}>
-            <Text style={{ fontSize: scaledFont(11), color: inkTone('#334155'), textAlign: 'center' }}>
-              Thank you for choosing <Text style={{ fontWeight: 'bold' }}>{companyName}</Text>
+          <View wrap={false} style={{ marginTop: 6, alignItems: "center" }}>
+            <Text
+              style={{
+                fontSize: scaledFont(11),
+                color: inkTone("#334155"),
+                textAlign: "center",
+              }}
+            >
+              Thank you for choosing{" "}
+              <Text style={{ fontWeight: "bold" }}>{companyName}</Text>
             </Text>
           </View>
 
-                    {/* ── Document integrity ─────────────────────────────────────────────────
+          {/* ── Document integrity ─────────────────────────────────────────────────
               The tamper-evidence digest of the schedule. The document's IDENTITY
               (id, version, issued date, status) is deliberately NOT printed:
               the customer scans the QR and sees it on the verification page,
               like every other Prime ERP document. The digest is printed so the
               customer can compare it with the one the verification page shows.
               ──────────────────────────────────────────────────── */}
-          <View wrap={false} style={{ marginTop: 8, borderTopWidth: 0.5, borderColor: monoLine(mode, '#e2e8f0'), paddingTop: 6 }}>
-            <Text style={{ fontSize: 10 * fontScale, fontWeight: 'bold', color: monoText(mode, '#1e3a8a'), letterSpacing: 0.4 }}>
+          <View
+            wrap={false}
+            style={{
+              marginTop: 8,
+              borderTopWidth: 0.5,
+              borderColor: monoLine(mode, "#e2e8f0"),
+              paddingTop: 6,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 10 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#1e3a8a"),
+                letterSpacing: 0.4,
+              }}
+            >
               DOCUMENT INTEGRITY
             </Text>
-            <Text style={{ marginTop: 4, fontSize: 8 * fontScale, color: monoText(mode, '#1e3a8a'), letterSpacing: 0.3 }}>
+            <Text
+              style={{
+                marginTop: 4,
+                fontSize: 8 * fontScale,
+                color: monoText(mode, "#1e3a8a"),
+                letterSpacing: 0.3,
+              }}
+            >
               Content hash: {cs.contentHash}
             </Text>
-            <Text style={{ marginTop: 2, fontSize: 8 * fontScale, color: inkTone('#475569'), lineHeight: 1.35 }}>
-              This SHA-256 digest covers the contract identity, the assessment schedule
-              and the fund position; any change to them changes the digest. It is a
-              tamper-evidence fingerprint, not a digital signature. Scan the QR code to
-              view this document's record and verify it with {companyName}.
+            <Text
+              style={{
+                marginTop: 2,
+                fontSize: 8 * fontScale,
+                color: inkTone("#475569"),
+                lineHeight: 1.35,
+              }}
+            >
+              This SHA-256 digest covers the contract identity, the assessment
+              schedule and the fund position; any change to them changes the
+              digest. It is a tamper-evidence fingerprint, not a digital
+              signature. Scan the QR code to view this document's record and
+              verify it with {companyName}.
             </Text>
           </View>
 
-        {/* The verification QR block is rendered ONCE, after the last block of
+          {/* The verification QR block is rendered ONCE, after the last block of
             the document — never repeated on every page. The general invoice
             repeats its fixed footer, which on a multi-page document prints the
             same verification block twice; the schedule carries the block once,
             on the final page. */}
           <View wrap={false} style={{ marginTop: 8 }}>
             <VerificationLabel fontScale={fontScale} />
-            <SecurityFooter colorMode={mode}
+            <SecurityFooter
+              colorMode={mode}
               data={cs}
               companyName={companyName}
-              legalFooterLine1={resolveFooterText(config, '', false)}
+              legalFooterLine1={resolveFooterText(config, "", false)}
               legalFooterLine2={buildFooterContactLine(config)}
               fontScale={fontScale}
               flowing
@@ -2775,12 +7450,18 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     );
   }
 
-  if (type === 'CONTRACT_COMPLETION_RECEIPT') {
+  if (type === "CONTRACT_COMPLETION_RECEIPT") {
     const cr = data as ContractCompletionReceiptDoc;
-    const cancelled = isCancelledStatus(String(cr.status || ''), cr as unknown as Record<string, unknown>);
+    const cancelled = isCancelledStatus(
+      String(cr.status || ""),
+      cr as unknown as Record<string, unknown>,
+    );
     // The receipt carries no currency field: the money is stated in the
     // company's configured currency, exactly as on the payment receipt.
-    const crCurrency = config?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || 'K';
+    const crCurrency =
+      config?.currencySymbol ||
+      currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol ||
+      "K";
 
     // ── Preamble geometry (the payment receipt's, verbatim) ────────────────
     // Centred company identity with the logo pinned out of flow at the left
@@ -2802,73 +7483,149 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     // name takes the full content width and prints on ONE row (shrink-to-fit
     // plus a hard clamp), so it never breaks the header's rhythm however long
     // the registered school name is.
-    const crCustomerNameLabel = 'Customer Name: ';
-    const crCustomerName = resolveCustomerDisplayName(cr.customerName, cr.schoolName) || 'Customer';
+    const crCustomerNameLabel = "Customer Name: ";
+    const crCustomerName =
+      resolveCustomerDisplayName(cr.customerName, cr.schoolName) || "Customer";
     const crCustomerFontSize = fitFontSize(
       crCustomerName,
-      Math.max(24, RECEIPT_CONTENT_WIDTH - measureTextWidth(crCustomerNameLabel, crBodyFontSize, true)),
+      Math.max(
+        24,
+        RECEIPT_CONTENT_WIDTH -
+          measureTextWidth(crCustomerNameLabel, crBodyFontSize, true),
+      ),
       { maxSize: crBodyFontSize, minSize: 7 },
     );
     // Party descriptor beneath the name. A value that merely repeats the
     // customer name is dropped (the common case: the school IS the customer)
     // so the identity block never states the same thing twice.
     const crCustomerKey = crCustomerName.trim().toLowerCase();
-    const crCustomerSubline = stripCustomerIdSuffix(String(cr.schoolName || ''));
-    const crShowSubline = !!crCustomerSubline && crCustomerSubline.toLowerCase() !== crCustomerKey;
+    const crCustomerSubline = stripCustomerIdSuffix(
+      String(cr.schoolName || ""),
+    );
+    const crShowSubline =
+      !!crCustomerSubline && crCustomerSubline.toLowerCase() !== crCustomerKey;
 
     // Palette indirection: every colour goes through the print-mode helpers so
     // the mono copy degrades to black/greyscale without a second template.
     const crInk = (hex: string) => monoText(mode, hex);
-    const crHairline = monoLine(mode, '#cbd5e1');
-    const crSoftFill = monoFill(mode, '#f8fafc');
-    const crMoney = (value: number) => `${crCurrency} ${formatAmount(Number(value) || 0)}`;
+    const crHairline = monoLine(mode, "#cbd5e1");
+    const crSoftFill = monoFill(mode, "#f8fafc");
+    const crMoney = (value: number) =>
+      `${crCurrency} ${formatAmount(Number(value) || 0)}`;
 
     // Lifecycle tone. Deliberately local: getStatusTone() is shaped for invoice
     // payment states (its fallback is "overdue red"), which would paint an
     // active/completed contract red.
     const crStatusTone = (() => {
-      if (mode === 'mono') return '#000';
-      const key = String(cr.status || '').trim().toLowerCase();
-      if (['active', 'completed', 'consumed', 'closed', 'fulfilled'].includes(key)) return '#047857';
-      if (['draft', 'pending', 'reserved', 'scheduled', 'processing', 'in_progress'].includes(key)) return '#b45309';
-      if (['cancelled', 'canceled', 'void', 'voided'].includes(key)) return '#b91c1c';
-      return '#475569';
+      if (mode === "mono") return "#000";
+      const key = String(cr.status || "")
+        .trim()
+        .toLowerCase();
+      if (
+        ["active", "completed", "consumed", "closed", "fulfilled"].includes(key)
+      )
+        return "#047857";
+      if (
+        [
+          "draft",
+          "pending",
+          "reserved",
+          "scheduled",
+          "processing",
+          "in_progress",
+        ].includes(key)
+      )
+        return "#b45309";
+      if (["cancelled", "canceled", "void", "voided"].includes(key))
+        return "#b91c1c";
+      return "#475569";
     })();
 
     // Inline "Label: value" metadata row — the payment receipt's metadata
     // grammar, kept verbatim so the two documents read as one family.
     const crMetaRow = (label: string, value: string, valueStyle?: any) => (
-      <Text style={{ fontSize: crBodyFontSize, color: crInk('#111111'), marginBottom: 2 }}>
-        <Text style={{ fontWeight: 'bold' }}>{label}: </Text>
+      <Text
+        style={{
+          fontSize: crBodyFontSize,
+          color: crInk("#111111"),
+          marginBottom: 2,
+        }}
+      >
+        <Text style={{ fontWeight: "bold" }}>{label}: </Text>
         <Text style={valueStyle}>{value}</Text>
       </Text>
     );
 
     const crSectionHeading = (label: string) => (
-      <Text style={{ fontSize: crBodyFontSize, fontWeight: 'bold', color: crInk('#111111'), marginBottom: 3 }}>{label}</Text>
+      <Text
+        style={{
+          fontSize: crBodyFontSize,
+          fontWeight: "bold",
+          color: crInk("#111111"),
+          marginBottom: 3,
+        }}
+      >
+        {label}
+      </Text>
     );
 
     // Bordered definition row — the fund-position grammar of the assessment
     // schedule, carried over so the two contract documents read as one family.
     const crDefRow = (label: string, value: string, withDivider = true) => (
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 1.5, ...(withDivider ? { borderTopWidth: 0.5, borderColor: crHairline } : null) }}>
-        <Text style={{ fontSize: 9 * fontScale, color: crInk('#475569') }}>{label}</Text>
-        <Text style={{ fontSize: 9.5 * fontScale, fontWeight: 'bold', color: crInk('#0f172a'), marginLeft: 10, textAlign: 'right', flexShrink: 1 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          paddingVertical: 1.5,
+          ...(withDivider
+            ? { borderTopWidth: 0.5, borderColor: crHairline }
+            : null),
+        }}
+      >
+        <Text style={{ fontSize: 9 * fontScale, color: crInk("#475569") }}>
+          {label}
+        </Text>
+        <Text
+          style={{
+            fontSize: 9.5 * fontScale,
+            fontWeight: "bold",
+            color: crInk("#0f172a"),
+            marginLeft: 10,
+            textAlign: "right",
+            flexShrink: 1,
+          }}
+        >
           {value}
         </Text>
       </View>
     );
 
-    const crCellText = { fontSize: crBodyFontSize, color: crInk('#111111') } as const;
-    const crCellBold = { fontSize: crBodyFontSize, fontWeight: 'bold' as const, color: crInk('#111111') };
+    const crCellText = {
+      fontSize: crBodyFontSize,
+      color: crInk("#111111"),
+    } as const;
+    const crCellBold = {
+      fontSize: crBodyFontSize,
+      fontWeight: "bold" as const,
+      color: crInk("#111111"),
+    };
 
     return (
-      <Document title={`Assessment Completion Receipt - ${cr.receiptNumber}`} author={companyName}>
+      <Document
+        title={`Assessment Completion Receipt - ${cr.receiptNumber}`}
+        author={companyName}
+      >
         <Page size="A4" style={[s.page, pageStyle]}>
-          {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+          {channel === "portal" && <PortalCopyWatermark colorMode={mode} />}
           {cancelled && <CancelledWatermark colorMode={mode} />}
-          <PaginationFurniture colorMode={mode}
-            identity={{ title: 'Assessment Completion Receipt', number: String(cr.receiptNumber || ''), customer: crCustomerName }}
+          <PaginationFurniture
+            colorMode={mode}
+            identity={{
+              title: "Assessment Completion Receipt",
+              number: String(cr.receiptNumber || ""),
+              customer: crCustomerName,
+            }}
             companyName={companyName}
           />
 
@@ -2877,37 +7634,117 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               logoWidth so brand-asset sizing is preserved). The identity block
               spans the full width with symmetric gutters, so the name stays
               page-centred and can never slide under the logo. */}
-          <View style={{ position: 'relative', alignItems: 'center', marginBottom: 6, paddingTop: 2 }}>
+          <View
+            style={{
+              position: "relative",
+              alignItems: "center",
+              marginBottom: 6,
+              paddingTop: 2,
+            }}
+          >
             {!!logo && (
-              <Image src={logo} style={{ position: 'absolute', left: 0, top: 0, width: templateSettings.logoWidth }} />
+              <Image
+                src={logo}
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  width: templateSettings.logoWidth,
+                }}
+              />
             )}
-            <View style={{ alignItems: 'center', width: '100%', paddingLeft: crNameGutter, paddingRight: crNameGutter }}>
-              <Text style={{ fontSize: crNameFontSize, fontWeight: 'bold', color: crInk('#000'), textAlign: 'center', maxLines: 1, textOverflow: 'ellipsis' }}>{companyName}</Text>
+            <View
+              style={{
+                alignItems: "center",
+                width: "100%",
+                paddingLeft: crNameGutter,
+                paddingRight: crNameGutter,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: crNameFontSize,
+                  fontWeight: "bold",
+                  color: crInk("#000"),
+                  textAlign: "center",
+                  maxLines: 1,
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {companyName}
+              </Text>
               {!!receiptCompanyAddress && (
-                <Text style={{ fontSize: crBodyFontSize, color: crInk('#334155'), textAlign: 'center', marginTop: 2 }}>{receiptCompanyAddress}</Text>
+                <Text
+                  style={{
+                    fontSize: crBodyFontSize,
+                    color: crInk("#334155"),
+                    textAlign: "center",
+                    marginTop: 2,
+                  }}
+                >
+                  {receiptCompanyAddress}
+                </Text>
               )}
               {!!companyContact && (
-                <Text style={{ fontSize: crBodyFontSize, color: crInk('#334155'), textAlign: 'center', marginTop: 2 }}>{companyContact}</Text>
+                <Text
+                  style={{
+                    fontSize: crBodyFontSize,
+                    color: crInk("#334155"),
+                    textAlign: "center",
+                    marginTop: 2,
+                  }}
+                >
+                  {companyContact}
+                </Text>
               )}
             </View>
           </View>
 
-          <Text style={{ fontSize: crTitleFontSize, fontWeight: 'bold', color: crInk('#000'), textAlign: 'center', marginTop: 6, marginBottom: 6 }}>
+          <Text
+            style={{
+              fontSize: crTitleFontSize,
+              fontWeight: "bold",
+              color: crInk("#000"),
+              textAlign: "center",
+              marginTop: 6,
+              marginBottom: 6,
+            }}
+          >
             Assessment Completion Receipt
           </Text>
-          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 4 }} />
+          <View
+            style={{
+              height: 1,
+              backgroundColor: monoLine(mode, "#9ca3af"),
+              marginBottom: 4,
+            }}
+          />
 
           {/* Addressee row: the customer name spans the full content width so
               it can always print on ONE row. It sits directly under the title
               because it is who the receipt is for; the two-column grid below
               carries the completion facts. */}
           <View style={{ marginBottom: 6 }}>
-            <Text style={{ fontSize: crBodyFontSize, color: crInk('#111111'), marginBottom: 3, maxLines: 1, textOverflow: 'ellipsis' }}>
-              <Text style={{ fontWeight: 'bold' }}>{crCustomerNameLabel}</Text>
-              <Text style={{ fontSize: crCustomerFontSize }}>{crCustomerName}</Text>
+            <Text
+              style={{
+                fontSize: crBodyFontSize,
+                color: crInk("#111111"),
+                marginBottom: 3,
+                maxLines: 1,
+                textOverflow: "ellipsis",
+              }}
+            >
+              <Text style={{ fontWeight: "bold" }}>{crCustomerNameLabel}</Text>
+              <Text style={{ fontSize: crCustomerFontSize }}>
+                {crCustomerName}
+              </Text>
             </Text>
             {crShowSubline && (
-              <Text style={{ fontSize: 9 * fontScale, color: crInk('#64748b') }}>{crCustomerSubline}</Text>
+              <Text
+                style={{ fontSize: 9 * fontScale, color: crInk("#64748b") }}
+              >
+                {crCustomerSubline}
+              </Text>
             )}
           </View>
 
@@ -2915,56 +7752,168 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               the issue date, academic year, assessment sequence and contract
               state at right (right column indented two tab stops, as on the
               payment receipt). Every field the document carries is printed. */}
-          <View style={{ flexDirection: 'row', gap: RECEIPT_META_GAP, marginBottom: 8 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              gap: RECEIPT_META_GAP,
+              marginBottom: 8,
+            }}
+          >
             <View style={{ flex: 1 }}>
-              {crMetaRow('Receipt No', String(cr.receiptNumber || 'Not stated'))}
-              {crMetaRow('Contract No', String(cr.contractNumber || 'Not stated'))}
-              {crMetaRow('Version', String(cr.version ?? 1))}
-              {crMetaRow('Currency', resolveReceiptCurrencyLabel(crCurrency))}
+              {crMetaRow(
+                "Receipt No",
+                String(cr.receiptNumber || "Not stated"),
+              )}
+              {crMetaRow(
+                "Contract No",
+                String(cr.contractNumber || "Not stated"),
+              )}
+              {crMetaRow("Version", String(cr.version ?? 1))}
+              {crMetaRow("Currency", resolveReceiptCurrencyLabel(crCurrency))}
             </View>
             <View style={{ flex: 1, paddingLeft: crMetaRightIndent }}>
-              {crMetaRow('Date', String(cr.date || 'Not stated'))}
-              {crMetaRow('Academic Year', String(cr.academicYear || 'Not stated'))}
-              {crMetaRow('Sequence', `${cr.sequence} of ${cr.totalAssessments}`)}
-              {crMetaRow('Status', toTitleCase(String(cr.status || 'draft')), { fontWeight: 'bold', color: crInk(crStatusTone) })}
+              {crMetaRow("Date", String(cr.date || "Not stated"))}
+              {crMetaRow(
+                "Academic Year",
+                String(cr.academicYear || "Not stated"),
+              )}
+              {crMetaRow(
+                "Sequence",
+                `${cr.sequence} of ${cr.totalAssessments}`,
+              )}
+              {crMetaRow("Status", toTitleCase(String(cr.status || "draft")), {
+                fontWeight: "bold",
+                color: crInk(crStatusTone),
+              })}
             </View>
           </View>
-          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 4 }} />
+          <View
+            style={{
+              height: 1,
+              backgroundColor: monoLine(mode, "#9ca3af"),
+              marginBottom: 4,
+            }}
+          />
 
           {/* Bordered details table: the payment receipt's Description /
               Line Total / Paid table carries one completed assessment instead
               of a payment line. Price is the assessment's agreed unit price;
               Debited is the amount this receipt recognised, so the two money
               columns answer two different questions. */}
-          {crSectionHeading('Completion Details Table')}
-          <View style={{ borderWidth: 0.5, borderColor: monoLine(mode, '#9ca3af'), marginBottom: 8 }}>
-            <View style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>
-              <Text style={[crCellBold, { flex: 3, padding: 4, borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }]}>Description</Text>
-              <Text style={[crCellBold, { flex: 1, padding: 4, textAlign: 'right', borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }]}>Price</Text>
-              <Text style={[crCellBold, { flex: 1, padding: 4, textAlign: 'right' }]}>Debited</Text>
+          {crSectionHeading("Completion Details Table")}
+          <View
+            style={{
+              borderWidth: 0.5,
+              borderColor: monoLine(mode, "#9ca3af"),
+              marginBottom: 8,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                borderBottomWidth: 0.5,
+                borderColor: monoLine(mode, "#9ca3af"),
+              }}
+            >
+              <Text
+                style={[
+                  crCellBold,
+                  {
+                    flex: 3,
+                    padding: 4,
+                    borderRightWidth: 0.5,
+                    borderColor: monoLine(mode, "#9ca3af"),
+                  },
+                ]}
+              >
+                Description
+              </Text>
+              <Text
+                style={[
+                  crCellBold,
+                  {
+                    flex: 1,
+                    padding: 4,
+                    textAlign: "right",
+                    borderRightWidth: 0.5,
+                    borderColor: monoLine(mode, "#9ca3af"),
+                  },
+                ]}
+              >
+                Price
+              </Text>
+              <Text
+                style={[
+                  crCellBold,
+                  { flex: 1, padding: 4, textAlign: "right" },
+                ]}
+              >
+                Debited
+              </Text>
             </View>
-            <View style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>
-              <View style={{ flex: 3, padding: 4, borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>
-                <Text style={[crCellBold, { marginBottom: 1 }]}>{cr.item.assessmentName || 'Assessment'}</Text>
+            <View
+              style={{
+                flexDirection: "row",
+                borderBottomWidth: 0.5,
+                borderColor: monoLine(mode, "#9ca3af"),
+              }}
+            >
+              <View
+                style={{
+                  flex: 3,
+                  padding: 4,
+                  borderRightWidth: 0.5,
+                  borderColor: monoLine(mode, "#9ca3af"),
+                }}
+              >
+                <Text style={[crCellBold, { marginBottom: 1 }]}>
+                  {cr.item.assessmentName || "Assessment"}
+                </Text>
                 {(!!cr.item.grade || !!cr.item.subject) && (
-                  <Text style={{ fontSize: 9 * fontScale, color: crInk('#64748b'), marginBottom: 1 }}>
-                    {[cr.item.grade, cr.item.subject].filter(Boolean).join(' · ')}
+                  <Text
+                    style={{
+                      fontSize: 9 * fontScale,
+                      color: crInk("#64748b"),
+                      marginBottom: 1,
+                    }}
+                  >
+                    {[cr.item.grade, cr.item.subject]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </Text>
                 )}
-                <Text style={{ fontSize: 9 * fontScale, color: crInk('#64748b') }}>
-                  Consumed: {cr.item.consumedAt || 'Not recorded'}
+                <Text
+                  style={{ fontSize: 9 * fontScale, color: crInk("#64748b") }}
+                >
+                  Consumed: {cr.item.consumedAt || "Not recorded"}
                 </Text>
               </View>
-              <View style={{ flex: 1, padding: 4, justifyContent: 'center', borderRightWidth: 0.5, borderColor: monoLine(mode, '#9ca3af') }}>
-                <Text style={[crCellText, { textAlign: 'right' }]}>{crMoney(cr.item.unitPrice)}</Text>
+              <View
+                style={{
+                  flex: 1,
+                  padding: 4,
+                  justifyContent: "center",
+                  borderRightWidth: 0.5,
+                  borderColor: monoLine(mode, "#9ca3af"),
+                }}
+              >
+                <Text style={[crCellText, { textAlign: "right" }]}>
+                  {crMoney(cr.item.unitPrice)}
+                </Text>
               </View>
-              <View style={{ flex: 1, padding: 4, justifyContent: 'center' }}>
-                <Text style={[crCellText, { textAlign: 'right' }]}>{crMoney(cr.amountDebited)}</Text>
+              <View style={{ flex: 1, padding: 4, justifyContent: "center" }}>
+                <Text style={[crCellText, { textAlign: "right" }]}>
+                  {crMoney(cr.amountDebited)}
+                </Text>
               </View>
             </View>
-            <View style={{ flexDirection: 'row', padding: 4 }}>
-              <Text style={[crCellBold, { flex: 4, textAlign: 'right' }]}>Amount Debited</Text>
-              <Text style={[crCellBold, { flex: 1, textAlign: 'right' }]}>{crMoney(cr.amountDebited)}</Text>
+            <View style={{ flexDirection: "row", padding: 4 }}>
+              <Text style={[crCellBold, { flex: 4, textAlign: "right" }]}>
+                Amount Debited
+              </Text>
+              <Text style={[crCellBold, { flex: 1, textAlign: "right" }]}>
+                {crMoney(cr.amountDebited)}
+              </Text>
             </View>
           </View>
 
@@ -2972,64 +7921,165 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               the fund position the debit produced at right. Labels are the
               customer's terms, and every figure is printed as recorded — a
               negative or inconsistent position is never clamped to zero. */}
-          {crSectionHeading('Completion & Fund Position')}
-          <View style={{ flexDirection: 'row', borderWidth: 0.8, borderColor: crHairline, borderRadius: 3, marginBottom: 8 }}>
+          {crSectionHeading("Completion & Fund Position")}
+          <View
+            style={{
+              flexDirection: "row",
+              borderWidth: 0.8,
+              borderColor: crHairline,
+              borderRadius: 3,
+              marginBottom: 8,
+            }}
+          >
             <View style={{ flex: 1, padding: 7 }}>
-              <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', letterSpacing: 1.2, textTransform: 'uppercase', color: crInk('#64748b'), marginBottom: 5 }}>
+              <Text
+                style={{
+                  fontSize: 8 * fontScale,
+                  fontWeight: "bold",
+                  letterSpacing: 1.2,
+                  textTransform: "uppercase",
+                  color: crInk("#64748b"),
+                  marginBottom: 5,
+                }}
+              >
                 Progress
               </Text>
-              {crDefRow('Completion Progress', `${cr.completedToDate} / ${cr.totalAssessments}`, false)}
-              {crDefRow('Remaining Assessments', String(cr.remainingAssessments))}
-              {crDefRow('Total Assessments', String(cr.totalAssessments))}
+              {crDefRow(
+                "Completion Progress",
+                `${cr.completedToDate} / ${cr.totalAssessments}`,
+                false,
+              )}
+              {crDefRow(
+                "Remaining Assessments",
+                String(cr.remainingAssessments),
+              )}
+              {crDefRow("Total Assessments", String(cr.totalAssessments))}
             </View>
-            <View style={{ flex: 1, padding: 7, borderLeftWidth: 0.6, borderColor: crHairline }}>
-              <Text style={{ fontSize: 8 * fontScale, fontWeight: 'bold', letterSpacing: 1.2, textTransform: 'uppercase', color: crInk('#64748b'), marginBottom: 5 }}>
+            <View
+              style={{
+                flex: 1,
+                padding: 7,
+                borderLeftWidth: 0.6,
+                borderColor: crHairline,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 8 * fontScale,
+                  fontWeight: "bold",
+                  letterSpacing: 1.2,
+                  textTransform: "uppercase",
+                  color: crInk("#64748b"),
+                  marginBottom: 5,
+                }}
+              >
                 Fund Position
               </Text>
-              {crDefRow('Contract Value', crMoney(cr.contractValue), false)}
-              {crDefRow('Consumed to Date', crMoney(cr.totalConsumedToDate))}
-              {crDefRow('Reserved Funds', crMoney(cr.remainingReservedFunds))}
-              {crDefRow('Unallocated Funds', crMoney(cr.unallocatedFunds))}
-              {crDefRow('Wallet Balance After', crMoney(cr.walletBalanceAfter))}
+              {crDefRow("Contract Value", crMoney(cr.contractValue), false)}
+              {crDefRow("Consumed to Date", crMoney(cr.totalConsumedToDate))}
+              {crDefRow("Reserved Funds", crMoney(cr.remainingReservedFunds))}
+              {crDefRow("Unallocated Funds", crMoney(cr.unallocatedFunds))}
+              {crDefRow("Wallet Balance After", crMoney(cr.walletBalanceAfter))}
             </View>
           </View>
-          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginBottom: 4 }} />
+          <View
+            style={{
+              height: 1,
+              backgroundColor: monoLine(mode, "#9ca3af"),
+              marginBottom: 4,
+            }}
+          />
 
           {/* Canonical linkage: the two references that tie this printed
               receipt to the wallet movement and ledger entry that recognised
               the debit. Printed verbatim so a printed copy reconciles against
               the books without the database. */}
-          {crSectionHeading('Canonical Linkage')}
-          <View style={{ borderWidth: 0.8, borderColor: crHairline, borderRadius: 3, padding: 6, backgroundColor: crSoftFill, marginBottom: 6 }}>
-            <Text style={{ fontSize: crBodyFontSize, color: crInk('#111111'), marginBottom: 2 }}>
-              <Text style={{ fontWeight: 'bold' }}>Wallet Transaction: </Text>
-              <Text>{cr.walletTransactionId || 'Not recorded'}</Text>
+          {crSectionHeading("Canonical Linkage")}
+          <View
+            style={{
+              borderWidth: 0.8,
+              borderColor: crHairline,
+              borderRadius: 3,
+              padding: 6,
+              backgroundColor: crSoftFill,
+              marginBottom: 6,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: crBodyFontSize,
+                color: crInk("#111111"),
+                marginBottom: 2,
+              }}
+            >
+              <Text style={{ fontWeight: "bold" }}>Wallet Transaction: </Text>
+              <Text>{cr.walletTransactionId || "Not recorded"}</Text>
             </Text>
-            <Text style={{ fontSize: crBodyFontSize, color: crInk('#111111'), marginBottom: 3 }}>
-              <Text style={{ fontWeight: 'bold' }}>Ledger Entry: </Text>
-              <Text>{cr.ledgerEntryId || 'Not recorded'}</Text>
+            <Text
+              style={{
+                fontSize: crBodyFontSize,
+                color: crInk("#111111"),
+                marginBottom: 3,
+              }}
+            >
+              <Text style={{ fontWeight: "bold" }}>Ledger Entry: </Text>
+              <Text>{cr.ledgerEntryId || "Not recorded"}</Text>
             </Text>
-            <Text style={{ fontSize: 8.5 * fontScale, color: crInk('#64748b'), lineHeight: 1.35 }}>
-              These references tie this receipt to the wallet movement and ledger entry that recognised the debit.
+            <Text
+              style={{
+                fontSize: 8.5 * fontScale,
+                color: crInk("#64748b"),
+                lineHeight: 1.35,
+              }}
+            >
+              These references tie this receipt to the wallet movement and
+              ledger entry that recognised the debit.
             </Text>
           </View>
 
           {/* Formal notes section — the stored contract notes, else a neutral
               statement. Nothing the blocks above already print is repeated. */}
           <View style={{ marginTop: 2 }}>
-            {crSectionHeading('Notes Section')}
-            <View style={{ padding: 7, backgroundColor: crSoftFill, borderRadius: 8 }}>
-              <Text style={{ fontSize: crBodyFontSize, lineHeight: 1.5, color: crInk('#334155') }}>
-                {String(cr.notes || '').trim() || 'No additional notes are recorded on this contract.'}
+            {crSectionHeading("Notes Section")}
+            <View
+              style={{
+                padding: 7,
+                backgroundColor: crSoftFill,
+                borderRadius: 8,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: crBodyFontSize,
+                  lineHeight: 1.5,
+                  color: crInk("#334155"),
+                }}
+              >
+                {String(cr.notes || "").trim() ||
+                  "No additional notes are recorded on this contract."}
               </Text>
             </View>
           </View>
-          <View style={{ height: 1, backgroundColor: monoLine(mode, '#9ca3af'), marginTop: 5, marginBottom: 5 }} />
+          <View
+            style={{
+              height: 1,
+              backgroundColor: monoLine(mode, "#9ca3af"),
+              marginTop: 5,
+              marginBottom: 5,
+            }}
+          />
 
           {/* Closing line — same wording and weight as the payment receipt. */}
-          <View wrap={false} style={{ marginTop: 4, alignItems: 'center' }}>
-            <Text style={{ fontSize: scaledFont(11), color: crInk('#334155'), textAlign: 'center' }}>
-              Thank you for choosing <Text style={{ fontWeight: 'bold' }}>{companyName}</Text>
+          <View wrap={false} style={{ marginTop: 4, alignItems: "center" }}>
+            <Text
+              style={{
+                fontSize: scaledFont(11),
+                color: crInk("#334155"),
+                textAlign: "center",
+              }}
+            >
+              Thank you for choosing{" "}
+              <Text style={{ fontWeight: "bold" }}>{companyName}</Text>
             </Text>
           </View>
 
@@ -3039,16 +8089,46 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               printed: the customer scans the QR and sees it on the
               verification page, like every other Prime ERP document.
               ────────────────────────────────────────────────────────────── */}
-          <View wrap={false} style={{ marginTop: 6, borderTopWidth: 0.5, borderColor: monoLine(mode, '#e2e8f0'), paddingTop: 5 }}>
-            <Text style={{ fontSize: 10 * fontScale, fontWeight: 'bold', color: monoText(mode, '#1e3a8a'), letterSpacing: 0.4 }}>
+          <View
+            wrap={false}
+            style={{
+              marginTop: 6,
+              borderTopWidth: 0.5,
+              borderColor: monoLine(mode, "#e2e8f0"),
+              paddingTop: 5,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 10 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#1e3a8a"),
+                letterSpacing: 0.4,
+              }}
+            >
               DOCUMENT INTEGRITY
             </Text>
-            <Text style={{ marginTop: 3, fontSize: 8 * fontScale, color: monoText(mode, '#1e3a8a'), letterSpacing: 0.3 }}>
+            <Text
+              style={{
+                marginTop: 3,
+                fontSize: 8 * fontScale,
+                color: monoText(mode, "#1e3a8a"),
+                letterSpacing: 0.3,
+              }}
+            >
               Content hash: {cr.contentHash}
             </Text>
-            <Text style={{ marginTop: 2, fontSize: 8 * fontScale, color: crInk('#475569'), lineHeight: 1.35 }}>
-              SHA-256 digest of the completed assessment, its progress and the fund position
-              — scan the QR code to verify this record with {companyName}.
+            <Text
+              style={{
+                marginTop: 2,
+                fontSize: 8 * fontScale,
+                color: crInk("#475569"),
+                lineHeight: 1.35,
+              }}
+            >
+              SHA-256 digest of the completed assessment, its progress and the
+              fund position — scan the QR code to verify this record with{" "}
+              {companyName}.
             </Text>
           </View>
 
@@ -3056,10 +8136,11 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
               of the document — never repeated on every page. */}
           <View wrap={false} style={{ marginTop: 6 }}>
             <VerificationLabel fontScale={fontScale} />
-            <SecurityFooter colorMode={mode}
+            <SecurityFooter
+              colorMode={mode}
               data={cr}
               companyName={companyName}
-              legalFooterLine1={resolveFooterText(config, '', false)}
+              legalFooterLine1={resolveFooterText(config, "", false)}
               legalFooterLine2={buildFooterContactLine(config)}
               fontScale={fontScale}
               flowing
@@ -3070,84 +8151,366 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
     );
   }
 
-  if (type === 'SUPPLIER_PAYMENT') {
+  if (type === "SUPPLIER_PAYMENT") {
     const sp = data as SupplierPaymentDoc;
     const isCancelled = isCancelledStatus(sp.status, sp);
     const spNumber = String((sp as any).paymentNumber || sp.paymentId);
     // Display status mirrors the public verification mapping so the printed
     // receipt and the portal always agree (Cleared/Paid -> PAID).
     const spStatusDisplay = (() => {
-      const s = String((sp as any).status || '').toLowerCase().trim();
-      if (['void', 'voided', 'cancelled', 'canceled'].includes(s)) return 'VOID';
-      if (['paid', 'cleared', 'completed', ''].includes(s)) return 'PAID';
+      const s = String((sp as any).status || "")
+        .toLowerCase()
+        .trim();
+      if (["void", "voided", "cancelled", "canceled"].includes(s))
+        return "VOID";
+      if (["paid", "cleared", "completed", ""].includes(s)) return "PAID";
       return String((sp as any).status).toUpperCase();
     })();
     return (
-      <Document title={`Supplier Payment Receipt - ${spNumber}`} author={companyName}>
+      <Document
+        title={`Supplier Payment Receipt - ${spNumber}`}
+        author={companyName}
+      >
         <Page size="A4" style={[s.page, pageStyle]}>
-          {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+          {channel === "portal" && <PortalCopyWatermark colorMode={mode} />}
           {isCancelled && <CancelledWatermark colorMode={mode} />}
-          <PaginationFurniture colorMode={mode}
-            identity={paginationIdentity(type, sp as unknown as Record<string, unknown>, resolvedRecipientName || '')}
+          <PaginationFurniture
+            colorMode={mode}
+            identity={paginationIdentity(
+              type,
+              sp as unknown as Record<string, unknown>,
+              resolvedRecipientName || "",
+            )}
             companyName={companyName}
           />
-          <View style={[s.headerSection, { marginBottom: 10 }]}>
-            <View style={s.headerLeft}>
-              {renderBrandMark('left')}
-            </View>
-            <View style={s.headerLeft}>
-              <Text style={[s.title, titleStyle]}>Supplier Payment Receipt</Text>
-              <View style={s.infoText}>
-                <Text>Payment Number : {spNumber}</Text>
-                <Text>Date : {sp.date}</Text>
-                <Text>Supplier : {sp.supplierName}</Text>
-                <Text>Amount : {currency} {formatAmount(sp.amountPaid)}</Text>
-                <Text>Method : {sp.paymentMethod}</Text>
-                <Text>Status : {spStatusDisplay}</Text>
-              </View>
+
+          {/* Formal company header — mirrors the payment receipt */}
+          <View
+            style={{
+              position: "relative",
+              alignItems: "center",
+              marginBottom: 6,
+              paddingTop: 2,
+            }}
+          >
+            {!!logo && (
+              <Image
+                src={logo}
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  width: templateSettings.logoWidth,
+                }}
+              />
+            )}
+            <View style={{ alignItems: "center", width: "100%" }}>
+              <Text
+                style={{
+                  fontSize: 14 * fontScale,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#000"),
+                  textAlign: "center",
+                }}
+              >
+                {companyName}
+              </Text>
+              {!!companyAddress && (
+                <Text
+                  style={{
+                    fontSize: 10 * fontScale,
+                    color: monoText(mode, "#334155"),
+                    textAlign: "center",
+                    marginTop: 2,
+                  }}
+                >
+                  {companyAddress}
+                </Text>
+              )}
+              {!!companyContact && (
+                <Text
+                  style={{
+                    fontSize: 10 * fontScale,
+                    color: monoText(mode, "#334155"),
+                    textAlign: "center",
+                    marginTop: 2,
+                  }}
+                >
+                  {companyContact}
+                </Text>
+              )}
             </View>
           </View>
 
-          <View style={[s.billingSection, { marginTop: 0, marginBottom: 0 }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 5, fontSize: 10, textTransform: 'uppercase', color: monoText(mode, '#64748b') }}>Paid To</Text>
-              <Text style={{ fontSize: 12, fontWeight: 'bold' }}>{sp.supplierName}</Text>
-            </View>
-          </View>
+          <Text
+            style={{
+              fontSize: 20 * fontScale,
+              fontWeight: "bold",
+              color: monoText(mode, "#000"),
+              textAlign: "center",
+              marginTop: 8,
+              marginBottom: 8,
+            }}
+          >
+            Supplier Payment Receipt
+          </Text>
+          <View
+            style={{
+              height: 1,
+              backgroundColor: monoLine(mode, "#9ca3af"),
+              marginBottom: 10,
+            }}
+          />
 
-          <View style={{ marginTop: 5, padding: 15, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 8 }}>
-            <Text style={{ fontSize: 12, lineHeight: 1.6, color: monoText(mode, '#334155') }}>
-              {sp.narrative || `This voucher confirms payment of ${currency} ${formatAmount(sp.amountPaid)} to ${sp.supplierName}.`}
+          {/* Paid To */}
+          <View style={{ marginBottom: 8 }}>
+            <Text
+              style={{
+                fontSize: 10 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#64748b"),
+                textTransform: "uppercase",
+                marginBottom: 4,
+              }}
+            >
+              Paid To
+            </Text>
+            <Text
+              style={{
+                fontSize: 12 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#111111"),
+              }}
+            >
+              {sp.supplierName}
             </Text>
           </View>
 
-          <View style={{ marginTop: 30 }}>
-            <View style={s.tableHeader}>
-              <Text style={{ flex: 3 }}>Description</Text>
-              <Text style={{ flex: 1, textAlign: 'right' }}>Amount Paid</Text>
+          {/* Two-column metadata block — mirrors the payment receipt */}
+          <View style={{ flexDirection: "row", gap: 12, marginBottom: 10 }}>
+            <View style={{ flex: 1 }}>
+              <Text
+                style={{
+                  fontSize: 11 * fontScale,
+                  color: monoText(mode, "#111111"),
+                  marginBottom: 4,
+                }}
+              >
+                <Text style={{ fontWeight: "bold" }}>Payment No: </Text>
+                {spNumber}
+              </Text>
+              <Text
+                style={{
+                  fontSize: 11 * fontScale,
+                  color: monoText(mode, "#111111"),
+                  marginBottom: 4,
+                }}
+              >
+                <Text style={{ fontWeight: "bold" }}>Reference: </Text>
+                {(sp.appliedInvoices || []).join(", ") || "—"}
+              </Text>
+              <Text
+                style={{
+                  fontSize: 11 * fontScale,
+                  color: monoText(mode, "#111111"),
+                  marginBottom: 4,
+                }}
+              >
+                <Text style={{ fontWeight: "bold" }}>Currency: </Text>
+                {currency}
+              </Text>
             </View>
-            <View style={s.row}>
-              <Text style={{ flex: 3 }}>Payment against Invoices: {(sp.appliedInvoices || []).join(', ')}</Text>
-              <Text style={{ flex: 1, textAlign: 'right' }}>{currency} {formatAmount(sp.amountPaid)}</Text>
+            <View style={{ flex: 1, paddingLeft: 24 }}>
+              <Text
+                style={{
+                  fontSize: 11 * fontScale,
+                  color: monoText(mode, "#111111"),
+                  marginBottom: 4,
+                }}
+              >
+                <Text style={{ fontWeight: "bold" }}>Date: </Text>
+                {sp.date}
+              </Text>
+              <Text
+                style={{
+                  fontSize: 11 * fontScale,
+                  color: monoText(mode, "#111111"),
+                  marginBottom: 4,
+                }}
+              >
+                <Text style={{ fontWeight: "bold" }}>Method: </Text>
+                {sp.paymentMethod}
+              </Text>
+              <Text
+                style={{
+                  fontSize: 11 * fontScale,
+                  color: monoText(mode, "#111111"),
+                  marginBottom: 4,
+                }}
+              >
+                <Text style={{ fontWeight: "bold" }}>Status: </Text>
+                {spStatusDisplay}
+              </Text>
             </View>
           </View>
+          <View
+            style={{
+              height: 1,
+              backgroundColor: monoLine(mode, "#9ca3af"),
+              marginBottom: 10,
+            }}
+          />
 
-          <View style={s.summaryContainer}>
-            <View style={s.summaryBox}>
-              <View style={s.totalRow}>
-                <Text>Total Paid</Text>
-                <Text style={{ fontWeight: 'bold' }}>{currency} {formatAmount(sp.amountPaid)}</Text>
-              </View>
+          {/* Payment Details table */}
+          <Text
+            style={{
+              fontSize: 11 * fontScale,
+              fontWeight: "bold",
+              color: monoText(mode, "#111111"),
+              marginBottom: 6,
+            }}
+          >
+            Payment Details
+          </Text>
+          <View
+            style={{
+              borderWidth: 0.5,
+              borderColor: monoLine(mode, "#9ca3af"),
+              marginBottom: 10,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                borderBottomWidth: 0.5,
+                borderColor: monoLine(mode, "#9ca3af"),
+              }}
+            >
+              <Text
+                style={{
+                  flex: 3,
+                  fontSize: 11 * fontScale,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#111111"),
+                  padding: 5,
+                  borderRightWidth: 0.5,
+                  borderColor: monoLine(mode, "#9ca3af"),
+                }}
+              >
+                Description
+              </Text>
+              <Text
+                style={{
+                  flex: 1,
+                  fontSize: 11 * fontScale,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#111111"),
+                  padding: 5,
+                  textAlign: "right",
+                }}
+              >
+                Amount Paid
+              </Text>
+            </View>
+            <View
+              style={{
+                flexDirection: "row",
+                borderBottomWidth: 0.5,
+                borderColor: monoLine(mode, "#9ca3af"),
+              }}
+            >
+              <Text
+                style={{
+                  flex: 3,
+                  fontSize: 11 * fontScale,
+                  color: monoText(mode, "#111111"),
+                  padding: 5,
+                  borderRightWidth: 0.5,
+                  borderColor: monoLine(mode, "#9ca3af"),
+                }}
+              >
+                Payment to {sp.supplierName}
+                {(sp.appliedInvoices || []).length > 0
+                  ? ` — ${(sp.appliedInvoices || []).join(", ")}`
+                  : ""}
+              </Text>
+              <Text
+                style={{
+                  flex: 1,
+                  fontSize: 11 * fontScale,
+                  color: monoText(mode, "#111111"),
+                  padding: 5,
+                  textAlign: "right",
+                }}
+              >
+                {currency} {formatAmount(sp.amountPaid)}
+              </Text>
+            </View>
+            <View style={{ flexDirection: "row", padding: 5 }}>
+              <Text
+                style={{
+                  flex: 3,
+                  fontSize: 11 * fontScale,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#111111"),
+                  textAlign: "right",
+                }}
+              >
+                Total Paid
+              </Text>
+              <Text
+                style={{
+                  flex: 1,
+                  fontSize: 11 * fontScale,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#111111"),
+                  textAlign: "right",
+                }}
+              >
+                {currency} {formatAmount(sp.amountPaid)}
+              </Text>
             </View>
           </View>
+          <View
+            style={{
+              height: 1,
+              backgroundColor: monoLine(mode, "#9ca3af"),
+              marginBottom: 10,
+            }}
+          />
 
-            <View style={s.footerContainer} wrap={false}>
-              <Text style={[s.thankYouText, { fontSize: scaledFont(12) }]}>Authorized by <Text style={{ fontWeight: 'bold', fontSize: scaledFont(14) }}>{companyName}</Text></Text>
-              <View style={s.footerLine} />
-              <Text style={[s.companyName, { fontSize: scaledFont(12) }]}>{companyName}</Text>
-              <Text style={[s.footerDetail, { fontSize: scaledFont(12) }]}>{companyAddress}</Text>
-              <Text style={[s.footerDetail, { fontSize: scaledFont(12) }]}>{companyContact}</Text>
-            </View>
+          {/* Narrative */}
+          <View style={{ marginTop: 4, marginBottom: 10 }}>
+            <Text
+              style={{
+                fontSize: 11 * fontScale,
+                color: monoText(mode, "#334155"),
+                lineHeight: 1.6,
+              }}
+            >
+              {sp.narrative ||
+                `This voucher confirms payment of ${currency} ${formatAmount(sp.amountPaid)} to ${sp.supplierName}.`}
+            </Text>
+          </View>
+
+          <View style={s.footerContainer} wrap={false}>
+            <Text style={[s.thankYouText, { fontSize: scaledFont(12) }]}>
+              Authorized by{" "}
+              <Text style={{ fontWeight: "bold", fontSize: scaledFont(14) }}>
+                {companyName}
+              </Text>
+            </Text>
+            <View style={s.footerLine} />
+            <Text style={[s.companyName, { fontSize: scaledFont(12) }]}>
+              {companyName}
+            </Text>
+            <Text style={[s.footerDetail, { fontSize: scaledFont(12) }]}>
+              {companyAddress}
+            </Text>
+            <Text style={[s.footerDetail, { fontSize: scaledFont(12) }]}>
+              {companyContact}
+            </Text>
+          </View>
 
           <View style={s.signatureBlock}>
             <View>
@@ -3162,7 +8525,8 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
 
           <View wrap={false} style={{ marginTop: 10 }}>
             <VerificationLabel fontScale={fontScale} />
-            <SecurityFooter colorMode={mode}
+            <SecurityFooter
+              colorMode={mode}
               data={sp}
               companyName={companyName}
               legalFooterLine1="This is a computer-generated payment voucher. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222."
@@ -3175,130 +8539,433 @@ export const PrimeDocument = ({ type, data, configOverride = null, customers = [
       </Document>
     );
   }
-if (type === 'POS_RECEIPT') {
-  const r = data as PosReceiptDoc;
-  const isCancelled = isCancelledStatus(r.status, r);
+  if (type === "POS_RECEIPT") {
+    const r = data as PosReceiptDoc;
+    const isCancelled = isCancelledStatus(r.status, r);
 
-  // POS sizing follows the invoice template settings (bodyFontSize, like every
-  // other document via fontScale) plus a 30% uplift for receipt readability.
-  // The page already uses templateSettings.fontFamily, matching invoices.
-  const scale = 1.3 * (templateSettings.bodyFontSize / 12);
-  const baseFontSize = 7.6 * scale;
-  const largeFontSize = 10 * scale;
-  const smallFontSize = 6.4 * scale;
-  const mediumFontSize = 8.4 * scale;
-  // Address is the street line only (no city/country suffix).
-  const posReceiptAddress = buildReceiptCompanyAddress(config);
+    // POS sizing follows the invoice template settings (bodyFontSize, like every
+    // other document via fontScale) plus a 30% uplift for receipt readability.
+    // The page already uses templateSettings.fontFamily, matching invoices.
+    const scale = 1.3 * (templateSettings.bodyFontSize / 12);
+    const baseFontSize = 7.6 * scale;
+    const largeFontSize = 10 * scale;
+    const smallFontSize = 6.4 * scale;
+    const mediumFontSize = 8.4 * scale;
+    // Address is the street line only (no city/country suffix).
+    const posReceiptAddress = buildReceiptCompanyAddress(config);
 
-  return (
-    <Document title={`Receipt - ${r.receiptNumber}`} author={companyName}>
-      <Page size="A4" style={[s.page, pageStyle, { padding: 0, backgroundColor: monoFill(mode, '#f9fafb'), fontFamily: templateSettings.fontFamily }]}>
-        {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
-        {isCancelled && <CancelledWatermark colorMode={mode} />}
-        <View style={[s.posA4Wrapper, { width: 250 * scale, paddingVertical: 24 * scale, paddingHorizontal: 8 * scale }]}>
-            <View style={{ alignItems: 'center', marginBottom: 12 * scale }}>
-              <Text style={{ fontWeight: 'bold', fontSize: 14 * scale, textAlign: 'center', marginBottom: 3 * scale, color: '#000' }}>{companyName}</Text>
+    return (
+      <Document title={`Receipt - ${r.receiptNumber}`} author={companyName}>
+        <Page
+          size="A4"
+          style={[
+            s.page,
+            pageStyle,
+            {
+              padding: 0,
+              backgroundColor: monoFill(mode, "#f9fafb"),
+              fontFamily: templateSettings.fontFamily,
+            },
+          ]}
+        >
+          {channel === "portal" && <PortalCopyWatermark colorMode={mode} />}
+          {isCancelled && <CancelledWatermark colorMode={mode} />}
+          <View
+            style={[
+              s.posA4Wrapper,
+              {
+                width: 250 * scale,
+                paddingVertical: 24 * scale,
+                paddingHorizontal: 8 * scale,
+              },
+            ]}
+          >
+            <View style={{ alignItems: "center", marginBottom: 12 * scale }}>
+              <Text
+                style={{
+                  fontWeight: "bold",
+                  fontSize: 14 * scale,
+                  textAlign: "center",
+                  marginBottom: 3 * scale,
+                  color: "#000",
+                }}
+              >
+                {companyName}
+              </Text>
               {!!posReceiptAddress && (
-                <Text style={{ fontSize: baseFontSize, textAlign: 'center', marginBottom: 2 * scale, color: '#000' }}>{posReceiptAddress}</Text>
+                <Text
+                  style={{
+                    fontSize: baseFontSize,
+                    textAlign: "center",
+                    marginBottom: 2 * scale,
+                    color: "#000",
+                  }}
+                >
+                  {posReceiptAddress}
+                </Text>
               )}
-              <Text style={{ fontSize: baseFontSize, textAlign: 'center', color: '#000' }}>{companyContact}</Text>
+              <Text
+                style={{
+                  fontSize: baseFontSize,
+                  textAlign: "center",
+                  color: "#000",
+                }}
+              >
+                {companyContact}
+              </Text>
             </View>
 
-            <View style={{ marginBottom: 12 * scale, borderBottomWidth: 1, borderBottomColor: '#000', borderBottomStyle: 'dashed', paddingBottom: 8 * scale }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 * scale }}>
-                <Text style={{ fontSize: baseFontSize, color: '#000' }}>Date:</Text>
-                <Text style={{ fontSize: baseFontSize, color: '#000' }}>{r.date}</Text>
+            <View
+              style={{
+                marginBottom: 12 * scale,
+                borderBottomWidth: 1,
+                borderBottomColor: "#000",
+                borderBottomStyle: "dashed",
+                paddingBottom: 8 * scale,
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  marginBottom: 2 * scale,
+                }}
+              >
+                <Text style={{ fontSize: baseFontSize, color: "#000" }}>
+                  Date:
+                </Text>
+                <Text style={{ fontSize: baseFontSize, color: "#000" }}>
+                  {r.date}
+                </Text>
               </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 * scale }}>
-                <Text style={{ fontSize: baseFontSize, color: '#000' }}>Receipt #:</Text>
-                <Text style={{ fontWeight: 'bold', fontSize: baseFontSize, color: '#000' }}>{r.receiptNumber}</Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  marginBottom: 2 * scale,
+                }}
+              >
+                <Text style={{ fontSize: baseFontSize, color: "#000" }}>
+                  Receipt #:
+                </Text>
+                <Text
+                  style={{
+                    fontWeight: "bold",
+                    fontSize: baseFontSize,
+                    color: "#000",
+                  }}
+                >
+                  {r.receiptNumber}
+                </Text>
               </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 * scale }}>
-                <Text style={{ fontSize: baseFontSize, color: '#000' }}>Cashier:</Text>
-                <Text style={{ fontSize: baseFontSize, color: '#000' }}>{(() => {
-                  const cashier = String(r.cashierName || '').trim();
-                  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cashier);
-                  return cashier && !isUuid ? cashier : 'System User';
-                })()}</Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  marginBottom: 2 * scale,
+                }}
+              >
+                <Text style={{ fontSize: baseFontSize, color: "#000" }}>
+                  Cashier:
+                </Text>
+                <Text style={{ fontSize: baseFontSize, color: "#000" }}>
+                  {(() => {
+                    const cashier = String(r.cashierName || "").trim();
+                    const isUuid =
+                      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                        cashier,
+                      );
+                    return cashier && !isUuid ? cashier : "System User";
+                  })()}
+                </Text>
               </View>
               {!!r.customerName && (
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={{ fontSize: baseFontSize, color: '#000' }}>Customer:</Text>
-                  <Text style={{ fontSize: baseFontSize, color: '#000' }}>{r.customerName}</Text>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <Text style={{ fontSize: baseFontSize, color: "#000" }}>
+                    Customer:
+                  </Text>
+                  <Text style={{ fontSize: baseFontSize, color: "#000" }}>
+                    {r.customerName}
+                  </Text>
                 </View>
               )}
-              <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 6 * scale }}>
-                <View style={{ paddingVertical: 3 * scale, paddingHorizontal: 8 * scale, borderRadius: 3 * scale, borderWidth: 1, borderColor: '#000', backgroundColor: '#fff' }}>
-                  <Text style={{ fontSize: baseFontSize, color: '#000', fontWeight: 'bold', letterSpacing: 1 * scale }}>PAID</Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "center",
+                  marginTop: 6 * scale,
+                }}
+              >
+                <View
+                  style={{
+                    paddingVertical: 3 * scale,
+                    paddingHorizontal: 8 * scale,
+                    borderRadius: 3 * scale,
+                    borderWidth: 1,
+                    borderColor: "#000",
+                    backgroundColor: "#fff",
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: baseFontSize,
+                      color: "#000",
+                      fontWeight: "bold",
+                      letterSpacing: 1 * scale,
+                    }}
+                  >
+                    PAID
+                  </Text>
                 </View>
               </View>
             </View>
 
             <View style={{ marginBottom: 15 * scale }}>
-              <View style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#000', paddingBottom: 3 * scale, marginBottom: 5 * scale }}>
-                <Text style={{ flex: 3, fontWeight: 'bold', fontSize: baseFontSize, color: '#000' }}>Description</Text>
-                <Text style={{ flex: 1, fontWeight: 'bold', fontSize: baseFontSize, textAlign: 'right', color: '#000' }}>Total</Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  borderBottomWidth: 0.5,
+                  borderBottomColor: "#000",
+                  paddingBottom: 3 * scale,
+                  marginBottom: 5 * scale,
+                }}
+              >
+                <Text
+                  style={{
+                    flex: 3,
+                    fontWeight: "bold",
+                    fontSize: baseFontSize,
+                    color: "#000",
+                  }}
+                >
+                  Description
+                </Text>
+                <Text
+                  style={{
+                    flex: 1,
+                    fontWeight: "bold",
+                    fontSize: baseFontSize,
+                    textAlign: "right",
+                    color: "#000",
+                  }}
+                >
+                  Total
+                </Text>
               </View>
               {r.items.map((item: any, i: number) => {
                 // Quick Photocopy: name stays plain; qty shows entered pages
                 // ("13 pgs") and the rate appears exactly once ("K 150.00/sht").
                 // Row structure/columns are unchanged.
-                const receiptQP = isQuickPhotocopyItem(item) ? getQuickPhotocopyLineDisplay(item, currency) : null;
+                const receiptQP = isQuickPhotocopyItem(item)
+                  ? getQuickPhotocopyLineDisplay(item, currency)
+                  : null;
                 return (
                   <View key={i} style={{ marginBottom: 6 * scale }}>
-                    <Text style={{ fontSize: mediumFontSize, fontWeight: 'normal', color: '#000' }}>{receiptQP ? receiptQP.name : item.desc}</Text>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 1 * scale }}>
-                      <Text style={{ fontSize: baseFontSize, color: '#000' }}>{receiptQP ? `${receiptQP.qty} x ${receiptQP.rate}` : `${item.qty} x ${formatAmount(item.price)}`}</Text>
-                      <Text style={{ fontSize: mediumFontSize, color: '#000' }}>{formatAmount(item.total)}</Text>
+                    <Text
+                      style={{
+                        fontSize: mediumFontSize,
+                        fontWeight: "normal",
+                        color: "#000",
+                      }}
+                    >
+                      {receiptQP ? receiptQP.name : item.desc}
+                    </Text>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        marginTop: 1 * scale,
+                      }}
+                    >
+                      <Text style={{ fontSize: baseFontSize, color: "#000" }}>
+                        {receiptQP
+                          ? `${receiptQP.qty} x ${receiptQP.rate}`
+                          : `${item.qty} x ${formatAmount(item.price)}`}
+                      </Text>
+                      <Text style={{ fontSize: mediumFontSize, color: "#000" }}>
+                        {formatAmount(item.total)}
+                      </Text>
                     </View>
                   </View>
                 );
               })}
             </View>
 
-            <View style={{ borderTopWidth: 1, borderTopColor: '#000', borderTopStyle: 'dashed', paddingTop: 8 * scale, gap: 3 * scale }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontSize: mediumFontSize, color: '#000' }}>Subtotal</Text>
-                <Text style={{ fontSize: mediumFontSize, color: '#000' }}>{formatAmount(r.subtotal)}</Text>
+            <View
+              style={{
+                borderTopWidth: 1,
+                borderTopColor: "#000",
+                borderTopStyle: "dashed",
+                paddingTop: 8 * scale,
+                gap: 3 * scale,
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                }}
+              >
+                <Text style={{ fontSize: mediumFontSize, color: "#000" }}>
+                  Subtotal
+                </Text>
+                <Text style={{ fontSize: mediumFontSize, color: "#000" }}>
+                  {formatAmount(r.subtotal)}
+                </Text>
               </View>
               {r.discount > 0 && (
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={{ fontSize: mediumFontSize, color: '#000' }}>Discount</Text>
-                  <Text style={{ fontSize: mediumFontSize, color: '#000' }}>-{formatAmount(r.discount)}</Text>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <Text style={{ fontSize: mediumFontSize, color: "#000" }}>
+                    Discount
+                  </Text>
+                  <Text style={{ fontSize: mediumFontSize, color: "#000" }}>
+                    -{formatAmount(r.discount)}
+                  </Text>
                 </View>
               )}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 * scale, paddingTop: 4 * scale, borderTopWidth: 0.5, borderTopColor: '#000' }}>
-                <Text style={{ fontWeight: 'bold', fontSize: largeFontSize, color: '#000' }}>TOTAL</Text>
-                <Text style={{ fontWeight: 'bold', fontSize: largeFontSize, color: '#000' }}>{currency} {formatAmount(r.totalAmount)}</Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  marginTop: 6 * scale,
+                  paddingTop: 4 * scale,
+                  borderTopWidth: 0.5,
+                  borderTopColor: "#000",
+                }}
+              >
+                <Text
+                  style={{
+                    fontWeight: "bold",
+                    fontSize: largeFontSize,
+                    color: "#000",
+                  }}
+                >
+                  TOTAL
+                </Text>
+                <Text
+                  style={{
+                    fontWeight: "bold",
+                    fontSize: largeFontSize,
+                    color: "#000",
+                  }}
+                >
+                  {currency} {formatAmount(r.totalAmount)}
+                </Text>
               </View>
             </View>
 
-            <View style={{ marginTop: 12 * scale, borderTopWidth: 1, borderTopColor: '#000', borderTopStyle: 'dashed', paddingTop: 8 * scale, gap: 3 * scale }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontSize: baseFontSize, color: '#000' }}>Method</Text>
-                <Text style={{ fontSize: baseFontSize, color: '#000' }}>{r.paymentMethod}</Text>
+            <View
+              style={{
+                marginTop: 12 * scale,
+                borderTopWidth: 1,
+                borderTopColor: "#000",
+                borderTopStyle: "dashed",
+                paddingTop: 8 * scale,
+                gap: 3 * scale,
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                }}
+              >
+                <Text style={{ fontSize: baseFontSize, color: "#000" }}>
+                  Method
+                </Text>
+                <Text style={{ fontSize: baseFontSize, color: "#000" }}>
+                  {r.paymentMethod}
+                </Text>
               </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontSize: baseFontSize, color: '#000' }}>Cash Tendered</Text>
-                <Text style={{ fontSize: baseFontSize, color: '#000' }}>{formatAmount(r.amountTendered)}</Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                }}
+              >
+                <Text style={{ fontSize: baseFontSize, color: "#000" }}>
+                  Cash Tendered
+                </Text>
+                <Text style={{ fontSize: baseFontSize, color: "#000" }}>
+                  {formatAmount(r.amountTendered)}
+                </Text>
               </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontSize: baseFontSize, color: '#000' }}>Change Given</Text>
-                <Text style={{ fontWeight: 'bold', fontSize: baseFontSize, color: '#000' }}>{formatAmount(r.changeGiven)}</Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                }}
+              >
+                <Text style={{ fontSize: baseFontSize, color: "#000" }}>
+                  Change Given
+                </Text>
+                <Text
+                  style={{
+                    fontWeight: "bold",
+                    fontSize: baseFontSize,
+                    color: "#000",
+                  }}
+                >
+                  {formatAmount(r.changeGiven)}
+                </Text>
               </View>
             </View>
 
-            <View style={{ marginTop: 18 * scale, alignItems: 'center' }}>
-              <Text style={{ fontWeight: 'bold', textAlign: 'center', fontSize: mediumFontSize, color: '#000' }}>Thank you for your business!</Text>
-              <Text style={{ textAlign: 'center', fontSize: smallFontSize, marginTop: 6 * scale, color: '#000', textTransform: 'uppercase', letterSpacing: 0.6 * scale }}>Powered by Prime ERP</Text>
+            <View style={{ marginTop: 18 * scale, alignItems: "center" }}>
+              <Text
+                style={{
+                  fontWeight: "bold",
+                  textAlign: "center",
+                  fontSize: mediumFontSize,
+                  color: "#000",
+                }}
+              >
+                Thank you for your business!
+              </Text>
+              <Text
+                style={{
+                  textAlign: "center",
+                  fontSize: smallFontSize,
+                  marginTop: 6 * scale,
+                  color: "#000",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.6 * scale,
+                }}
+              >
+                Powered by Prime ERP
+              </Text>
             </View>
 
             {/* Compact verification QR only (thermal-printer friendly): the QR
                 encodes the receipt verification URL. Deliberately NOT the full
                 invoice-style security footer — QR + caption only. */}
-            {!!resolvePdfQrCodeSource(String((r as any).securityQrCodeDataUrl || '')) && (
-              <View style={{ marginTop: 10 * scale, borderTopWidth: 1, borderTopColor: '#000', borderTopStyle: 'dashed', paddingTop: 10 * scale, alignItems: 'center' }}>
-                {renderQrImage(String((r as any).securityQrCodeDataUrl || ''), VERIFICATION_QR_SIZE)}
+            {!!resolvePdfQrCodeSource(
+              String((r as any).securityQrCodeDataUrl || ""),
+            ) && (
+              <View
+                style={{
+                  marginTop: 10 * scale,
+                  borderTopWidth: 1,
+                  borderTopColor: "#000",
+                  borderTopStyle: "dashed",
+                  paddingTop: 10 * scale,
+                  alignItems: "center",
+                }}
+              >
+                {renderQrImage(
+                  String((r as any).securityQrCodeDataUrl || ""),
+                  VERIFICATION_QR_SIZE,
+                )}
               </View>
             )}
           </View>
@@ -3307,41 +8974,64 @@ if (type === 'POS_RECEIPT') {
     );
   }
 
-  if ((type === 'ACCOUNT_STATEMENT_SUMMARY' || type === 'ACCOUNT_STATEMENT') && 'finalBalance' in data) {
-    return <StatementSummaryTemplate data={data as StatementDoc} configOverride={config} channel={channel} colorMode={mode} />;
+  if (
+    (type === "ACCOUNT_STATEMENT_SUMMARY" || type === "ACCOUNT_STATEMENT") &&
+    "finalBalance" in data
+  ) {
+    return (
+      <StatementSummaryTemplate
+        data={data as StatementDoc}
+        configOverride={config}
+        channel={channel}
+        colorMode={mode}
+      />
+    );
   }
 
-  const isConverted = 'isConverted' in data && data.isConverted;
-  const conversionDetails = isConverted && 'conversionDetails' in data ? (dataAny.conversionDetails as Record<string, unknown>) || null : null;
-  const normalizedSourceType = String(conversionDetails?.sourceType || '').trim().toLowerCase().replace(/[\s_]+/g, '');
-  const isFromOrder = normalizedSourceType === 'order' || normalizedSourceType === 'joborder' || normalizedSourceType === 'salesorder';
-  const isFromQuotation = normalizedSourceType === 'quotation';
-  const isConvertedOrder = (type === 'INVOICE' || (type as string) === 'SALES_ORDER' || type === 'ORDER') && isConverted;
+  const isConverted = "isConverted" in data && data.isConverted;
+  const conversionDetails =
+    isConverted && "conversionDetails" in data
+      ? (dataAny.conversionDetails as Record<string, unknown>) || null
+      : null;
+  const normalizedSourceType = String(conversionDetails?.sourceType || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, "");
+  const isFromOrder =
+    normalizedSourceType === "order" ||
+    normalizedSourceType === "joborder" ||
+    normalizedSourceType === "salesorder";
+  const isFromQuotation = normalizedSourceType === "quotation";
+  const isConvertedOrder =
+    (type === "INVOICE" ||
+      (type as string) === "SALES_ORDER" ||
+      type === "ORDER") &&
+    isConverted;
 
   let title: string;
-  if (type === 'FISCAL_REPORT' && 'reportName' in data) {
+  if (type === "FISCAL_REPORT" && "reportName" in data) {
     title = String(dataAny.reportName);
-  } else if (type === 'INVOICE' || (isConvertedOrder && isFromOrder)) {
-    title = 'Invoice';
+  } else if (type === "INVOICE" || (isConvertedOrder && isFromOrder)) {
+    title = "Invoice";
   } else {
     switch (type as string) {
-      case 'ORDER':
-        title = 'Sales Order';
+      case "ORDER":
+        title = "Sales Order";
         break;
-      case 'SALES_ORDER':
-        title = 'Sales Order';
+      case "SALES_ORDER":
+        title = "Sales Order";
         break;
-      case 'SUBSCRIPTION':
-        title = 'Recurring Invoice';
+      case "SUBSCRIPTION":
+        title = "Recurring Invoice";
         break;
-      case 'QUOTATION':
-        title = 'Quotation';
+      case "QUOTATION":
+        title = "Quotation";
         break;
-      case 'PO':
-        title = 'Purchase Order';
+      case "PO":
+        title = "Purchase Order";
         break;
-      case 'EXAMINATION_INVOICE':
-        title = 'Exam Invoice';
+      case "EXAMINATION_INVOICE":
+        title = "Exam Invoice";
         break;
       default:
         title = toTitleCase(type);
@@ -3354,98 +9044,260 @@ if (type === 'POS_RECEIPT') {
   // Global pagination framing (shared document-layout capability; for
   // INVOICE it reproduces the proven reference strings byte-identically).
   const paginated = isPaginatedDocumentType(type);
-  const paginationId = paginated ? paginationIdentity(type, dataAny, resolvedRecipientName || '') : null;
+  const paginationId = paginated
+    ? paginationIdentity(type, dataAny, resolvedRecipientName || "")
+    : null;
 
   return (
     <Document
-      title={`${title} - ${'number' in data ? data.number : ('receiptNumber' in data ? data.receiptNumber : ('clientName' in data ? data.clientName : 'DOC'))}`}
+      title={`${title} - ${"number" in data ? data.number : "receiptNumber" in data ? data.receiptNumber : "clientName" in data ? data.clientName : "DOC"}`}
       author={companyName}
       subject="ERP Generated Document"
       creator="Prime ERP System"
       keywords={`${type}, ERP, Business Document`}
     >
-      <Page size="A4" style={[s.page, pageStyle, type === 'INVOICE' ? { paddingBottom: 64 } : null]}>
-        {channel === 'portal' && <PortalCopyWatermark colorMode={mode} />}
+      <Page
+        size="A4"
+        style={[
+          s.page,
+          pageStyle,
+          type === "INVOICE" ? { paddingBottom: 64 } : null,
+        ]}
+      >
+        {channel === "portal" && <PortalCopyWatermark colorMode={mode} />}
         {isCancelled && <CancelledWatermark colorMode={mode} />}
         {/* Pagination furniture (presentation only — dynamic page info
             comes from React-PDF's render prop, never hard-coded). */}
         {paginated && paginationId && (
-          <PaginationFurniture colorMode={mode} identity={paginationId} companyName={companyName} />
+          <PaginationFurniture
+            colorMode={mode}
+            identity={paginationId}
+            companyName={companyName}
+          />
         )}
         <View style={[s.headerSection, { marginBottom: 10 }]}>
           {isRightAligned ? (
             <>
               <View style={s.headerLeft}>
-                <Text style={[s.title, titleStyle, type === 'INVOICE' ? { fontSize: 22 * fontScale, height: 'auto' } : null]}>{title}</Text>
+                <Text
+                  style={[
+                    s.title,
+                    titleStyle,
+                    type === "INVOICE"
+                      ? { fontSize: 22 * fontScale, height: "auto" }
+                      : null,
+                  ]}
+                >
+                  {title}
+                </Text>
                 <View style={s.infoText}>
-                  {type === 'INVOICE' ? (
+                  {type === "INVOICE" ? (
                     <>
-                      <Text>Invoice No. {String(('invoiceNumber' in data && dataAny.invoiceNumber) || ('number' in data ? dataAny.number : 'INV'))}</Text>
-                      <Text>Invoice Date: {String('date' in data ? dataAny.date : 'N/A')}</Text>
-                      {Boolean(showDueDate) && 'dueDate' in data && !!data.dueDate && <Text>Due Date: {formatDateOnly(String(data.dueDate))}</Text>}
-                      {showConversionHistory && isFromQuotation && <Text style={{ fontSize: 8, color: monoText(mode, '#64748b'), marginTop: 2 }}>Order Ref: {String(conversionDetails?.sourceNumber || 'N/A')}</Text>}
-                      {showConversionHistory && isFromOrder && <Text style={{ fontSize: 8, color: monoText(mode, '#64748b'), marginTop: 2 }}>Original Order: {String(conversionDetails?.sourceNumber || 'N/A')}</Text>}
-                    </>
-                  ) : type === 'ORDER' ? (
-                    <>
-                      <Text>Order No. {String(('orderNumber' in data && dataAny.orderNumber) || ('number' in data ? dataAny.number : 'ORD'))}</Text>
-                      <Text>Order Date: {String('date' in data ? dataAny.date : 'N/A')}</Text>
-                      <Text style={{ fontSize: 8, color: monoText(mode, '#64748b'), marginTop: 2 }}>Order Ref: {String(showConversionHistory && isFromQuotation && conversionDetails?.sourceNumber ? conversionDetails.sourceNumber : (('orderNumber' in data && dataAny.orderNumber) || 'N/A'))}</Text>
-                      {Boolean(showDueDate) && 'dueDate' in data && !!data.dueDate && <Text>Due Date: {formatDateOnly(String(data.dueDate))}</Text>}
-                    </>
-                  ) : (type as string) === 'SALES_ORDER' ? (
-                    <>
-                      <Text>Sales Order No. {String(('orderNumber' in data && dataAny.orderNumber) || ('number' in data ? dataAny.number : 'SO'))}</Text>
-                      <Text>Sales Order Date: {String('date' in data ? dataAny.date : 'N/A')}</Text>
-                      {Boolean(showDueDate) && 'dueDate' in data && !!data.dueDate && <Text>Due Date: {formatDateOnly(String(data.dueDate))}</Text>}
-                    </>
-                  ) : type === 'EXAMINATION_INVOICE' ? (
-                    <>
-                      <Text>Exam Invoice No. {String('number' in data ? dataAny.number : 'INV')}</Text>
-                      <Text>Exam Invoice Date: {String('date' in data ? dataAny.date : 'N/A')}</Text>
-                      {Boolean(showDueDate) && 'dueDate' in data && !!data.dueDate && <Text>Due Date: {formatDateOnly(String(data.dueDate))}</Text>}
-                    </>
-                  ) : type === 'SUBSCRIPTION' ? (
-                    <>
-                      <Text>Recurring Inv. No. {String('number' in data ? dataAny.number : 'SUB')}</Text>
-                      <Text>Issue Date: {String('date' in data ? dataAny.date : 'N/A')}</Text>
-                      {'billingPeriodStart' in data && 'billingPeriodEnd' in data && !!dataAny.billingPeriodStart && !!dataAny.billingPeriodEnd && (
-                        <Text style={{ marginTop: 2 }}>Period: {String(dataAny.billingPeriodStart)} to {String(dataAny.billingPeriodEnd)}</Text>
+                      <Text>
+                        Invoice No.{" "}
+                        {String(
+                          ("invoiceNumber" in data && dataAny.invoiceNumber) ||
+                            ("number" in data ? dataAny.number : "INV"),
+                        )}
+                      </Text>
+                      <Text>
+                        Invoice Date:{" "}
+                        {String("date" in data ? dataAny.date : "N/A")}
+                      </Text>
+                      {Boolean(showDueDate) &&
+                        "dueDate" in data &&
+                        !!data.dueDate && (
+                          <Text>
+                            Due Date: {formatDateOnly(String(data.dueDate))}
+                          </Text>
+                        )}
+                      {showConversionHistory && isFromQuotation && (
+                        <Text
+                          style={{
+                            fontSize: 8,
+                            color: monoText(mode, "#64748b"),
+                            marginTop: 2,
+                          }}
+                        >
+                          Order Ref:{" "}
+                          {String(conversionDetails?.sourceNumber || "N/A")}
+                        </Text>
                       )}
-                      {'frequency' in data && !!dataAny.frequency && (
-                        <Text>Frequency: {toTitleCase(String(dataAny.frequency))}</Text>
+                      {showConversionHistory && isFromOrder && (
+                        <Text
+                          style={{
+                            fontSize: 8,
+                            color: monoText(mode, "#64748b"),
+                            marginTop: 2,
+                          }}
+                        >
+                          Original Order:{" "}
+                          {String(conversionDetails?.sourceNumber || "N/A")}
+                        </Text>
                       )}
-                      {'nextRunDate' in data && !!dataAny.nextRunDate && (
-                        <Text style={{ marginTop: 2, fontWeight: 'bold' }}>Next Run: {String(dataAny.nextRunDate)}</Text>
+                    </>
+                  ) : type === "ORDER" ? (
+                    <>
+                      <Text>
+                        Order No.{" "}
+                        {String(
+                          ("orderNumber" in data && dataAny.orderNumber) ||
+                            ("number" in data ? dataAny.number : "ORD"),
+                        )}
+                      </Text>
+                      <Text>
+                        Order Date:{" "}
+                        {String("date" in data ? dataAny.date : "N/A")}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 8,
+                          color: monoText(mode, "#64748b"),
+                          marginTop: 2,
+                        }}
+                      >
+                        Order Ref:{" "}
+                        {String(
+                          showConversionHistory &&
+                            isFromQuotation &&
+                            conversionDetails?.sourceNumber
+                            ? conversionDetails.sourceNumber
+                            : ("orderNumber" in data && dataAny.orderNumber) ||
+                                "N/A",
+                        )}
+                      </Text>
+                      {Boolean(showDueDate) &&
+                        "dueDate" in data &&
+                        !!data.dueDate && (
+                          <Text>
+                            Due Date: {formatDateOnly(String(data.dueDate))}
+                          </Text>
+                        )}
+                    </>
+                  ) : (type as string) === "SALES_ORDER" ? (
+                    <>
+                      <Text>
+                        Sales Order No.{" "}
+                        {String(
+                          ("orderNumber" in data && dataAny.orderNumber) ||
+                            ("number" in data ? dataAny.number : "SO"),
+                        )}
+                      </Text>
+                      <Text>
+                        Sales Order Date:{" "}
+                        {String("date" in data ? dataAny.date : "N/A")}
+                      </Text>
+                      {Boolean(showDueDate) &&
+                        "dueDate" in data &&
+                        !!data.dueDate && (
+                          <Text>
+                            Due Date: {formatDateOnly(String(data.dueDate))}
+                          </Text>
+                        )}
+                    </>
+                  ) : type === "EXAMINATION_INVOICE" ? (
+                    <>
+                      <Text>
+                        Exam Invoice No.{" "}
+                        {String("number" in data ? dataAny.number : "INV")}
+                      </Text>
+                      <Text>
+                        Exam Invoice Date:{" "}
+                        {String("date" in data ? dataAny.date : "N/A")}
+                      </Text>
+                      {Boolean(showDueDate) &&
+                        "dueDate" in data &&
+                        !!data.dueDate && (
+                          <Text>
+                            Due Date: {formatDateOnly(String(data.dueDate))}
+                          </Text>
+                        )}
+                    </>
+                  ) : type === "SUBSCRIPTION" ? (
+                    <>
+                      <Text>
+                        Recurring Inv. No.{" "}
+                        {String("number" in data ? dataAny.number : "SUB")}
+                      </Text>
+                      <Text>
+                        Issue Date:{" "}
+                        {String("date" in data ? dataAny.date : "N/A")}
+                      </Text>
+                      {"billingPeriodStart" in data &&
+                        "billingPeriodEnd" in data &&
+                        !!dataAny.billingPeriodStart &&
+                        !!dataAny.billingPeriodEnd && (
+                          <Text style={{ marginTop: 2 }}>
+                            Period: {String(dataAny.billingPeriodStart)} to{" "}
+                            {String(dataAny.billingPeriodEnd)}
+                          </Text>
+                        )}
+                      {"frequency" in data && !!dataAny.frequency && (
+                        <Text>
+                          Frequency: {toTitleCase(String(dataAny.frequency))}
+                        </Text>
+                      )}
+                      {"nextRunDate" in data && !!dataAny.nextRunDate && (
+                        <Text style={{ marginTop: 2, fontWeight: "bold" }}>
+                          Next Run: {String(dataAny.nextRunDate)}
+                        </Text>
                       )}
                     </>
                   ) : (
                     <>
-                      <Text>{toTitleCase(type)} No. {String('number' in data ? dataAny.number : ('receiptNumber' in data ? dataAny.receiptNumber : 'STATEMENT'))}</Text>
-                      <Text>{toTitleCase(type)} Date: {String('date' in data ? dataAny.date : 'N/A')}</Text>
-                      {type === 'QUOTATION' && Boolean(showDueDate) && 'dueDate' in data && !!data.dueDate && <Text>Valid Until: {formatDateOnly(String(data.dueDate))}</Text>}
+                      <Text>
+                        {toTitleCase(type)} No.{" "}
+                        {String(
+                          "number" in data
+                            ? dataAny.number
+                            : "receiptNumber" in data
+                              ? dataAny.receiptNumber
+                              : "STATEMENT",
+                        )}
+                      </Text>
+                      <Text>
+                        {toTitleCase(type)} Date:{" "}
+                        {String("date" in data ? dataAny.date : "N/A")}
+                      </Text>
+                      {type === "QUOTATION" &&
+                        Boolean(showDueDate) &&
+                        "dueDate" in data &&
+                        !!data.dueDate && (
+                          <Text>
+                            Valid Until: {formatDateOnly(String(data.dueDate))}
+                          </Text>
+                        )}
                     </>
                   )}
                 </View>
               </View>
-              <View style={s.headerRight}>
-                {renderBrandMark('right')}
-              </View>
+              <View style={s.headerRight}>{renderBrandMark("right")}</View>
             </>
           ) : (
             <>
-              <View style={[s.headerLeft, { alignItems: 'flex-start' }]}>
-                {renderBrandMark('left')}
+              <View style={[s.headerLeft, { alignItems: "flex-start" }]}>
+                {renderBrandMark("left")}
                 <Text style={[s.title, titleStyle]}>{title}</Text>
-                {type !== 'FISCAL_REPORT' && (
+                {type !== "FISCAL_REPORT" && (
                   <View style={s.infoText}>
-                    <Text>{toTitleCase(type)} No. {String('number' in data ? dataAny.number : ('receiptNumber' in data ? dataAny.receiptNumber : 'STATEMENT'))}</Text>
-                    <Text>{toTitleCase(type)} Date: {String('date' in data ? dataAny.date : 'N/A')}</Text>
+                    <Text>
+                      {toTitleCase(type)} No.{" "}
+                      {String(
+                        "number" in data
+                          ? dataAny.number
+                          : "receiptNumber" in data
+                            ? dataAny.receiptNumber
+                            : "STATEMENT",
+                      )}
+                    </Text>
+                    <Text>
+                      {toTitleCase(type)} Date:{" "}
+                      {String("date" in data ? dataAny.date : "N/A")}
+                    </Text>
                   </View>
                 )}
               </View>
-              <View style={s.headerRight}>
-              </View>
+              <View style={s.headerRight}></View>
             </>
           )}
         </View>
@@ -3458,334 +9310,811 @@ if (type === 'POS_RECEIPT') {
 
         {/* RECIPIENT SECTION */}
         {shouldRenderRecipientSection && (
-          <View style={[s.billingSection, s.recipientSectionTight, { alignItems: 'flex-start', justifyContent: 'space-between' }]}>
-            <View style={{ flex: 1, flexDirection: 'row' }}>
-              <Text style={{ width: 80, fontWeight: 'bold' }}>{recipientLabel}</Text>
+          <View
+            style={[
+              s.billingSection,
+              s.recipientSectionTight,
+              { alignItems: "flex-start", justifyContent: "space-between" },
+            ]}
+          >
+            <View style={{ flex: 1, flexDirection: "row" }}>
+              <Text style={{ width: 80, fontWeight: "bold" }}>
+                {recipientLabel}
+              </Text>
               <View style={s.recipientInfoText}>
-                <Text style={s.recipientName}>{resolvedRecipientName || 'N/A'}</Text>
-                <Text style={s.recipientDetail}>{resolvedRecipientAddress || 'N/A'}</Text>
-                <Text style={s.recipientPhone}>{resolvedRecipientPhone || 'N/A'}</Text>
+                <Text style={s.recipientName}>
+                  {resolvedRecipientName || "N/A"}
+                </Text>
+                <Text style={s.recipientDetail}>
+                  {resolvedRecipientAddress || "N/A"}
+                </Text>
+                <Text style={s.recipientPhone}>
+                  {resolvedRecipientPhone || "N/A"}
+                </Text>
               </View>
             </View>
 
             {/* Conversion Details Box */}
             {/* Conversion / Acceptance Details Box */}
-            {showConversionHistory && ('isConverted' in data && !!data.isConverted) && (!!conversionDetails || type === 'QUOTATION') && (
-              <View wrap={false} style={[s.conversionBox, { marginLeft: 20 }]}>
-                <Text style={s.conversionTitle}>{type === 'QUOTATION' ? 'Acceptance Details' : 'Conversion History'}</Text>
-                {type === 'QUOTATION' && 'date' in data ? (
-                  <>
-                    <Text>Accepted on {formatDateOnly(String(dataAny.date || ''))} by {resolvedRecipientName || 'N/A'}</Text>
-                  </>
-                ) : conversionDetails ? (
-                  <>
-                    <Text>
-                      Converted from {resolveConversionSourceNumber(dataAny)} on {formatDateOnly(String(conversionDetails.date))} as accepted by {String(conversionDetails.acceptedBy || resolvedRecipientName || 'N/A')}
-                    </Text>
-                  </>
-                ) : null}
-              </View>
-            )}
+            {showConversionHistory &&
+              "isConverted" in data &&
+              !!data.isConverted &&
+              (!!conversionDetails || type === "QUOTATION") && (
+                <View
+                  wrap={false}
+                  style={[s.conversionBox, { marginLeft: 20 }]}
+                >
+                  <Text style={s.conversionTitle}>
+                    {type === "QUOTATION"
+                      ? "Acceptance Details"
+                      : "Conversion History"}
+                  </Text>
+                  {type === "QUOTATION" && "date" in data ? (
+                    <>
+                      <Text>
+                        Accepted on {formatDateOnly(String(dataAny.date || ""))}{" "}
+                        by {resolvedRecipientName || "N/A"}
+                      </Text>
+                    </>
+                  ) : conversionDetails ? (
+                    <>
+                      <Text>
+                        Converted from {resolveConversionSourceNumber(dataAny)}{" "}
+                        on {formatDateOnly(String(conversionDetails.date))} as
+                        accepted by{" "}
+                        {String(
+                          conversionDetails.acceptedBy ||
+                            resolvedRecipientName ||
+                            "N/A",
+                        )}
+                      </Text>
+                    </>
+                  ) : null}
+                </View>
+              )}
           </View>
         )}
 
         {/* TABLE SECTION */}
-        {type !== 'DELIVERY_NOTE' && type !== 'WORK_ORDER' && type !== 'ACCOUNT_STATEMENT' && type !== 'EXAMINATION_INVOICE' && (
-          <>
-            {/* Case: INVOICE / PO */}
-            {isFinancial && (
-              <View style={s.tableSectionTight}>
-                {/* 1. Restored Table Header with 2px border */}
-                <View style={s.tableHeader}>
-                  <Text style={s.colSn}>SN</Text>
-                  <Text style={s.colDesc}>Description</Text>
-                  <Text style={s.colQty}>Qty</Text>
-                  <Text style={s.colPrice}>Price</Text>
-                  <Text style={s.colTotal}>Amount</Text>
-                </View>
+        {type !== "DELIVERY_NOTE" &&
+          type !== "WORK_ORDER" &&
+          type !== "ACCOUNT_STATEMENT" &&
+          type !== "EXAMINATION_INVOICE" && (
+            <>
+              {/* Case: INVOICE / PO */}
+              {isFinancial && (
+                <View style={s.tableSectionTight}>
+                  {/* 1. Restored Table Header with 2px border */}
+                  <View style={s.tableHeader}>
+                    <Text style={s.colSn}>SN</Text>
+                    <Text style={s.colDesc}>Description</Text>
+                    <Text style={s.colQty}>Qty</Text>
+                    <Text style={s.colPrice}>Price</Text>
+                    <Text style={s.colTotal}>Amount</Text>
+                  </View>
 
-                {/* 2. Item Rows with consistent 13px spacing */}
-                {/* For Invoice, Order, Quotation: Service items show simplified format */}
-                {/* For POS: All items show standard format */}
-                {(('items' in data ? dataAny.items : []) as Array<Record<string, unknown>>).map((item: Record<string, unknown>, i: number) => {
-                  // Quick Photocopy first (strict photocopy only): Qty "13 pgs",
-                  // Price per-sheet (never divided), Amount stored total.
-                  // Rate appears exactly once (Price column) — never in the name.
-                  const isQPDefault = isQuickPhotocopyItem(item);
-                  if (isQPDefault) {
-                    const qp = getQuickPhotocopyTotals(item);
-                    const qpDisplay = getQuickPhotocopyLineDisplay(item, currency);
+                  {/* 2. Item Rows with consistent 13px spacing */}
+                  {/* For Invoice, Order, Quotation: Service items show simplified format */}
+                  {/* For POS: All items show standard format */}
+                  {(
+                    ("items" in data ? dataAny.items : []) as Array<
+                      Record<string, unknown>
+                    >
+                  ).map((item: Record<string, unknown>, i: number) => {
+                    // Quick Photocopy first (strict photocopy only): Qty "13 pgs",
+                    // Price per-sheet (never divided), Amount stored total.
+                    // Rate appears exactly once (Price column) — never in the name.
+                    const isQPDefault = isQuickPhotocopyItem(item);
+                    if (isQPDefault) {
+                      const qp = getQuickPhotocopyTotals(item);
+                      const qpDisplay = getQuickPhotocopyLineDisplay(
+                        item,
+                        currency,
+                      );
+                      return (
+                        <View
+                          key={i}
+                          style={[
+                            s.row,
+                            paginated ? { paddingVertical: 4 } : null,
+                          ]}
+                          wrap={paginated ? false : undefined}
+                        >
+                          <Text style={s.colSn}>{i + 1}</Text>
+                          <Text style={s.colDesc}>{qpDisplay.name}</Text>
+                          <Text style={s.colQty}>{qpDisplay.qty}</Text>
+                          <Text style={s.colPrice}>{qpDisplay.rate}</Text>
+                          <Text style={s.colTotal}>
+                            {currency}{" "}
+                            {formatAmount(
+                              Number(item.total) > 0
+                                ? Number(item.total)
+                                : qp.lineTotal,
+                            )}
+                          </Text>
+                        </View>
+                      );
+                    }
+                    // Check if this is a service-type item (category, type, or isService flag)
+                    const isService =
+                      item.category === "service" ||
+                      item.type === "service" ||
+                      item.isService === true;
+
+                    // Check if current document type should use simplified service format
+                    const useSimplifiedFormat =
+                      isService &&
+                      (type === "INVOICE" ||
+                        type === "ORDER" ||
+                        (type as string) === "SALES_ORDER" ||
+                        type === "QUOTATION");
+
+                    // Format description based on item type and document type
+                    let formattedDesc = String(
+                      item.name ||
+                        item.productName ||
+                        item.product_name ||
+                        item.itemName ||
+                        item.item_name ||
+                        item.title ||
+                        item.label ||
+                        item.desc ||
+                        item.description ||
+                        "",
+                    );
+                    if (useSimplifiedFormat) {
+                      const totalPages = Number(
+                        item.totalPages || item.pages || 0,
+                      );
+                      const copies = Number(item.copies || item.qty || 1);
+                      const itemName = String(
+                        item.name ||
+                          item.productName ||
+                          item.product_name ||
+                          item.itemName ||
+                          item.item_name ||
+                          item.title ||
+                          item.label ||
+                          item.desc ||
+                          item.description ||
+                          "Service",
+                      );
+                      formattedDesc = `${itemName} (${totalPages} pages × ${copies} copies)`;
+                    }
+
                     return (
-                      <View key={i} style={[s.row, paginated ? { paddingVertical: 4 } : null]} wrap={paginated ? false : undefined}>
+                      <View
+                        key={i}
+                        style={[
+                          s.row,
+                          paginated ? { paddingVertical: 4 } : null,
+                        ]}
+                        wrap={paginated ? false : undefined}
+                      >
                         <Text style={s.colSn}>{i + 1}</Text>
-                        <Text style={s.colDesc}>{qpDisplay.name}</Text>
-                        <Text style={s.colQty}>{qpDisplay.qty}</Text>
-                        <Text style={s.colPrice}>{qpDisplay.rate}</Text>
-                        <Text style={s.colTotal}>{currency} {formatAmount(Number(item.total) > 0 ? Number(item.total) : qp.lineTotal)}</Text>
+                        <Text style={s.colDesc}>{formattedDesc}</Text>
+                        <Text style={s.colQty}>{Number(item.qty)}</Text>
+                        <Text style={s.colPrice}>
+                          {currency} {formatAmount(Number(item.price))}
+                        </Text>
+                        <Text style={s.colTotal}>
+                          {currency} {formatAmount(Number(item.total))}
+                        </Text>
                       </View>
                     );
-                  }
-                  // Check if this is a service-type item (category, type, or isService flag)
-                  const isService = item.category === 'service' ||
-                                   item.type === 'service' ||
-                                   item.isService === true;
+                  })}
 
-                  // Check if current document type should use simplified service format
-                  const useSimplifiedFormat = isService &&
-                    (type === 'INVOICE' || type === 'ORDER' || (type as string) === 'SALES_ORDER' || type === 'QUOTATION');
-
-                  // Format description based on item type and document type
-                  let formattedDesc = String(item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || '');
-                  if (useSimplifiedFormat) {
-                    const totalPages = Number(item.totalPages || item.pages || 0);
-                    const copies = Number(item.copies || item.qty || 1);
-                    const itemName = String(item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || 'Service');
-                    formattedDesc = `${itemName} (${totalPages} pages × ${copies} copies)`;
-                  }
-
-                  return (
-                    <View key={i} style={[s.row, paginated ? { paddingVertical: 4 } : null]} wrap={paginated ? false : undefined}>
-                      <Text style={s.colSn}>{i + 1}</Text>
-                      <Text style={s.colDesc}>{formattedDesc}</Text>
-                      <Text style={s.colQty}>{Number(item.qty)}</Text>
-                      <Text style={s.colPrice}>{currency} {formatAmount(Number(item.price))}</Text>
-                      <Text style={s.colTotal}>{currency} {formatAmount(Number(item.total))}</Text>
-                    </View>
-                  );
-                })}
-
-                {/* 3. The Masterpiece Summary Box (Restoring Source 1 Layout) */}
-                <View
-                  style={[
-                    s.summaryContainer,
-                    type === 'QUOTATION' ? { justifyContent: 'flex-end' } : null,
-                    type === 'PO' ? { justifyContent: 'flex-end' } : null,
-                  ]}
-                >
-                  {/* Left Side: Invoice Status for INVOICE/ORDER types */}
-                  {(type === 'INVOICE' || type === 'ORDER' || (type as string) === 'SALES_ORDER' || type === 'SUBSCRIPTION') && 'status' in data && !!data.status && (
-                    <View style={s.summaryLeft}>
-                      {/* INVOICE STATUS TITLE REMOVED */}
-                      <View style={[s.statusBox, { borderLeftColor: monoLine(mode, getStatusTone(data.status, mode).border) }]}>
-                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: monoText(mode, getStatusTone(data.status, mode).text) }}>{data.status.toUpperCase()}</Text>
-                      </View>
-                    </View>
-                  )}
-                  
-                  {/* Right Side: Summary Values */}
-                  <View style={s.summaryRight}>
-                    <View style={s.summaryBox} wrap={paginated ? false : undefined}>
-                      {(() => {
-                        const itemsArr = ('items' in data ? data.items : []) as Array<Record<string, unknown>>;
-                        const itemsSum = itemsArr.length > 0 ? itemsArr.reduce((s: number, i: Record<string, unknown>) => s + Number(i.total || 0), 0) : null;
-                        const displaySubtotal = itemsSum !== null ? itemsSum : ('subtotal' in data ? Number(data.subtotal) : 0);
-                        const displayDiscount = 'discount' in data ? Number(data.discount) : 0;
-                        const displayTotal = itemsSum !== null ? itemsSum - displayDiscount : ('totalAmount' in data ? Number(data.totalAmount) : 0);
-                        const displayAmountPaid = 'amountPaid' in data ? Number(data.amountPaid) : 0;
-                        const displayDiscountPct = displaySubtotal > 0 ? Number(((displayDiscount / displaySubtotal) * 100).toFixed(2)) : 0;
-                        const displayDiscountLabel = displayDiscountPct > 0 ? `Discount (${displayDiscountPct}%)` : 'Discount';
-
-                        return (
-                          <>
-                            <View style={s.summaryRow}>
-                              <Text style={{ flex: 1, fontWeight: 'bold' }}>Subtotal</Text>
-                              <Text style={{ textAlign: 'right' }}>{currency} {formatAmount(displaySubtotal)}</Text>
-                            </View>
-
-                            {displayDiscount > 0 && (
-                              <View style={s.summaryRow}>
-                                <Text style={{ flex: 1 }}>{displayDiscountLabel}</Text>
-                                <Text style={{ textAlign: 'right' }}>-{currency} {formatAmount(displayDiscount)}</Text>
-                              </View>
-                            )}
-
-                            {type === 'QUOTATION' && (
-                              <View style={s.totalRow}>
-                                <Text style={{ flex: 1, fontWeight: 'bold' }}>Quoted Amount:</Text>
-                                <Text style={{ textAlign: 'right', paddingLeft: 8 }}>{currency} {formatAmount(displayTotal)}</Text>
-                              </View>
-                            )}
-
-                            {type !== 'QUOTATION' && type !== 'SUBSCRIPTION' && (
-                              <>
-                                <View style={s.summaryRow}>
-                                  <Text style={{ flex: 1, fontWeight: 'bold' }}>Amount Paid</Text>
-                                  <Text style={{ textAlign: 'right' }}>{currency} {formatAmount(displayAmountPaid)}</Text>
-                                </View>
-                            <View style={s.totalRow}>
-                              <Text style={{ flex: 1 }}>Due Balance</Text>
-                              <Text style={{ textAlign: 'right' }}>{currency} {formatAmount(('totalAmount' in data ? Number(data.totalAmount) : 0) - displayAmountPaid)}</Text>
-                            </View>
-                              </>
-                            )}
-                          </>
-                        );
-                      })()}
-
-                      {/* Total before payments - Hidden on Invoices, Orders, Quotations, and POs */}
-                      {type !== 'INVOICE' && type !== 'ORDER' && type !== 'QUOTATION' && type !== 'SUBSCRIPTION' && type !== 'PO' && (
-                      <View style={s.summaryRow}>
-                        <Text style={{ fontWeight: 'bold' }}>Total Amount</Text>
-                        <Text style={{ textAlign: 'right' }}>{currency} {formatAmount('totalAmount' in data ? data.totalAmount : 0)}</Text>
-                      </View>
-                      )}
-
-                      {/* Subscription Totals */}
-                      {type === 'SUBSCRIPTION' && (
-                        <View style={s.totalRow}>
-                          <Text>Recurring Total</Text>
-                          <Text style={{ textAlign: 'right' }}>{currency} {formatAmount('totalAmount' in data ? data.totalAmount : 0)}</Text>
+                  {/* 3. The Masterpiece Summary Box (Restoring Source 1 Layout) */}
+                  <View
+                    style={[
+                      s.summaryContainer,
+                      type === "QUOTATION"
+                        ? { justifyContent: "flex-end" }
+                        : null,
+                      type === "PO" ? { justifyContent: "flex-end" } : null,
+                    ]}
+                  >
+                    {/* Left Side: Invoice Status for INVOICE/ORDER types */}
+                    {(type === "INVOICE" ||
+                      type === "ORDER" ||
+                      (type as string) === "SALES_ORDER" ||
+                      type === "SUBSCRIPTION") &&
+                      "status" in data &&
+                      !!data.status && (
+                        <View style={s.summaryLeft}>
+                          {/* INVOICE STATUS TITLE REMOVED */}
+                          <View
+                            style={[
+                              s.statusBox,
+                              {
+                                borderLeftColor: monoLine(
+                                  mode,
+                                  getStatusTone(data.status, mode).border,
+                                ),
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 16,
+                                fontWeight: "bold",
+                                color: monoText(
+                                  mode,
+                                  getStatusTone(data.status, mode).text,
+                                ),
+                              }}
+                            >
+                              {data.status.toUpperCase()}
+                            </Text>
+                          </View>
                         </View>
                       )}
-                    </View>
-          </View>
-        </View>
 
-        {/* Outstanding Balance Statement */}
-                {type === 'INVOICE' && showInvoiceBalances && Number(dataAny?.totalCustomerOutstanding || 0) > 0 && (() => {
-                  const totalOutstanding = Number(dataAny.totalCustomerOutstanding || 0);
-                  const todayStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-                  return (
-                    <View style={{ marginTop: type === 'INVOICE' ? 10 : 15, padding: 8, backgroundColor: monoFill(mode, '#f0f9ff'), borderRadius: 4, borderLeftWidth: 3, borderLeftColor: monoLine(mode, '#0ea5e9') }} wrap={false}>
-                      <Text style={{ fontSize: scaledFont(10), color: monoText(mode, '#0369a1'), lineHeight: 1.4 }}>
-                        {'Your overall outstanding balance is '}
-                        <Text style={{ fontWeight: 'bold' }}>{currency} {totalOutstanding.toLocaleString('en-US', { minimumFractionDigits: 2 })}</Text>
-                        {` as of ${todayStr}`}
-                      </Text>
+                    {/* Right Side: Summary Values */}
+                    <View style={s.summaryRight}>
+                      <View
+                        style={s.summaryBox}
+                        wrap={paginated ? false : undefined}
+                      >
+                        {(() => {
+                          const itemsArr = (
+                            "items" in data ? data.items : []
+                          ) as Array<Record<string, unknown>>;
+                          const itemsSum =
+                            itemsArr.length > 0
+                              ? itemsArr.reduce(
+                                  (s: number, i: Record<string, unknown>) =>
+                                    s + Number(i.total || 0),
+                                  0,
+                                )
+                              : null;
+                          const displaySubtotal =
+                            itemsSum !== null
+                              ? itemsSum
+                              : "subtotal" in data
+                                ? Number(data.subtotal)
+                                : 0;
+                          const displayDiscount =
+                            "discount" in data ? Number(data.discount) : 0;
+                          const displayTotal =
+                            itemsSum !== null
+                              ? itemsSum - displayDiscount
+                              : "totalAmount" in data
+                                ? Number(data.totalAmount)
+                                : 0;
+                          const displayAmountPaid =
+                            "amountPaid" in data ? Number(data.amountPaid) : 0;
+                          const displayDiscountPct =
+                            displaySubtotal > 0
+                              ? Number(
+                                  (
+                                    (displayDiscount / displaySubtotal) *
+                                    100
+                                  ).toFixed(2),
+                                )
+                              : 0;
+                          const displayDiscountLabel =
+                            displayDiscountPct > 0
+                              ? `Discount (${displayDiscountPct}%)`
+                              : "Discount";
+
+                          return (
+                            <>
+                              <View style={s.summaryRow}>
+                                <Text style={{ flex: 1, fontWeight: "bold" }}>
+                                  Subtotal
+                                </Text>
+                                <Text style={{ textAlign: "right" }}>
+                                  {currency} {formatAmount(displaySubtotal)}
+                                </Text>
+                              </View>
+
+                              {displayDiscount > 0 && (
+                                <View style={s.summaryRow}>
+                                  <Text style={{ flex: 1 }}>
+                                    {displayDiscountLabel}
+                                  </Text>
+                                  <Text style={{ textAlign: "right" }}>
+                                    -{currency} {formatAmount(displayDiscount)}
+                                  </Text>
+                                </View>
+                              )}
+
+                              {type === "QUOTATION" && (
+                                <View style={s.totalRow}>
+                                  <Text style={{ flex: 1, fontWeight: "bold" }}>
+                                    Quoted Amount:
+                                  </Text>
+                                  <Text
+                                    style={{
+                                      textAlign: "right",
+                                      paddingLeft: 8,
+                                    }}
+                                  >
+                                    {currency} {formatAmount(displayTotal)}
+                                  </Text>
+                                </View>
+                              )}
+
+                              {type !== "QUOTATION" &&
+                                type !== "SUBSCRIPTION" && (
+                                  <>
+                                    <View style={s.summaryRow}>
+                                      <Text
+                                        style={{ flex: 1, fontWeight: "bold" }}
+                                      >
+                                        Amount Paid
+                                      </Text>
+                                      <Text style={{ textAlign: "right" }}>
+                                        {currency}{" "}
+                                        {formatAmount(displayAmountPaid)}
+                                      </Text>
+                                    </View>
+                                    <View style={s.totalRow}>
+                                      <Text style={{ flex: 1 }}>
+                                        Due Balance
+                                      </Text>
+                                      <Text style={{ textAlign: "right" }}>
+                                        {currency}{" "}
+                                        {formatAmount(
+                                          ("totalAmount" in data
+                                            ? Number(data.totalAmount)
+                                            : 0) - displayAmountPaid,
+                                        )}
+                                      </Text>
+                                    </View>
+                                  </>
+                                )}
+                            </>
+                          );
+                        })()}
+
+                        {/* Total before payments - Hidden on Invoices, Orders, Quotations, and POs */}
+                        {type !== "INVOICE" &&
+                          type !== "ORDER" &&
+                          type !== "QUOTATION" &&
+                          type !== "SUBSCRIPTION" &&
+                          type !== "PO" && (
+                            <View style={s.summaryRow}>
+                              <Text style={{ fontWeight: "bold" }}>
+                                Total Amount
+                              </Text>
+                              <Text style={{ textAlign: "right" }}>
+                                {currency}{" "}
+                                {formatAmount(
+                                  "totalAmount" in data ? data.totalAmount : 0,
+                                )}
+                              </Text>
+                            </View>
+                          )}
+
+                        {/* Subscription Totals */}
+                        {type === "SUBSCRIPTION" && (
+                          <View style={s.totalRow}>
+                            <Text>Recurring Total</Text>
+                            <Text style={{ textAlign: "right" }}>
+                              {currency}{" "}
+                              {formatAmount(
+                                "totalAmount" in data ? data.totalAmount : 0,
+                              )}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
                     </View>
-                  );
-                })()}
+                  </View>
+
+                  {/* Outstanding Balance Statement */}
+                  {type === "INVOICE" &&
+                    showInvoiceBalances &&
+                    Number(dataAny?.totalCustomerOutstanding || 0) > 0 &&
+                    (() => {
+                      const totalOutstanding = Number(
+                        dataAny.totalCustomerOutstanding || 0,
+                      );
+                      const todayStr = new Date().toLocaleDateString("en-GB", {
+                        day: "numeric",
+                        month: "long",
+                        year: "numeric",
+                      });
+                      return (
+                        <View
+                          style={{
+                            marginTop: type === "INVOICE" ? 10 : 15,
+                            padding: 8,
+                            backgroundColor: monoFill(mode, "#f0f9ff"),
+                            borderRadius: 4,
+                            borderLeftWidth: 3,
+                            borderLeftColor: monoLine(mode, "#0ea5e9"),
+                          }}
+                          wrap={false}
+                        >
+                          <Text
+                            style={{
+                              fontSize: scaledFont(10),
+                              color: monoText(mode, "#0369a1"),
+                              lineHeight: 1.4,
+                            }}
+                          >
+                            {"Your overall outstanding balance is "}
+                            <Text style={{ fontWeight: "bold" }}>
+                              {currency}{" "}
+                              {totalOutstanding.toLocaleString("en-US", {
+                                minimumFractionDigits: 2,
+                              })}
+                            </Text>
+                            {` as of ${todayStr}`}
+                          </Text>
+                        </View>
+                      );
+                    })()}
 
                   {/* Thank You Note */}
-                  <View wrap={false} style={{ marginTop: type === 'INVOICE' ? 10 : 15, alignItems: 'center' }}>
-                    <Text style={{ fontSize: scaledFont(12), color: monoText(mode, '#334155') }}>
-                      Thank you for choosing <Text style={{ fontWeight: 'bold' }}>{companyName}</Text>
-                    </Text>
-                  </View>
-
-                {/* Quotation Note */}
-                {type === 'QUOTATION' && (
-                  <View wrap={false} style={{ marginTop: 15, padding: 8, backgroundColor: monoFill(mode, '#f0f9ff'), borderRadius: 4, borderLeftWidth: 3, borderLeftColor: monoLine(mode, '#0ea5e9') }}>
-                    <Text style={{ fontSize: scaledFont(9), color: monoText(mode, '#0369a1'), lineHeight: 1.4 }}>
-                      Note: Acceptance of this quotation converts it into a formal Sales Order subject to our standard terms and conditions.
-                    </Text>
-                  </View>
-                )}
-
-                {Boolean(showPaymentTerms) && !!paymentTermsLabel && (
                   <View
                     wrap={false}
                     style={{
-                      marginTop: 14,
-                      padding: 10,
-                      backgroundColor: monoFill(mode, '#f8fafc'),
-                      borderRadius: 6,
-                      borderLeftWidth: 3,
-                      borderLeftColor: monoLine(mode, templateSettings.accentColor),
+                      marginTop: type === "INVOICE" ? 10 : 15,
+                      alignItems: "center",
                     }}
                   >
-                    <Text style={{ fontSize: scaledFont(9), fontWeight: 'bold', color: monoText(mode, '#475569'), textTransform: 'uppercase' }}>
-                      Payment Terms
-                    </Text>
-                    <Text style={{ fontSize: scaledFont(10), color: monoText(mode, '#334155'), marginTop: 4, lineHeight: 1.45 }}>
-                      {paymentTermsLabel}
-                      {showDueDate && dataAny?.dueDate ? ` | Due by ${formatDateOnly(String(dataAny.dueDate))}` : ''}
+                    <Text
+                      style={{
+                        fontSize: scaledFont(12),
+                        color: monoText(mode, "#334155"),
+                      }}
+                    >
+                      Thank you for choosing{" "}
+                      <Text style={{ fontWeight: "bold" }}>{companyName}</Text>
                     </Text>
                   </View>
-                )}
 
+                  {/* Quotation Note */}
+                  {type === "QUOTATION" && (
+                    <View
+                      wrap={false}
+                      style={{
+                        marginTop: 15,
+                        padding: 8,
+                        backgroundColor: monoFill(mode, "#f0f9ff"),
+                        borderRadius: 4,
+                        borderLeftWidth: 3,
+                        borderLeftColor: monoLine(mode, "#0ea5e9"),
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: scaledFont(9),
+                          color: monoText(mode, "#0369a1"),
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        Note: Acceptance of this quotation converts it into a
+                        formal Sales Order subject to our standard terms and
+                        conditions.
+                      </Text>
+                    </View>
+                  )}
 
-              </View>
-            )}
-
-            {/* Non-financial cases (original logic) */}
-            {!isFinancial && (
-              <>
-                <View style={s.tableHeader}>
-                  <Text style={s.colSn}>SN</Text>
-                  <Text style={s.colDesc}>Description / Instructions</Text>
-                  <Text style={s.colQty}>Qty</Text>
+                  {Boolean(showPaymentTerms) && !!paymentTermsLabel && (
+                    <View
+                      wrap={false}
+                      style={{
+                        marginTop: 14,
+                        padding: 10,
+                        backgroundColor: monoFill(mode, "#f8fafc"),
+                        borderRadius: 6,
+                        borderLeftWidth: 3,
+                        borderLeftColor: monoLine(
+                          mode,
+                          templateSettings.accentColor,
+                        ),
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: scaledFont(9),
+                          fontWeight: "bold",
+                          color: monoText(mode, "#475569"),
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        Payment Terms
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: scaledFont(10),
+                          color: monoText(mode, "#334155"),
+                          marginTop: 4,
+                          lineHeight: 1.45,
+                        }}
+                      >
+                        {paymentTermsLabel}
+                        {showDueDate && dataAny?.dueDate
+                          ? ` | Due by ${formatDateOnly(String(dataAny.dueDate))}`
+                          : ""}
+                      </Text>
+                    </View>
+                  )}
                 </View>
+              )}
 
-                {('items' in data ? data.items : []).map((item, i) => (
-                  <View key={i} style={s.row}>
-                    <Text style={s.colSn}>{i + 1}</Text>
-                    <Text style={s.colDesc}>{item.desc}</Text>
-                    <Text style={s.colQty}>{item.qty}</Text>
+              {/* Non-financial cases (original logic) */}
+              {!isFinancial && (
+                <>
+                  <View style={s.tableHeader}>
+                    <Text style={s.colSn}>SN</Text>
+                    <Text style={s.colDesc}>Description / Instructions</Text>
+                    <Text style={s.colQty}>Qty</Text>
                   </View>
-                ))}
-              </>
-            )}
-          </>
-        )}
+
+                  {("items" in data ? data.items : []).map((item, i) => (
+                    <View key={i} style={s.row}>
+                      <Text style={s.colSn}>{i + 1}</Text>
+                      <Text style={s.colDesc}>{item.desc}</Text>
+                      <Text style={s.colQty}>{item.qty}</Text>
+                    </View>
+                  ))}
+                </>
+              )}
+            </>
+          )}
 
         {/* WORK_ORDER Case */}
-        {type === 'WORK_ORDER' && (
+        {type === "WORK_ORDER" && (
           <View style={{ marginTop: 20 }}>
             {/* Job Header Info */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 4, borderLeftWidth: 3, borderLeftColor: monoLine(mode, dataAny.priority === 'Critical' ? '#e11d48' : dataAny.priority === 'High' ? '#f59e0b' : '#3b82f6') }}>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                marginBottom: 15,
+                padding: 10,
+                backgroundColor: monoFill(mode, "#f8fafc"),
+                borderRadius: 4,
+                borderLeftWidth: 3,
+                borderLeftColor: monoLine(
+                  mode,
+                  dataAny.priority === "Critical"
+                    ? "#e11d48"
+                    : dataAny.priority === "High"
+                      ? "#f59e0b"
+                      : "#3b82f6",
+                ),
+              }}
+            >
               <View>
-                <Text style={{ fontSize: 10, color: monoText(mode, '#64748b'), fontWeight: 'bold', textTransform: 'uppercase' }}>Priority Level</Text>
-                <Text style={{ fontSize: 14, fontWeight: 'bold', color: monoText(mode, dataAny.priority === 'Critical' ? '#e11d48' : '#0f172a') }}>{String(dataAny.priority || 'Normal')}</Text>
+                <Text
+                  style={{
+                    fontSize: 10,
+                    color: monoText(mode, "#64748b"),
+                    fontWeight: "bold",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Priority Level
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: "bold",
+                    color: monoText(
+                      mode,
+                      dataAny.priority === "Critical" ? "#e11d48" : "#0f172a",
+                    ),
+                  }}
+                >
+                  {String(dataAny.priority || "Normal")}
+                </Text>
               </View>
-              {('technician' in data) && !!data.technician && (
-                <View style={{ textAlign: 'right' }}>
-                  <Text style={{ fontSize: 10, color: monoText(mode, '#64748b'), fontWeight: 'bold', textTransform: 'uppercase' }}>Technician</Text>
-                  <Text style={{ fontSize: 12, fontWeight: 'bold' }}>{String(data.technician)}</Text>
+              {"technician" in data && !!data.technician && (
+                <View style={{ textAlign: "right" }}>
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      color: monoText(mode, "#64748b"),
+                      fontWeight: "bold",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Technician
+                  </Text>
+                  <Text style={{ fontSize: 12, fontWeight: "bold" }}>
+                    {String(data.technician)}
+                  </Text>
                 </View>
               )}
             </View>
 
             {/* Technical Specifications Grid */}
-            {('technicalSpecs' in data) && !!data.technicalSpecs && Object.keys(data.technicalSpecs).length > 0 && (
-              <View style={{ marginBottom: 20 }}>
-                <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 8, color: monoText(mode, '#475569'), textTransform: 'uppercase', letterSpacing: 1 }}>Technical Specifications</Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                  {Object.entries(data.technicalSpecs).map(([key, value], i) => (
-                    <View key={i} style={{ width: '30%', padding: 8, backgroundColor: '#fff', borderWidth: 0.5, borderColor: monoLine(mode, '#e2e8f0'), borderRadius: 4 }}>
-                      <Text style={{ fontSize: 8, color: monoText(mode, '#94a3b8'), fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 2 }}>{key}</Text>
-                      <Text style={{ fontSize: 10, fontWeight: 'bold', color: monoText(mode, '#1e293b') }}>{String(value)}</Text>
-                    </View>
-                  ))}
+            {"technicalSpecs" in data &&
+              !!data.technicalSpecs &&
+              Object.keys(data.technicalSpecs).length > 0 && (
+                <View style={{ marginBottom: 20 }}>
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      fontWeight: "bold",
+                      marginBottom: 8,
+                      color: monoText(mode, "#475569"),
+                      textTransform: "uppercase",
+                      letterSpacing: 1,
+                    }}
+                  >
+                    Technical Specifications
+                  </Text>
+                  <View
+                    style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}
+                  >
+                    {Object.entries(data.technicalSpecs).map(
+                      ([key, value], i) => (
+                        <View
+                          key={i}
+                          style={{
+                            width: "30%",
+                            padding: 8,
+                            backgroundColor: "#fff",
+                            borderWidth: 0.5,
+                            borderColor: monoLine(mode, "#e2e8f0"),
+                            borderRadius: 4,
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 8,
+                              color: monoText(mode, "#94a3b8"),
+                              fontWeight: "bold",
+                              textTransform: "uppercase",
+                              marginBottom: 2,
+                            }}
+                          >
+                            {key}
+                          </Text>
+                          <Text
+                            style={{
+                              fontSize: 10,
+                              fontWeight: "bold",
+                              color: monoText(mode, "#1e293b"),
+                            }}
+                          >
+                            {String(value)}
+                          </Text>
+                        </View>
+                      ),
+                    )}
+                  </View>
                 </View>
-              </View>
-            )}
+              )}
 
             {/* Production Instructions */}
-            <View style={{ backgroundColor: monoFill(mode, '#f1f5f9'), padding: 12, marginBottom: 20, borderRadius: 4 }}>
-              <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 5, color: monoText(mode, '#475569'), textTransform: 'uppercase' }}>Manufacturing Instructions:</Text>
-              <Text style={{ fontSize: 11, color: monoText(mode, '#334155'), lineHeight: 1.4 }}>{('instructions' in data ? data.instructions : null) || "Standard operating procedure required. Ensure quality check before release."}</Text>
+            <View
+              style={{
+                backgroundColor: monoFill(mode, "#f1f5f9"),
+                padding: 12,
+                marginBottom: 20,
+                borderRadius: 4,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 10,
+                  fontWeight: "bold",
+                  marginBottom: 5,
+                  color: monoText(mode, "#475569"),
+                  textTransform: "uppercase",
+                }}
+              >
+                Manufacturing Instructions:
+              </Text>
+              <Text
+                style={{
+                  fontSize: 11,
+                  color: monoText(mode, "#334155"),
+                  lineHeight: 1.4,
+                }}
+              >
+                {("instructions" in data ? data.instructions : null) ||
+                  "Standard operating procedure required. Ensure quality check before release."}
+              </Text>
             </View>
 
             {/* Materials Checklist */}
-            {('materialChecklist' in data) && Array.isArray(data.materialChecklist) && data.materialChecklist.length > 0 && (
-              <View style={{ marginBottom: 20 }}>
-                <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 8, color: monoText(mode, '#475569'), textTransform: 'uppercase', letterSpacing: 1 }}>Materials Checklist</Text>
-                <View style={{ borderTopWidth: 1, borderColor: monoLine(mode, '#e2e8f0') }}>
-                  {data.materialChecklist.map((m, i) => (
-                    <View key={i} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 6, borderBottomWidth: 0.5, borderColor: monoLine(mode, '#f1f5f9') }}>
-                      <View style={{ width: 12, height: 12, borderWidth: 1, borderColor: monoLine(mode, '#cbd5e1'), marginRight: 10, borderRadius: 2 }} />
-                      <Text style={{ fontSize: 10, color: monoText(mode, '#334155') }}>{m}</Text>
-                    </View>
-                  ))}
+            {"materialChecklist" in data &&
+              Array.isArray(data.materialChecklist) &&
+              data.materialChecklist.length > 0 && (
+                <View style={{ marginBottom: 20 }}>
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      fontWeight: "bold",
+                      marginBottom: 8,
+                      color: monoText(mode, "#475569"),
+                      textTransform: "uppercase",
+                      letterSpacing: 1,
+                    }}
+                  >
+                    Materials Checklist
+                  </Text>
+                  <View
+                    style={{
+                      borderTopWidth: 1,
+                      borderColor: monoLine(mode, "#e2e8f0"),
+                    }}
+                  >
+                    {data.materialChecklist.map((m, i) => (
+                      <View
+                        key={i}
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          paddingVertical: 6,
+                          borderBottomWidth: 0.5,
+                          borderColor: monoLine(mode, "#f1f5f9"),
+                        }}
+                      >
+                        <View
+                          style={{
+                            width: 12,
+                            height: 12,
+                            borderWidth: 1,
+                            borderColor: monoLine(mode, "#cbd5e1"),
+                            marginRight: 10,
+                            borderRadius: 2,
+                          }}
+                        />
+                        <Text
+                          style={{
+                            fontSize: 10,
+                            color: monoText(mode, "#334155"),
+                          }}
+                        >
+                          {m}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
                 </View>
-              </View>
-            )}
+              )}
 
             {/* Service Tasks */}
-            <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 8, color: monoText(mode, '#475569'), textTransform: 'uppercase', letterSpacing: 1 }}>Production Checklist</Text>
+            <Text
+              style={{
+                fontSize: 10,
+                fontWeight: "bold",
+                marginBottom: 8,
+                color: monoText(mode, "#475569"),
+                textTransform: "uppercase",
+                letterSpacing: 1,
+              }}
+            >
+              Production Checklist
+            </Text>
             <View style={s.tableHeader}>
               <Text style={s.colSn}>SN</Text>
               <Text style={s.colDesc}>Service / Process Details</Text>
               <Text style={s.colQty}>Completion</Text>
             </View>
 
-            {('items' in data ? data.items : []).map((item, i) => (
+            {("items" in data ? data.items : []).map((item, i) => (
               <View key={i} style={s.row}>
                 <Text style={s.colSn}>{i + 1}</Text>
                 <Text style={s.colDesc}>{item.desc}</Text>
-                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                  <View style={{ width: 12, height: 12, borderWidth: 1, borderColor: '#000', marginRight: 5 }} />
+                <View
+                  style={{
+                    flex: 1,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 12,
+                      height: 12,
+                      borderWidth: 1,
+                      borderColor: "#000",
+                      marginRight: 5,
+                    }}
+                  />
                   <Text style={{ fontSize: 9 }}>Initial</Text>
                 </View>
               </View>
@@ -3794,9 +10123,11 @@ if (type === 'POS_RECEIPT') {
         )}
 
         {/* DELIVERY_NOTE Case */}
-        {type === 'DELIVERY_NOTE' && (
+        {type === "DELIVERY_NOTE" && (
           <View style={{ marginTop: 20 }}>
-            <Text style={{ fontSize: 12, fontWeight: 'bold', marginBottom: 10 }}>
+            <Text
+              style={{ fontSize: 12, fontWeight: "bold", marginBottom: 10 }}
+            >
               DELIVERY ITEMS CHECKLIST
             </Text>
             <View style={s.tableHeader}>
@@ -3805,7 +10136,7 @@ if (type === 'POS_RECEIPT') {
               <Text style={s.colQty}>Qty Shipped</Text>
             </View>
 
-            {('items' in data ? data.items : []).map((item: any, i: number) => {
+            {("items" in data ? data.items : []).map((item: any, i: number) => {
               // Quick Photocopy delivery: show pages ("13 pgs"), not sheets.
               // Description uses the shared QP display name (customName-aware).
               const isQPDN = isQuickPhotocopyItem(item);
@@ -3813,8 +10144,16 @@ if (type === 'POS_RECEIPT') {
               return (
                 <View key={i} style={s.row}>
                   <Text style={s.colSn}>{i + 1}</Text>
-                  <Text style={s.colDesc}>{isQPDN && qpDN ? getQuickPhotocopyLineDisplay(item, currency).name : item.desc}</Text>
-                  <Text style={s.colQty}>{isQPDN && qpDN ? formatQuickPhotocopyQty(qpDN.totalPages) : item.qty}</Text>
+                  <Text style={s.colDesc}>
+                    {isQPDN && qpDN
+                      ? getQuickPhotocopyLineDisplay(item, currency).name
+                      : item.desc}
+                  </Text>
+                  <Text style={s.colQty}>
+                    {isQPDN && qpDN
+                      ? formatQuickPhotocopyQty(qpDN.totalPages)
+                      : item.qty}
+                  </Text>
                 </View>
               );
             })}
@@ -3822,141 +10161,727 @@ if (type === 'POS_RECEIPT') {
             {/* Receiver's Remarks Box */}
             <View style={s.remarksBox}>
               <Text style={s.remarksTitle}>Receiver's Remarks</Text>
-              <Text style={{ fontSize: 9, color: monoText(mode, '#666') }}>
-                {String(dataAny.notes || pod?.remarks || pod?.notes || 'Please note any discrepancies or comments regarding the delivery here...')}
+              <Text style={{ fontSize: 9, color: monoText(mode, "#666") }}>
+                {String(
+                  dataAny.notes ||
+                    pod?.remarks ||
+                    pod?.notes ||
+                    "Please note any discrepancies or comments regarding the delivery here...",
+                )}
               </Text>
             </View>
           </View>
         )}
 
-
-
         {/* Case: ACCOUNT_STATEMENT */}
-        {type === 'ACCOUNT_STATEMENT' && 'transactions' in data && (
+        {type === "ACCOUNT_STATEMENT" && "transactions" in data && (
           <View style={{ marginTop: 16 }}>
             {/* Statement Title */}
-            <View style={{ alignItems: 'center', marginBottom: 16 }}>
-              <Text style={{ fontSize: 16, fontWeight: 'bold', color: monoText(mode, '#0f172a'), letterSpacing: 1, textTransform: 'uppercase' }}>
+            <View style={{ alignItems: "center", marginBottom: 16 }}>
+              <Text
+                style={{
+                  fontSize: 16,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#0f172a"),
+                  letterSpacing: 1,
+                  textTransform: "uppercase",
+                }}
+              >
                 Customer Statement
               </Text>
               {data.statementNumber && (
-                <Text style={{ fontSize: 9, color: monoText(mode, '#64748b'), marginTop: 2 }}>Statement No. {data.statementNumber}</Text>
+                <Text
+                  style={{
+                    fontSize: 9,
+                    color: monoText(mode, "#64748b"),
+                    marginTop: 2,
+                  }}
+                >
+                  Statement No. {data.statementNumber}
+                </Text>
               )}
             </View>
 
             {/* Company & Customer Info Grid */}
-            <View style={{ flexDirection: 'row', marginBottom: 16, gap: 12 }}>
-              <View style={{ flex: 1, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 6, borderLeftWidth: 3, borderLeftColor: monoLine(mode, '#1f8577') }}>
-                <Text style={{ fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#64748b'), textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Statement To</Text>
-                <Text style={{ fontSize: 11, fontWeight: 'bold', color: monoText(mode, '#0f172a') }}>{data.customerName}</Text>
-                {data.customerCode && <Text style={{ fontSize: 9, color: monoText(mode, '#64748b'), marginTop: 1 }}>Code: {data.customerCode}</Text>}
-                {data.address && <Text style={{ fontSize: 9, color: monoText(mode, '#475569'), marginTop: 2 }}>{data.address}</Text>}
-                {data.phone && <Text style={{ fontSize: 9, color: monoText(mode, '#475569'), marginTop: 1 }}>Tel: {data.phone}</Text>}
-                {data.email && <Text style={{ fontSize: 9, color: monoText(mode, '#475569'), marginTop: 1 }}>Email: {data.email}</Text>}
+            <View style={{ flexDirection: "row", marginBottom: 16, gap: 12 }}>
+              <View
+                style={{
+                  flex: 1,
+                  padding: 10,
+                  backgroundColor: monoFill(mode, "#f8fafc"),
+                  borderRadius: 6,
+                  borderLeftWidth: 3,
+                  borderLeftColor: monoLine(mode, "#1f8577"),
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 8,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#64748b"),
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                    marginBottom: 4,
+                  }}
+                >
+                  Statement To
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#0f172a"),
+                  }}
+                >
+                  {data.customerName}
+                </Text>
+                {data.customerCode && (
+                  <Text
+                    style={{
+                      fontSize: 9,
+                      color: monoText(mode, "#64748b"),
+                      marginTop: 1,
+                    }}
+                  >
+                    Code: {data.customerCode}
+                  </Text>
+                )}
+                {data.address && (
+                  <Text
+                    style={{
+                      fontSize: 9,
+                      color: monoText(mode, "#475569"),
+                      marginTop: 2,
+                    }}
+                  >
+                    {data.address}
+                  </Text>
+                )}
+                {data.phone && (
+                  <Text
+                    style={{
+                      fontSize: 9,
+                      color: monoText(mode, "#475569"),
+                      marginTop: 1,
+                    }}
+                  >
+                    Tel: {data.phone}
+                  </Text>
+                )}
+                {data.email && (
+                  <Text
+                    style={{
+                      fontSize: 9,
+                      color: monoText(mode, "#475569"),
+                      marginTop: 1,
+                    }}
+                  >
+                    Email: {data.email}
+                  </Text>
+                )}
               </View>
-              <View style={{ flex: 1, padding: 10, backgroundColor: monoFill(mode, '#f8fafc'), borderRadius: 6, borderLeftWidth: 3, borderLeftColor: monoLine(mode, '#64748b') }}>
-                <Text style={{ fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#64748b'), textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Statement Details</Text>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
-                  <Text style={{ fontSize: 9, color: monoText(mode, '#64748b') }}>Statement Date:</Text>
-                  <Text style={{ fontSize: 9, fontWeight: '600', color: monoText(mode, '#0f172a') }}>{data.date}</Text>
+              <View
+                style={{
+                  flex: 1,
+                  padding: 10,
+                  backgroundColor: monoFill(mode, "#f8fafc"),
+                  borderRadius: 6,
+                  borderLeftWidth: 3,
+                  borderLeftColor: monoLine(mode, "#64748b"),
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 8,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#64748b"),
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                    marginBottom: 4,
+                  }}
+                >
+                  Statement Details
+                </Text>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    marginBottom: 3,
+                  }}
+                >
+                  <Text
+                    style={{ fontSize: 9, color: monoText(mode, "#64748b") }}
+                  >
+                    Statement Date:
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 9,
+                      fontWeight: "600",
+                      color: monoText(mode, "#0f172a"),
+                    }}
+                  >
+                    {data.date}
+                  </Text>
                 </View>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
-                  <Text style={{ fontSize: 9, color: monoText(mode, '#64748b') }}>Period:</Text>
-                  <Text style={{ fontSize: 9, fontWeight: '600', color: monoText(mode, '#0f172a') }}>{data.startDate} to {data.endDate}</Text>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    marginBottom: 3,
+                  }}
+                >
+                  <Text
+                    style={{ fontSize: 9, color: monoText(mode, "#64748b") }}
+                  >
+                    Period:
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 9,
+                      fontWeight: "600",
+                      color: monoText(mode, "#0f172a"),
+                    }}
+                  >
+                    {data.startDate} to {data.endDate}
+                  </Text>
                 </View>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
-                  <Text style={{ fontSize: 9, color: monoText(mode, '#64748b') }}>Opening Balance:</Text>
-                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: monoText(mode, '#0f172a') }}>{currency}{formatAmount(data.openingBalance)}</Text>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    marginBottom: 3,
+                  }}
+                >
+                  <Text
+                    style={{ fontSize: 9, color: monoText(mode, "#64748b") }}
+                  >
+                    Opening Balance:
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 9,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#0f172a"),
+                    }}
+                  >
+                    {currency}
+                    {formatAmount(data.openingBalance)}
+                  </Text>
                 </View>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={{ fontSize: 9, color: monoText(mode, '#64748b') }}>Currency:</Text>
-                  <Text style={{ fontSize: 9, fontWeight: '600', color: monoText(mode, '#0f172a') }}>{currency}</Text>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <Text
+                    style={{ fontSize: 9, color: monoText(mode, "#64748b") }}
+                  >
+                    Currency:
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 9,
+                      fontWeight: "600",
+                      color: monoText(mode, "#0f172a"),
+                    }}
+                  >
+                    {currency}
+                  </Text>
                 </View>
               </View>
             </View>
 
             {/* Ledger Table */}
-            <View style={{ borderWidth: 1, borderColor: monoLine(mode, '#e2e8f0'), borderRadius: 6, overflow: 'hidden' }}>
+            <View
+              style={{
+                borderWidth: 1,
+                borderColor: monoLine(mode, "#e2e8f0"),
+                borderRadius: 6,
+                overflow: "hidden",
+              }}
+            >
               {/* Header */}
-              <View style={{ flexDirection: 'row', backgroundColor: monoFill(mode, '#0f172a'), paddingVertical: 8, paddingHorizontal: 10 }}>
-                <Text style={{ flex: 1.2, fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#fff'), textTransform: 'uppercase', letterSpacing: 0.5 }}>Date</Text>
-                <Text style={{ flex: 2.5, fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#fff'), textTransform: 'uppercase', letterSpacing: 0.5 }}>Particulars</Text>
-                <Text style={{ flex: 1.2, fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#fff'), textTransform: 'uppercase', letterSpacing: 0.5 }}>Voucher No.</Text>
-                <Text style={{ flex: 1, fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#fff'), textTransform: 'uppercase', letterSpacing: 0.5 }}>Ref No.</Text>
-                <Text style={{ flex: 1, fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#fff'), textTransform: 'uppercase', letterSpacing: 0.5 }}>Type</Text>
-                <Text style={{ flex: 1.1, fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#fff'), textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Debit</Text>
-                <Text style={{ flex: 1.1, fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#fff'), textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Credit</Text>
-                <Text style={{ flex: 1.3, fontSize: 8, fontWeight: 'bold', color: monoText(mode, '#fff'), textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Balance</Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  backgroundColor: monoFill(mode, "#0f172a"),
+                  paddingVertical: 8,
+                  paddingHorizontal: 10,
+                }}
+              >
+                <Text
+                  style={{
+                    flex: 1.2,
+                    fontSize: 8,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#fff"),
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  Date
+                </Text>
+                <Text
+                  style={{
+                    flex: 2.5,
+                    fontSize: 8,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#fff"),
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  Particulars
+                </Text>
+                <Text
+                  style={{
+                    flex: 1.2,
+                    fontSize: 8,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#fff"),
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  Voucher No.
+                </Text>
+                <Text
+                  style={{
+                    flex: 1,
+                    fontSize: 8,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#fff"),
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  Ref No.
+                </Text>
+                <Text
+                  style={{
+                    flex: 1,
+                    fontSize: 8,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#fff"),
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  Type
+                </Text>
+                <Text
+                  style={{
+                    flex: 1.1,
+                    fontSize: 8,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#fff"),
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                    textAlign: "right",
+                  }}
+                >
+                  Debit
+                </Text>
+                <Text
+                  style={{
+                    flex: 1.1,
+                    fontSize: 8,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#fff"),
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                    textAlign: "right",
+                  }}
+                >
+                  Credit
+                </Text>
+                <Text
+                  style={{
+                    flex: 1.3,
+                    fontSize: 8,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#fff"),
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                    textAlign: "right",
+                  }}
+                >
+                  Balance
+                </Text>
               </View>
 
               {/* Opening Balance Row */}
-              <View style={{ flexDirection: 'row', paddingVertical: 7, paddingHorizontal: 10, backgroundColor: monoFill(mode, '#f1f5f9'), borderBottomWidth: 1, borderBottomColor: monoLine(mode, '#e2e8f0') }}>
-                <Text style={{ flex: 1.2, fontSize: 9, fontWeight: '600', color: monoText(mode, '#475569') }}>{data.startDate}</Text>
-                <Text style={{ flex: 2.5, fontSize: 9, fontWeight: 'bold', color: monoText(mode, '#1e293b') }}>Opening Balance</Text>
-                <Text style={{ flex: 1.2, fontSize: 9, color: monoText(mode, '#94a3b8') }}>—</Text>
-                <Text style={{ flex: 1, fontSize: 9, color: monoText(mode, '#94a3b8') }}>—</Text>
-                <Text style={{ flex: 1, fontSize: 9, color: monoText(mode, '#94a3b8') }}>—</Text>
-                <Text style={{ flex: 1.1, fontSize: 9, color: monoText(mode, '#94a3b8'), textAlign: 'right' }}>—</Text>
-                <Text style={{ flex: 1.1, fontSize: 9, color: monoText(mode, '#94a3b8'), textAlign: 'right' }}>—</Text>
-                <Text style={{ flex: 1.3, fontSize: 9, fontWeight: 'bold', color: monoText(mode, '#1e293b'), textAlign: 'right' }}>{currency}{formatAmount(data.openingBalance)}</Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  paddingVertical: 7,
+                  paddingHorizontal: 10,
+                  backgroundColor: monoFill(mode, "#f1f5f9"),
+                  borderBottomWidth: 1,
+                  borderBottomColor: monoLine(mode, "#e2e8f0"),
+                }}
+              >
+                <Text
+                  style={{
+                    flex: 1.2,
+                    fontSize: 9,
+                    fontWeight: "600",
+                    color: monoText(mode, "#475569"),
+                  }}
+                >
+                  {data.startDate}
+                </Text>
+                <Text
+                  style={{
+                    flex: 2.5,
+                    fontSize: 9,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#1e293b"),
+                  }}
+                >
+                  Opening Balance
+                </Text>
+                <Text
+                  style={{
+                    flex: 1.2,
+                    fontSize: 9,
+                    color: monoText(mode, "#94a3b8"),
+                  }}
+                >
+                  —
+                </Text>
+                <Text
+                  style={{
+                    flex: 1,
+                    fontSize: 9,
+                    color: monoText(mode, "#94a3b8"),
+                  }}
+                >
+                  —
+                </Text>
+                <Text
+                  style={{
+                    flex: 1,
+                    fontSize: 9,
+                    color: monoText(mode, "#94a3b8"),
+                  }}
+                >
+                  —
+                </Text>
+                <Text
+                  style={{
+                    flex: 1.1,
+                    fontSize: 9,
+                    color: monoText(mode, "#94a3b8"),
+                    textAlign: "right",
+                  }}
+                >
+                  —
+                </Text>
+                <Text
+                  style={{
+                    flex: 1.1,
+                    fontSize: 9,
+                    color: monoText(mode, "#94a3b8"),
+                    textAlign: "right",
+                  }}
+                >
+                  —
+                </Text>
+                <Text
+                  style={{
+                    flex: 1.3,
+                    fontSize: 9,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#1e293b"),
+                    textAlign: "right",
+                  }}
+                >
+                  {currency}
+                  {formatAmount(data.openingBalance)}
+                </Text>
               </View>
 
               {/* Transaction Rows */}
               {data.transactions.map((txn, i) => (
-                <View key={i} style={{ flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 10, borderBottomWidth: i < data.transactions.length - 1 ? 1 : 0, borderBottomColor: monoLine(mode, '#f1f5f9'),                     backgroundColor: monoFill(mode, i % 2 === 0 ? '#fff' : '#fafafa') }}>
-                  <Text style={{ flex: 1.2, fontSize: 9, color: monoText(mode, '#334155') }}>{txn.date}</Text>
-                  <Text style={{ flex: 2.5, fontSize: 9, color: monoText(mode, '#1e293b') }}>{txn.memo || txn.reference || '—'}</Text>
-                  <Text style={{ flex: 1.2, fontSize: 8, fontFamily: 'Courier', color: monoText(mode, '#334155') }}>{txn.reference || '—'}</Text>
-                  <Text style={{ flex: 1, fontSize: 8, fontFamily: 'Courier', color: monoText(mode, '#94a3b8') }}>{'—'}</Text>
-                  <Text style={{ flex: 1, fontSize: 8, color: monoText(mode, '#64748b') }}>{'—'}</Text>
-                  <Text style={{ flex: 1.1, fontSize: 9, color: monoText(mode, '#dc2626'), textAlign: 'right', fontWeight: '600' }}>{txn.debit > 0 ? currency + formatAmount(txn.debit) : '—'}</Text>
-                  <Text style={{ flex: 1.1, fontSize: 9, color: monoText(mode, '#16a34a'), textAlign: 'right', fontWeight: '600' }}>{txn.credit > 0 ? currency + formatAmount(txn.credit) : '—'}</Text>
-                  <Text style={{ flex: 1.3, fontSize: 9, fontWeight: 'bold', color: monoText(mode, '#0f172a'), textAlign: 'right' }}>{currency}{formatAmount(txn.runningBalance)}</Text>
+                <View
+                  key={i}
+                  style={{
+                    flexDirection: "row",
+                    paddingVertical: 6,
+                    paddingHorizontal: 10,
+                    borderBottomWidth: i < data.transactions.length - 1 ? 1 : 0,
+                    borderBottomColor: monoLine(mode, "#f1f5f9"),
+                    backgroundColor: monoFill(
+                      mode,
+                      i % 2 === 0 ? "#fff" : "#fafafa",
+                    ),
+                  }}
+                >
+                  <Text
+                    style={{
+                      flex: 1.2,
+                      fontSize: 9,
+                      color: monoText(mode, "#334155"),
+                    }}
+                  >
+                    {txn.date}
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 2.5,
+                      fontSize: 9,
+                      color: monoText(mode, "#1e293b"),
+                    }}
+                  >
+                    {txn.memo || txn.reference || "—"}
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1.2,
+                      fontSize: 8,
+                      fontFamily: "Courier",
+                      color: monoText(mode, "#334155"),
+                    }}
+                  >
+                    {txn.reference || "—"}
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 8,
+                      fontFamily: "Courier",
+                      color: monoText(mode, "#94a3b8"),
+                    }}
+                  >
+                    {"—"}
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 8,
+                      color: monoText(mode, "#64748b"),
+                    }}
+                  >
+                    {"—"}
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1.1,
+                      fontSize: 9,
+                      color: monoText(mode, "#dc2626"),
+                      textAlign: "right",
+                      fontWeight: "600",
+                    }}
+                  >
+                    {txn.debit > 0 ? currency + formatAmount(txn.debit) : "—"}
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1.1,
+                      fontSize: 9,
+                      color: monoText(mode, "#16a34a"),
+                      textAlign: "right",
+                      fontWeight: "600",
+                    }}
+                  >
+                    {txn.credit > 0 ? currency + formatAmount(txn.credit) : "—"}
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1.3,
+                      fontSize: 9,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#0f172a"),
+                      textAlign: "right",
+                    }}
+                  >
+                    {currency}
+                    {formatAmount(txn.runningBalance)}
+                  </Text>
                 </View>
               ))}
 
               {/* Totals Row */}
-              <View style={{ flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 10, backgroundColor: monoFill(mode, '#0f172a'), borderTopWidth: 2, borderTopColor: monoLine(mode, '#334155') }}>
-                <View style={{ flex: 5.7, flexDirection: 'row', justifyContent: 'space-between', paddingRight: 8 }}>
-                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: monoText(mode, '#fff'), textTransform: 'uppercase', letterSpacing: 0.5 }}>Totals</Text>
-                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: monoText(mode, '#f87171') }}>DR: {currency}{formatAmount(Number('totalInvoiced' in data ? dataAny.totalInvoiced : 0))}</Text>
-                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: monoText(mode, '#4ade80') }}>CR: {currency}{formatAmount(Number('totalReceived' in data ? dataAny.totalReceived : 0))}</Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  paddingVertical: 10,
+                  paddingHorizontal: 10,
+                  backgroundColor: monoFill(mode, "#0f172a"),
+                  borderTopWidth: 2,
+                  borderTopColor: monoLine(mode, "#334155"),
+                }}
+              >
+                <View
+                  style={{
+                    flex: 5.7,
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    paddingRight: 8,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 9,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#fff"),
+                      textTransform: "uppercase",
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    Totals
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 9,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#f87171"),
+                    }}
+                  >
+                    DR: {currency}
+                    {formatAmount(
+                      Number(
+                        "totalInvoiced" in data ? dataAny.totalInvoiced : 0,
+                      ),
+                    )}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 9,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#4ade80"),
+                    }}
+                  >
+                    CR: {currency}
+                    {formatAmount(
+                      Number(
+                        "totalReceived" in data ? dataAny.totalReceived : 0,
+                      ),
+                    )}
+                  </Text>
                 </View>
-                <View style={{ flex: 1.3, alignItems: 'flex-end' }}>
-                  <Text style={{ fontSize: 10, fontWeight: 'black', color: monoText(mode, Number('finalBalance' in data ? data.finalBalance : 0) > 0 ? '#f87171' : '#4ade80') }}>
-                    {currency}{formatAmount(Number('finalBalance' in data ? data.finalBalance : 0))}
+                <View style={{ flex: 1.3, alignItems: "flex-end" }}>
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      fontWeight: "black",
+                      color: monoText(
+                        mode,
+                        Number("finalBalance" in data ? data.finalBalance : 0) >
+                          0
+                          ? "#f87171"
+                          : "#4ade80",
+                      ),
+                    }}
+                  >
+                    {currency}
+                    {formatAmount(
+                      Number("finalBalance" in data ? data.finalBalance : 0),
+                    )}
                   </Text>
                 </View>
               </View>
 
               {/* Closing Balance Row */}
-              <View style={{ flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 10, backgroundColor: monoFill(mode, '#fef08a'), borderTopWidth: 2, borderTopColor: monoLine(mode, '#ca8a04') }}>
-                <Text style={{ flex: 7.7, fontSize: 10, fontWeight: 'black', color: monoText(mode, '#1e293b'), textTransform: 'uppercase', letterSpacing: 0.5 }}>Closing Balance</Text>
-                <Text style={{ flex: 1.3, fontSize: 11, fontWeight: 'black', color: monoText(mode, '#1e293b'), textAlign: 'right' }}>
-                  {currency}{formatAmount(Number('finalBalance' in data ? data.finalBalance : 0))}
+              <View
+                style={{
+                  flexDirection: "row",
+                  paddingVertical: 8,
+                  paddingHorizontal: 10,
+                  backgroundColor: monoFill(mode, "#fef08a"),
+                  borderTopWidth: 2,
+                  borderTopColor: monoLine(mode, "#ca8a04"),
+                }}
+              >
+                <Text
+                  style={{
+                    flex: 7.7,
+                    fontSize: 10,
+                    fontWeight: "black",
+                    color: monoText(mode, "#1e293b"),
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  Closing Balance
+                </Text>
+                <Text
+                  style={{
+                    flex: 1.3,
+                    fontSize: 11,
+                    fontWeight: "black",
+                    color: monoText(mode, "#1e293b"),
+                    textAlign: "right",
+                  }}
+                >
+                  {currency}
+                  {formatAmount(
+                    Number("finalBalance" in data ? data.finalBalance : 0),
+                  )}
                 </Text>
               </View>
             </View>
 
             {/* Footer Note */}
-            <View style={{ marginTop: 12, alignItems: 'center' }}>
-              <Text style={{ fontSize: 8, color: monoText(mode, '#94a3b8') }}>Generated by Prime ERP — {companyName}</Text>
+            <View style={{ marginTop: 12, alignItems: "center" }}>
+              <Text style={{ fontSize: 8, color: monoText(mode, "#94a3b8") }}>
+                Generated by Prime ERP — {companyName}
+              </Text>
             </View>
           </View>
         )}
 
         {/* Case: FISCAL_REPORT - Professional Financial Report Layout */}
-        {type === 'FISCAL_REPORT' && 'sections' in data && (
+        {type === "FISCAL_REPORT" && "sections" in data && (
           <View>
             {/* Report Title (right-aligned to differentiate from page header) */}
-            <View style={{ marginBottom: 14, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: monoLine(mode, '#e2e8f0') }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <View
+              style={{
+                marginBottom: 14,
+                paddingBottom: 10,
+                borderBottomWidth: 1,
+                borderBottomColor: monoLine(mode, "#e2e8f0"),
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "flex-end",
+                }}
+              >
                 <View>
-                  <Text style={{ fontSize: 7, color: monoText(mode, '#64748b'), textTransform: 'uppercase', letterSpacing: 2, fontWeight: 'bold' }}>Report Period</Text>
-                  <Text style={{ fontSize: 10, fontWeight: 'bold', color: monoText(mode, '#0f172a'), marginTop: 2 }}>{data.period}</Text>
+                  <Text
+                    style={{
+                      fontSize: 7,
+                      color: monoText(mode, "#64748b"),
+                      textTransform: "uppercase",
+                      letterSpacing: 2,
+                      fontWeight: "bold",
+                    }}
+                  >
+                    Report Period
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#0f172a"),
+                      marginTop: 2,
+                    }}
+                  >
+                    {data.period}
+                  </Text>
                 </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ fontSize: 7, color: monoText(mode, '#64748b') }}>Currency: {data.currency}</Text>
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text
+                    style={{ fontSize: 7, color: monoText(mode, "#64748b") }}
+                  >
+                    Currency: {data.currency}
+                  </Text>
                 </View>
               </View>
             </View>
@@ -3965,55 +10890,170 @@ if (type === 'POS_RECEIPT') {
             {data.sections.map((section, idx) => (
               <View key={idx} style={{ marginBottom: 16 }}>
                 {/* Section Header */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: monoFill(mode, '#0f172a'), paddingVertical: 6, paddingHorizontal: 10 }}>
-                  <Text style={{ fontSize: 9, fontWeight: 'bold', color: monoText(mode, '#ffffff'), textTransform: 'uppercase', letterSpacing: 1.2, flex: 1 }}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    backgroundColor: monoFill(mode, "#0f172a"),
+                    paddingVertical: 6,
+                    paddingHorizontal: 10,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 9,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#ffffff"),
+                      textTransform: "uppercase",
+                      letterSpacing: 1.2,
+                      flex: 1,
+                    }}
+                  >
                     {section.title}
                   </Text>
                 </View>
 
                 {/* Column Header Row */}
-                <View style={{ flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 10, backgroundColor: monoFill(mode, '#e2e8f0'), borderBottomWidth: 1, borderBottomColor: monoLine(mode, '#cbd5e1') }}>
-                  <Text style={{ flex: 1, fontSize: 7, fontWeight: 'bold', color: monoText(mode, '#475569'), textTransform: 'uppercase', letterSpacing: 0.5 }}>Account / Description</Text>
-                  {data.sections.some(s => s.rows.some(r => r.prevAmount !== undefined)) && (
-                    <Text style={{ width: 70, fontSize: 7, fontWeight: 'bold', color: monoText(mode, '#475569'), textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Prior Period</Text>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    paddingVertical: 5,
+                    paddingHorizontal: 10,
+                    backgroundColor: monoFill(mode, "#e2e8f0"),
+                    borderBottomWidth: 1,
+                    borderBottomColor: monoLine(mode, "#cbd5e1"),
+                  }}
+                >
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 7,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#475569"),
+                      textTransform: "uppercase",
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    Account / Description
+                  </Text>
+                  {data.sections.some((s) =>
+                    s.rows.some((r) => r.prevAmount !== undefined),
+                  ) && (
+                    <Text
+                      style={{
+                        width: 70,
+                        fontSize: 7,
+                        fontWeight: "bold",
+                        color: monoText(mode, "#475569"),
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                        textAlign: "right",
+                      }}
+                    >
+                      Prior Period
+                    </Text>
                   )}
-                  <Text style={{ width: 80, fontSize: 7, fontWeight: 'bold', color: monoText(mode, '#475569'), textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'right' }}>Amount ({data.currency})</Text>
+                  <Text
+                    style={{
+                      width: 80,
+                      fontSize: 7,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#475569"),
+                      textTransform: "uppercase",
+                      letterSpacing: 0.5,
+                      textAlign: "right",
+                    }}
+                  >
+                    Amount ({data.currency})
+                  </Text>
                 </View>
 
                 {/* Section Rows */}
                 {section.rows.map((row, rowIdx) => (
-                  <View key={rowIdx} style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingVertical: row.isTotal ? 6 : 4,
-                    paddingHorizontal: 10,
-                    backgroundColor: monoFill(mode, row.isTotal ? '#f1f5f9' : (rowIdx % 2 === 0 ? '#ffffff' : '#fafbfc')),
-                    borderBottomWidth: row.isTotal ? 2 : 1,
-                    borderColor: monoLine(mode, row.isTotal ? '#0f172a' : '#f1f5f9'),
-                    borderTopWidth: row.isTotal ? 2 : 0,
-                    marginTop: row.isTotal ? 3 : 0
-                  }} wrap={false}>
+                  <View
+                    key={rowIdx}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingVertical: row.isTotal ? 6 : 4,
+                      paddingHorizontal: 10,
+                      backgroundColor: monoFill(
+                        mode,
+                        row.isTotal
+                          ? "#f1f5f9"
+                          : rowIdx % 2 === 0
+                            ? "#ffffff"
+                            : "#fafbfc",
+                      ),
+                      borderBottomWidth: row.isTotal ? 2 : 1,
+                      borderColor: monoLine(
+                        mode,
+                        row.isTotal ? "#0f172a" : "#f1f5f9",
+                      ),
+                      borderTopWidth: row.isTotal ? 2 : 0,
+                      marginTop: row.isTotal ? 3 : 0,
+                    }}
+                    wrap={false}
+                  >
                     <View style={{ flex: 1, marginLeft: row.indent ? 14 : 0 }}>
-                      <Text style={{
-                        fontSize: row.isTotal ? 9 : 8.5,
-                        fontWeight: row.isTotal ? 'bold' : 'normal',
-                        color: monoText(mode, row.isTotal ? '#0f172a' : '#334155')
-                      }}>{row.label}</Text>
-                      {!!row.subText && <Text style={{ fontSize: 7, color: monoText(mode, '#94a3b8'), marginTop: 1 }}>{row.subText}</Text>}
+                      <Text
+                        style={{
+                          fontSize: row.isTotal ? 9 : 8.5,
+                          fontWeight: row.isTotal ? "bold" : "normal",
+                          color: monoText(
+                            mode,
+                            row.isTotal ? "#0f172a" : "#334155",
+                          ),
+                        }}
+                      >
+                        {row.label}
+                      </Text>
+                      {!!row.subText && (
+                        <Text
+                          style={{
+                            fontSize: 7,
+                            color: monoText(mode, "#94a3b8"),
+                            marginTop: 1,
+                          }}
+                        >
+                          {row.subText}
+                        </Text>
+                      )}
                     </View>
-                    {data.sections.some(s => s.rows.some(r => r.prevAmount !== undefined)) && (
-                      <Text style={{ width: 70, fontSize: row.isTotal ? 9 : 8, color: monoText(mode, row.isTotal ? '#475569' : '#94a3b8'), textAlign: 'right' }}>
-                        {row.prevAmount !== undefined ? `${formatAmount(row.prevAmount)}` : '—'}
+                    {data.sections.some((s) =>
+                      s.rows.some((r) => r.prevAmount !== undefined),
+                    ) && (
+                      <Text
+                        style={{
+                          width: 70,
+                          fontSize: row.isTotal ? 9 : 8,
+                          color: monoText(
+                            mode,
+                            row.isTotal ? "#475569" : "#94a3b8",
+                          ),
+                          textAlign: "right",
+                        }}
+                      >
+                        {row.prevAmount !== undefined
+                          ? `${formatAmount(row.prevAmount)}`
+                          : "—"}
                       </Text>
                     )}
-                    <Text style={{
-                      width: 80,
-                      fontSize: row.isTotal ? 9 : 8.5,
-                      fontWeight: row.isTotal ? 'bold' : 'normal',
-                      color: monoText(mode, row.isTotal ? '#0f172a' : '#1e293b'),
-                      textAlign: 'right'
-                    }}>
-                      {row.amount < 0 ? `(${formatAmount(Math.abs(row.amount))})` : `${formatAmount(row.amount)}`}
+                    <Text
+                      style={{
+                        width: 80,
+                        fontSize: row.isTotal ? 9 : 8.5,
+                        fontWeight: row.isTotal ? "bold" : "normal",
+                        color: monoText(
+                          mode,
+                          row.isTotal ? "#0f172a" : "#1e293b",
+                        ),
+                        textAlign: "right",
+                      }}
+                    >
+                      {row.amount < 0
+                        ? `(${formatAmount(Math.abs(row.amount))})`
+                        : `${formatAmount(row.amount)}`}
                     </Text>
                   </View>
                 ))}
@@ -4022,25 +11062,73 @@ if (type === 'POS_RECEIPT') {
 
             {/* Net Performance / Key Metric Banner */}
             {!!data.netPerformance && (
-              <View style={{ marginTop: 20, padding: 12, backgroundColor: monoFill(mode, '#0f172a'), borderTopWidth: 3, borderTopColor: monoLine(mode, '#2563eb') }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View
+                style={{
+                  marginTop: 20,
+                  padding: 12,
+                  backgroundColor: monoFill(mode, "#0f172a"),
+                  borderTopWidth: 3,
+                  borderTopColor: monoLine(mode, "#2563eb"),
+                }}
+              >
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
                   <View>
-                    <Text style={{ color: monoText(mode, '#94a3b8'), fontSize: 7, textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 'bold' }}>Key Performance Indicator</Text>
-                    <Text style={{ color: monoText(mode, '#ffffff'), fontSize: 11, fontWeight: 'bold', marginTop: 3 }}>{data.netPerformance.label}</Text>
+                    <Text
+                      style={{
+                        color: monoText(mode, "#94a3b8"),
+                        fontSize: 7,
+                        textTransform: "uppercase",
+                        letterSpacing: 1.5,
+                        fontWeight: "bold",
+                      }}
+                    >
+                      Key Performance Indicator
+                    </Text>
+                    <Text
+                      style={{
+                        color: monoText(mode, "#ffffff"),
+                        fontSize: 11,
+                        fontWeight: "bold",
+                        marginTop: 3,
+                      }}
+                    >
+                      {data.netPerformance.label}
+                    </Text>
                   </View>
-                  <View style={{ alignItems: 'flex-end' }}>
+                  <View style={{ alignItems: "flex-end" }}>
                     {data.netPerformance.prevAmount !== undefined && (
-                      <Text style={{ color: monoText(mode, '#94a3b8'), fontSize: 8, marginBottom: 3 }}>
+                      <Text
+                        style={{
+                          color: monoText(mode, "#94a3b8"),
+                          fontSize: 8,
+                          marginBottom: 3,
+                        }}
+                      >
                         Prior: {formatAmount(data.netPerformance.prevAmount)}
                       </Text>
                     )}
-                    <Text style={{
-                      color: monoText(mode, data.netPerformance.amount >= 0 ? '#4ade80' : '#f87171'),
-                      fontSize: 14,
-                      fontWeight: 'bold',
-                      textAlign: 'right'
-                    }}>
-                      {data.netPerformance.amount < 0 ? `(${formatAmount(Math.abs(data.netPerformance.amount))})` : `${formatAmount(data.netPerformance.amount)}`}
+                    <Text
+                      style={{
+                        color: monoText(
+                          mode,
+                          data.netPerformance.amount >= 0
+                            ? "#4ade80"
+                            : "#f87171",
+                        ),
+                        fontSize: 14,
+                        fontWeight: "bold",
+                        textAlign: "right",
+                      }}
+                    >
+                      {data.netPerformance.amount < 0
+                        ? `(${formatAmount(Math.abs(data.netPerformance.amount))})`
+                        : `${formatAmount(data.netPerformance.amount)}`}
                     </Text>
                   </View>
                 </View>
@@ -4048,50 +11136,124 @@ if (type === 'POS_RECEIPT') {
             )}
 
             {/* Report Footer */}
-            <View style={{ marginTop: 20, paddingTop: 8, borderTopWidth: 1, borderTopColor: monoLine(mode, '#e2e8f0') }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <View
+              style={{
+                marginTop: 20,
+                paddingTop: 8,
+                borderTopWidth: 1,
+                borderTopColor: monoLine(mode, "#e2e8f0"),
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                }}
+              >
                 <View>
-                  <Text style={{ fontSize: 7, color: monoText(mode, '#94a3b8') }}>Generated: {new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</Text>
-                  <Text style={{ fontSize: 7, color: monoText(mode, '#94a3b8'), marginTop: 1 }}>Prime ERP — Financial Reporting Module</Text>
+                  <Text
+                    style={{ fontSize: 7, color: monoText(mode, "#94a3b8") }}
+                  >
+                    Generated:{" "}
+                    {new Date().toLocaleString("en-US", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 7,
+                      color: monoText(mode, "#94a3b8"),
+                      marginTop: 1,
+                    }}
+                  >
+                    Prime ERP — Financial Reporting Module
+                  </Text>
                 </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ fontSize: 7, color: monoText(mode, '#94a3b8') }}>{data.reportName}</Text>
-                  <Text style={{ fontSize: 7, color: monoText(mode, '#94a3b8'), marginTop: 1, fontStyle: 'italic' }}>All amounts in {data.currency}</Text>
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text
+                    style={{ fontSize: 7, color: monoText(mode, "#94a3b8") }}
+                  >
+                    {data.reportName}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 7,
+                      color: monoText(mode, "#94a3b8"),
+                      marginTop: 1,
+                      fontStyle: "italic",
+                    }}
+                  >
+                    All amounts in {data.currency}
+                  </Text>
                 </View>
               </View>
             </View>
           </View>
         )}
-        
+
         {/* Case: EXAMINATION_INVOICE */}
-        {type === 'EXAMINATION_INVOICE' && (
+        {type === "EXAMINATION_INVOICE" && (
           <View style={{ marginTop: 20 }}>
             <View style={s.tableHeader}>
-              <Text style={{ width: 44, textAlign: 'center' }}>SN</Text>
+              <Text style={{ width: 44, textAlign: "center" }}>SN</Text>
               <Text style={{ flex: 3 }}>Description</Text>
-              <Text style={{ flex: 1, textAlign: 'right' }}>Qty</Text>
-              <Text style={{ flex: 1, textAlign: 'right' }}>Price</Text>
-              <Text style={{ flex: 1.5, textAlign: 'right' }}>Amount</Text>
+              <Text style={{ flex: 1, textAlign: "right" }}>Qty</Text>
+              <Text style={{ flex: 1, textAlign: "right" }}>Price</Text>
+              <Text style={{ flex: 1.5, textAlign: "right" }}>Amount</Text>
             </View>
 
-            {(('items' in data ? dataAny.items : []) as Array<Record<string, unknown>>).map((item: Record<string, unknown>, i: number) => (
+            {(
+              ("items" in data ? dataAny.items : []) as Array<
+                Record<string, unknown>
+              >
+            ).map((item: Record<string, unknown>, i: number) => (
               <View key={i} style={s.row}>
-                <Text style={{ width: 44, textAlign: 'center', fontSize: 12 }}>{i + 1}</Text>
+                <Text style={{ width: 44, textAlign: "center", fontSize: 12 }}>
+                  {i + 1}
+                </Text>
                 <View style={{ flex: 3 }}>
-                  <Text style={{ fontWeight: 'normal', fontSize: 12 }}>{String(item.desc)}</Text>
+                  <Text style={{ fontWeight: "normal", fontSize: 12 }}>
+                    {String(item.desc)}
+                  </Text>
                 </View>
-                <Text style={{ flex: 1, textAlign: 'right', fontSize: 12 }}>{Number(item.qty)}</Text>
-                <Text style={{ flex: 1, textAlign: 'right', fontSize: 12 }}>{formatAmount(Number(item.price))}</Text>
-                <Text style={{ flex: 1.5, textAlign: 'right', fontSize: 12 }}>{formatAmount(Number(item.total))}</Text>
+                <Text style={{ flex: 1, textAlign: "right", fontSize: 12 }}>
+                  {Number(item.qty)}
+                </Text>
+                <Text style={{ flex: 1, textAlign: "right", fontSize: 12 }}>
+                  {formatAmount(Number(item.price))}
+                </Text>
+                <Text style={{ flex: 1.5, textAlign: "right", fontSize: 12 }}>
+                  {formatAmount(Number(item.total))}
+                </Text>
               </View>
             ))}
 
             <View style={s.summaryContainer}>
-              {'status' in data && !!data.status && (
+              {"status" in data && !!data.status && (
                 <View style={s.summaryLeft}>
                   {/* INVOICE STATUS TITLE REMOVED */}
-                  <View style={[s.statusBox, { borderLeftColor: monoLine(mode, getStatusTone(data.status, mode).border) }]}>
-                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: monoText(mode, getStatusTone(data.status, mode).text) }}>
+                  <View
+                    style={[
+                      s.statusBox,
+                      {
+                        borderLeftColor: monoLine(
+                          mode,
+                          getStatusTone(data.status, mode).border,
+                        ),
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 16,
+                        fontWeight: "bold",
+                        color: monoText(
+                          mode,
+                          getStatusTone(data.status, mode).text,
+                        ),
+                      }}
+                    >
                       {data.status.toUpperCase()}
                     </Text>
                   </View>
@@ -4101,59 +11263,126 @@ if (type === 'POS_RECEIPT') {
               <View style={s.summaryRight}>
                 <View style={s.summaryBox}>
                   <View style={s.summaryRow}>
-                    <Text style={{ fontWeight: 'bold' }}>Subtotal</Text>
-                    <Text>{currency} {formatAmount(Number(dataAny.preRoundingTotalAmount || dataAny.subtotal || 0))}</Text>
+                    <Text style={{ fontWeight: "bold" }}>Subtotal</Text>
+                    <Text>
+                      {currency}{" "}
+                      {formatAmount(
+                        Number(
+                          dataAny.preRoundingTotalAmount ||
+                            dataAny.subtotal ||
+                            0,
+                        ),
+                      )}
+                    </Text>
                   </View>
 
                   {dataAny.roundingDifference ? (
                     <View style={s.summaryRow}>
-                      <Text style={{ fontWeight: 'bold' }}>Rounding{String(dataAny.roundingMethod ? ` (${String(dataAny.roundingMethod)})` : '')}</Text>
-                      <Text>{currency} {formatAmount(Number(dataAny.roundingDifference))}</Text>
+                      <Text style={{ fontWeight: "bold" }}>
+                        Rounding
+                        {String(
+                          dataAny.roundingMethod
+                            ? ` (${String(dataAny.roundingMethod)})`
+                            : "",
+                        )}
+                      </Text>
+                      <Text>
+                        {currency}{" "}
+                        {formatAmount(Number(dataAny.roundingDifference))}
+                      </Text>
                     </View>
                   ) : null}
 
-                  <View style={[s.summaryRow, { borderTopWidth: 1, borderTopColor: monoLine(mode, '#e2e8f0'), paddingTop: 4, marginTop: 4 }]}>
-                    <Text style={{ fontWeight: 'bold' }}>Grand Total</Text>
-                    <Text>{currency} {formatAmount(Number('totalAmount' in data ? dataAny.totalAmount : 0))}</Text>
+                  <View
+                    style={[
+                      s.summaryRow,
+                      {
+                        borderTopWidth: 1,
+                        borderTopColor: monoLine(mode, "#e2e8f0"),
+                        paddingTop: 4,
+                        marginTop: 4,
+                      },
+                    ]}
+                  >
+                    <Text style={{ fontWeight: "bold" }}>Grand Total</Text>
+                    <Text>
+                      {currency}{" "}
+                      {formatAmount(
+                        Number("totalAmount" in data ? dataAny.totalAmount : 0),
+                      )}
+                    </Text>
                   </View>
                   <View style={s.summaryRow}>
-                    <Text style={{ fontWeight: 'bold' }}>Amount Paid</Text>
-                    <Text>{currency} {formatAmount(Number('amountPaid' in data ? dataAny.amountPaid : 0))}</Text>
+                    <Text style={{ fontWeight: "bold" }}>Amount Paid</Text>
+                    <Text>
+                      {currency}{" "}
+                      {formatAmount(
+                        Number("amountPaid" in data ? dataAny.amountPaid : 0),
+                      )}
+                    </Text>
                   </View>
                   <View style={s.totalRow}>
                     <Text>Balance Due</Text>
                     <Text>
-                      {currency} {formatAmount(Number('totalAmount' in data ? dataAny.totalAmount : 0) - Number('amountPaid' in data ? dataAny.amountPaid : 0))}
+                      {currency}{" "}
+                      {formatAmount(
+                        Number(
+                          "totalAmount" in data ? dataAny.totalAmount : 0,
+                        ) -
+                          Number("amountPaid" in data ? dataAny.amountPaid : 0),
+                      )}
                     </Text>
                   </View>
                 </View>
               </View>
             </View>
 
-              <View wrap={false} style={{ marginTop: 12, alignItems: 'center' }}>
-                <Text style={{ fontSize: scaledFont(12), color: monoText(mode, '#334155') }}>
-                  Thank you for choosing <Text style={{ fontWeight: 'bold' }}>{companyName}</Text>
-                </Text>
-              </View>
+            <View wrap={false} style={{ marginTop: 12, alignItems: "center" }}>
+              <Text
+                style={{
+                  fontSize: scaledFont(12),
+                  color: monoText(mode, "#334155"),
+                }}
+              >
+                Thank you for choosing{" "}
+                <Text style={{ fontWeight: "bold" }}>{companyName}</Text>
+              </Text>
+            </View>
 
             {Boolean(showPaymentTerms) && !!paymentTermsLabel && (
               <View
                 wrap={false}
                 style={{
-                  marginTop: type === 'INVOICE' ? 10 : 14,
+                  marginTop: type === "INVOICE" ? 10 : 14,
                   padding: 10,
-                  backgroundColor: monoFill(mode, '#f8fafc'),
+                  backgroundColor: monoFill(mode, "#f8fafc"),
                   borderRadius: 6,
                   borderLeftWidth: 3,
                   borderLeftColor: monoLine(mode, templateSettings.accentColor),
                 }}
               >
-                <Text style={{ fontSize: scaledFont(9), fontWeight: 'bold', color: monoText(mode, '#475569'), textTransform: 'uppercase' }}>
+                <Text
+                  style={{
+                    fontSize: scaledFont(9),
+                    fontWeight: "bold",
+                    color: monoText(mode, "#475569"),
+                    textTransform: "uppercase",
+                  }}
+                >
                   Payment Terms
                 </Text>
-                <Text style={{ fontSize: scaledFont(10), color: monoText(mode, '#334155'), marginTop: 4, lineHeight: 1.45 }}>
+                <Text
+                  style={{
+                    fontSize: scaledFont(10),
+                    color: monoText(mode, "#334155"),
+                    marginTop: 4,
+                    lineHeight: 1.45,
+                  }}
+                >
                   {paymentTermsLabel}
-                  {showDueDate && dataAny?.dueDate ? ` | Due by ${formatDateOnly(String(dataAny.dueDate))}` : ''}
+                  {showDueDate && dataAny?.dueDate
+                    ? ` | Due by ${formatDateOnly(String(dataAny.dueDate))}`
+                    : ""}
                 </Text>
               </View>
             )}
@@ -4161,33 +11390,59 @@ if (type === 'POS_RECEIPT') {
         )}
 
         {/* DYNAMIC FOOTER (Signatures for Delivery/Work Orders) */}
-        {!isFinancial && type !== 'DELIVERY_NOTE' && type !== 'EXAMINATION_INVOICE' && (
-          <View style={s.signatureBlock}>
-            <View>
-              <View style={s.sigLine} />
-              <Text>Issued By (Prime)</Text>
+        {!isFinancial &&
+          type !== "DELIVERY_NOTE" &&
+          type !== "EXAMINATION_INVOICE" && (
+            <View style={s.signatureBlock}>
+              <View>
+                <View style={s.sigLine} />
+                <Text>Issued By (Prime)</Text>
+              </View>
+              <View>
+                <View style={s.sigLine} />
+                <Text>Received By (Client)</Text>
+              </View>
             </View>
-            <View>
-              <View style={s.sigLine} />
-              <Text>Received By (Client)</Text>
-            </View>
-          </View>
-        )}
+          )}
 
         {/* Delivery Signature Block */}
-        {type === 'DELIVERY_NOTE' && (
-          <View style={[s.signatureBlock, { marginTop: 40, alignItems: 'flex-start' }]}>
-            <View style={{ flex: 1, alignItems: 'flex-start' }}>
-              <Text style={{ fontSize: 10, fontWeight: 'bold', marginBottom: 5 }}>Logistics Details</Text>
-              <Text style={{ fontSize: 9, marginBottom: 3 }}>Driver Name: {('driverName' in data ? data.driverName : '____________________')}</Text>
-              <Text style={{ fontSize: 9, marginBottom: 3 }}>Vehicle No: {('vehicleNo' in data ? data.vehicleNo : '____________________')}</Text>
+        {type === "DELIVERY_NOTE" && (
+          <View
+            style={[
+              s.signatureBlock,
+              { marginTop: 40, alignItems: "flex-start" },
+            ]}
+          >
+            <View style={{ flex: 1, alignItems: "flex-start" }}>
+              <Text
+                style={{ fontSize: 10, fontWeight: "bold", marginBottom: 5 }}
+              >
+                Logistics Details
+              </Text>
+              <Text style={{ fontSize: 9, marginBottom: 3 }}>
+                Driver Name:{" "}
+                {"driverName" in data
+                  ? data.driverName
+                  : "____________________"}
+              </Text>
+              <Text style={{ fontSize: 9, marginBottom: 3 }}>
+                Vehicle No:{" "}
+                {"vehicleNo" in data ? data.vehicleNo : "____________________"}
+              </Text>
               {(() => {
-                const locStamp = (conversionDetails?.locationStamp || pod?.locationStamp) as Record<string, unknown> | undefined;
+                const locStamp = (conversionDetails?.locationStamp ||
+                  pod?.locationStamp) as Record<string, unknown> | undefined;
                 const lat = Number(locStamp?.lat);
                 const lng = Number(locStamp?.lng);
                 if (lat || lng) {
                   return (
-                    <Text style={{ fontSize: 7, color: monoText(mode, '#666'), marginTop: 5 }}>
+                    <Text
+                      style={{
+                        fontSize: 7,
+                        color: monoText(mode, "#666"),
+                        marginTop: 5,
+                      }}
+                    >
                       GPS: {lat.toFixed(4)}, {lng.toFixed(4)}
                     </Text>
                   );
@@ -4195,41 +11450,76 @@ if (type === 'POS_RECEIPT') {
                 return null;
               })()}
             </View>
-            <View style={{ flex: 1, alignItems: 'flex-end' }}>
-              <View style={{ position: 'relative', width: 180, height: 45, marginBottom: 5 }}>
-                <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, borderTopWidth: 1, borderColor: '#000' }} />
+            <View style={{ flex: 1, alignItems: "flex-end" }}>
+              <View
+                style={{
+                  position: "relative",
+                  width: 180,
+                  height: 45,
+                  marginBottom: 5,
+                }}
+              >
+                <View
+                  style={{
+                    position: "absolute",
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    borderTopWidth: 1,
+                    borderColor: "#000",
+                  }}
+                />
                 {(() => {
-                  const raw = String(dataAny.signatureDataUrl || (pod as any)?.signatureDataUrl || '');
+                  const raw = String(
+                    dataAny.signatureDataUrl ||
+                      (pod as any)?.signatureDataUrl ||
+                      "",
+                  );
                   const validated = normalizeSignatureDataUrl(raw);
-                  const mime = (validated?.match(/^data:([^;]+);base64,/i)?.[1] || '').toLowerCase();
-                  const renderable = validated && (mime === 'image/png' || mime === 'image/jpeg' || mime === 'image/jpg')
-                    ? validated
-                    : null;
+                  const mime = (
+                    validated?.match(/^data:([^;]+);base64,/i)?.[1] || ""
+                  ).toLowerCase();
+                  const renderable =
+                    validated &&
+                    (mime === "image/png" ||
+                      mime === "image/jpeg" ||
+                      mime === "image/jpg")
+                      ? validated
+                      : null;
                   return renderable ? (
                     <Image
                       src={renderable}
                       style={{
-                        position: 'absolute',
+                        position: "absolute",
                         bottom: 0,
                         // Center the 100-wide signature over the 180-wide
                         // signature line: (180 - 100) / 2 = 40.
                         left: 40,
                         width: 100,
                         height: 40,
-                        objectFit: 'contain',
+                        objectFit: "contain",
                       }}
                     />
                   ) : null;
                 })()}
               </View>
-              <Text style={{ fontSize: 9 }}>Received By: {String(dataAny.receivedBy || pod?.receivedBy || conversionDetails?.acceptedBy || '____________________')}</Text>
-              <Text style={{ fontSize: 7, color: monoText(mode, '#666') }}>Stamp & Signature</Text>
+              <Text style={{ fontSize: 9 }}>
+                Received By:{" "}
+                {String(
+                  dataAny.receivedBy ||
+                    pod?.receivedBy ||
+                    conversionDetails?.acceptedBy ||
+                    "____________________",
+                )}
+              </Text>
+              <Text style={{ fontSize: 7, color: monoText(mode, "#666") }}>
+                Stamp & Signature
+              </Text>
             </View>
           </View>
         )}
 
         {/* Standard Receipt Signature */}
-
 
         {/* DYNAMIC CENTERED FOOTER (Movable). Skipped for paginated
             documents: the flowing security footer already carries its own
@@ -4246,7 +11536,8 @@ if (type === 'POS_RECEIPT') {
         {paginated ? (
           <View wrap={false} style={{ marginTop: 10 }}>
             <VerificationLabel fontScale={fontScale} />
-            <SecurityFooter colorMode={mode}
+            <SecurityFooter
+              colorMode={mode}
               data={dataAny}
               companyName={companyName}
               legalFooterLine1={legalFooterLine1}
@@ -4256,7 +11547,8 @@ if (type === 'POS_RECEIPT') {
             />
           </View>
         ) : (
-          <SecurityFooter colorMode={mode}
+          <SecurityFooter
+            colorMode={mode}
             data={dataAny}
             companyName={companyName}
             legalFooterLine1={legalFooterLine1}
