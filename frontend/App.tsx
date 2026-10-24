@@ -1,51 +1,59 @@
-import React, { useEffect, useState, useRef, Suspense, lazy } from 'react';
+import React, { useEffect, useState, useRef, Suspense, lazy } from "react";
 
-import { logger } from '@/services/logger';
+import { logger } from "@/services/logger";
 
-import { HashRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import Sidebar from './components/Sidebar';
-import AppTopBar from './components/AppTopBar';
-import Toast from './components/Toast';
-import { AuthProvider, useAuth } from './context/AuthContext';
-import { AppProvider } from './context/AppContext';
-import { FinancialYearProvider } from './context/FinancialYearContext';
-import { FinanceProvider } from './context/FinanceContext';
-import { InventoryProvider } from './context/InventoryContext';
-import { SalesProvider } from './context/SalesContext';
-import { ProductionProvider } from './context/ProductionContext';
-import { ProcurementProvider } from './context/ProcurementContext';
-import { DataProvider } from './context/DataContext';
-import { useSales } from './context/SalesContext';
-import { ExaminationProvider } from './context/ExaminationContext';
-import { NotificationProvider } from './context/NotificationContext';
-import { OrdersProvider } from './context/OrdersContext';
-import { PwaInstallProvider, usePwaInstall } from './context/PwaInstallContext';
-import PwaInstallBanner from './components/PwaInstallBanner';
-import PwaUpdateNotification from './components/PwaUpdateNotification';
-import PwaInstallPage from './views/PwaInstallPage';
-import { KeyboardProvider } from './core/keyboard';
+import {
+  HashRouter,
+  Routes,
+  Route,
+  Navigate,
+  Outlet,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
+import Sidebar from "./components/Sidebar";
+import AppTopBar from "./components/AppTopBar";
+import Toast from "./components/Toast";
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import { AppProvider } from "./context/AppContext";
+import { FinancialYearProvider } from "./context/FinancialYearContext";
+import { FinanceProvider } from "./context/FinanceContext";
+import { InventoryProvider } from "./context/InventoryContext";
+import { SalesProvider } from "./context/SalesContext";
+import { ProductionProvider } from "./context/ProductionContext";
+import { ProcurementProvider } from "./context/ProcurementContext";
+import { DataProvider } from "./context/DataContext";
+import { useSales } from "./context/SalesContext";
+import { ExaminationProvider } from "./context/ExaminationContext";
+import { NotificationProvider } from "./context/NotificationContext";
+import { OrdersProvider } from "./context/OrdersContext";
+import { PwaInstallProvider, usePwaInstall } from "./context/PwaInstallContext";
+import PwaInstallBanner from "./components/PwaInstallBanner";
+import PwaUpdateNotification from "./components/PwaUpdateNotification";
+import PwaInstallPage from "./views/PwaInstallPage";
+import { KeyboardProvider } from "./core/keyboard";
 
-import { ErrorBoundary } from './components/ErrorBoundary';
-import { useKeyboard } from './core/keyboard';
-import { useDocumentStore } from './stores/documentStore.ts';
-import { PreviewModal } from './views/shared/components/PDF/PreviewModal.tsx';
-import { PdfWorker } from './views/shared/components/PDF/PdfWorker.tsx';
-import { Loader2, Coins, X } from 'lucide-react';
-import { AICopilot } from './components/ai';
-import Login from './views/auth/Login';
-import SetupWizard from './views/auth/SetupWizard';
-import CreateCompany from './views/auth/CreateCompany';
-import ForgotPassword from './views/auth/ForgotPassword';
-import ResetPassword from './views/auth/ResetPassword';
-import { CustomerAuthProvider } from './context/CustomerAuthContext';
-import CustomerLayout from './views/portal/CustomerLayout';
-import CustomerLogin from './views/portal/CustomerLogin';
-import CustomerActivate from './views/portal/CustomerActivate';
-import InvoiceVerify from './views/portal/InvoiceVerify';
-import DocumentVerify from './views/portal/DocumentVerify';
-import CustomerForgotPassword from './views/portal/CustomerForgotPassword';
-import CustomerResetPassword from './views/portal/CustomerResetPassword';
-import { ToastProvider } from './views/portal/components/Toast';
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { useKeyboard } from "./core/keyboard";
+import { useDocumentStore } from "./stores/documentStore.ts";
+import { PreviewModal } from "./views/shared/components/PDF/PreviewModal.tsx";
+import { PdfWorker } from "./views/shared/components/PDF/PdfWorker.tsx";
+import { Loader2, Coins, X } from "lucide-react";
+import { AICopilot } from "./components/ai";
+import Login from "./views/auth/Login";
+import SetupWizard from "./views/auth/SetupWizard";
+import CreateCompany from "./views/auth/CreateCompany";
+import ForgotPassword from "./views/auth/ForgotPassword";
+import ResetPassword from "./views/auth/ResetPassword";
+import { CustomerAuthProvider } from "./context/CustomerAuthContext";
+import CustomerLayout from "./views/portal/CustomerLayout";
+import CustomerLogin from "./views/portal/CustomerLogin";
+import CustomerActivate from "./views/portal/CustomerActivate";
+import InvoiceVerify from "./views/portal/InvoiceVerify";
+import DocumentVerify from "./views/portal/DocumentVerify";
+import CustomerForgotPassword from "./views/portal/CustomerForgotPassword";
+import CustomerResetPassword from "./views/portal/CustomerResetPassword";
+import { ToastProvider } from "./views/portal/components/Toast";
 // Helper for lazy loading with retry logic to handle "Failed to fetch dynamically imported module" errors
 const lazyWithRetry = (name: string, componentImport: () => Promise<any>) =>
   lazy(async () => {
@@ -58,178 +66,580 @@ const lazyWithRetry = (name: string, componentImport: () => Promise<any>) =>
         return component;
       } catch (error) {
         const err = error as { message?: string; stack?: string };
-        logger.error('Lazy loading error:', {
+        logger.error("Lazy loading error:", {
           name,
           attempt,
           message: err?.message,
-          error
+          error,
         });
         if (attempt < maxRetries) {
-          await new Promise(r => setTimeout(r, retryDelay));
+          await new Promise((r) => setTimeout(r, retryDelay));
         }
       }
     }
 
-    return { default: () => (
-      <div className="h-full flex flex-col items-center justify-center text-slate-400">
-        <div className="p-8 rounded-3xl bg-white/50 backdrop-blur-md text-center max-w-md border border-white shadow-soft">
-          <h3 className="text-lg font-bold text-slate-700 mb-2">Failed to load module</h3>
-          <p className="text-sm text-slate-600 mb-4">The module "{name}" could not be loaded. Please check your connection and try again.</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-          >
-            Reload page
-          </button>
+    return {
+      default: () => (
+        <div className="h-full flex flex-col items-center justify-center text-slate-400">
+          <div className="p-8 rounded-3xl bg-white/50 backdrop-blur-md text-center max-w-md border border-white shadow-soft">
+            <h3 className="text-lg font-bold text-slate-700 mb-2">
+              Failed to load module
+            </h3>
+            <p className="text-sm text-slate-600 mb-4">
+              The module "{name}" could not be loaded. Please check your
+              connection and try again.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+            >
+              Reload page
+            </button>
+          </div>
         </div>
-      </div>
-    )};
+      ),
+    };
   });
 
-const CustomerDashboard = lazyWithRetry('./views/portal/CustomerDashboard', () => import('./views/portal/CustomerDashboard'));
-const CustomerOrders = lazyWithRetry('./views/portal/CustomerOrders', () => import('./views/portal/CustomerOrders'));
-const CustomerOrderDetail = lazyWithRetry('./views/portal/CustomerOrderDetail', () => import('./views/portal/CustomerOrderDetail'));
-const CustomerQuotations = lazyWithRetry('./views/portal/CustomerQuotations', () => import('./views/portal/CustomerQuotations'));
-const CustomerInvoices = lazyWithRetry('./views/portal/CustomerInvoices', () => import('./views/portal/CustomerInvoices'));
-const CustomerInvoiceDetail = lazyWithRetry('./views/portal/CustomerInvoiceDetail', () => import('./views/portal/CustomerInvoiceDetail'));
-const CustomerPayments = lazyWithRetry('./views/portal/CustomerPayments', () => import('./views/portal/CustomerPayments'));
-const CustomerPaymentDetail = lazyWithRetry('./views/portal/CustomerPaymentDetail', () => import('./views/portal/CustomerPaymentDetail'));
-const CustomerDeliveries = lazyWithRetry('./views/portal/CustomerDeliveries', () => import('./views/portal/CustomerDeliveries'));
-const CustomerAccountStatements = lazyWithRetry('./views/portal/CustomerAccountStatements', () => import('./views/portal/CustomerAccountStatements'));
-const CustomerWallet = lazyWithRetry('./views/portal/CustomerWallet', () => import('./views/portal/CustomerWallet'));
-const CustomerLoyalty = lazyWithRetry('./views/portal/CustomerLoyalty', () => import('./views/portal/CustomerLoyalty'));
-const CustomerDocuments = lazyWithRetry('./views/portal/CustomerDocuments', () => import('./views/portal/CustomerDocuments'));
-const CustomerNotifications = lazyWithRetry('./views/portal/CustomerNotifications', () => import('./views/portal/CustomerNotifications'));
-const CustomerReferrals = lazyWithRetry('./views/portal/CustomerReferrals', () => import('./views/portal/CustomerReferrals'));
-const CustomerProfile = lazyWithRetry('./views/portal/CustomerProfile', () => import('./views/portal/CustomerProfile'));
-const CustomerSupport = lazyWithRetry('./views/portal/CustomerSupport', () => import('./views/portal/CustomerSupport'));
-const CustomerCreateRequest = lazyWithRetry('./views/portal/CustomerCreateRequest', () => import('./views/portal/CustomerCreateRequest'));
-const CustomerRequests = lazyWithRetry('./views/portal/CustomerRequests', () => import('./views/portal/CustomerRequests'));
-const CustomerRequestDetail = lazyWithRetry('./views/portal/CustomerRequestDetail', () => import('./views/portal/CustomerRequestDetail'));
-const CustomerQuotationDetail = lazyWithRetry('./views/portal/CustomerQuotationDetail', () => import('./views/portal/CustomerQuotationDetail'));
-const CustomerPaymentOptions = lazyWithRetry('./views/portal/CustomerPaymentOptions', () => import('./views/portal/CustomerPaymentOptions'));
-const PortalUserManagement = lazyWithRetry('./views/portal/PortalUserManagement', () => import('./views/portal/PortalUserManagement'));
+const CustomerDashboard = lazyWithRetry(
+  "./views/portal/CustomerDashboard",
+  () => import("./views/portal/CustomerDashboard"),
+);
+const CustomerOrders = lazyWithRetry(
+  "./views/portal/CustomerOrders",
+  () => import("./views/portal/CustomerOrders"),
+);
+const CustomerOrderDetail = lazyWithRetry(
+  "./views/portal/CustomerOrderDetail",
+  () => import("./views/portal/CustomerOrderDetail"),
+);
+const CustomerQuotations = lazyWithRetry(
+  "./views/portal/CustomerQuotations",
+  () => import("./views/portal/CustomerQuotations"),
+);
+const CustomerInvoices = lazyWithRetry(
+  "./views/portal/CustomerInvoices",
+  () => import("./views/portal/CustomerInvoices"),
+);
+const CustomerInvoiceDetail = lazyWithRetry(
+  "./views/portal/CustomerInvoiceDetail",
+  () => import("./views/portal/CustomerInvoiceDetail"),
+);
+const CustomerPayments = lazyWithRetry(
+  "./views/portal/CustomerPayments",
+  () => import("./views/portal/CustomerPayments"),
+);
+const CustomerPaymentDetail = lazyWithRetry(
+  "./views/portal/CustomerPaymentDetail",
+  () => import("./views/portal/CustomerPaymentDetail"),
+);
+const CustomerDeliveries = lazyWithRetry(
+  "./views/portal/CustomerDeliveries",
+  () => import("./views/portal/CustomerDeliveries"),
+);
+const CustomerAccountStatements = lazyWithRetry(
+  "./views/portal/CustomerAccountStatements",
+  () => import("./views/portal/CustomerAccountStatements"),
+);
+const CustomerWallet = lazyWithRetry(
+  "./views/portal/CustomerWallet",
+  () => import("./views/portal/CustomerWallet"),
+);
+const CustomerLoyalty = lazyWithRetry(
+  "./views/portal/CustomerLoyalty",
+  () => import("./views/portal/CustomerLoyalty"),
+);
+const CustomerDocuments = lazyWithRetry(
+  "./views/portal/CustomerDocuments",
+  () => import("./views/portal/CustomerDocuments"),
+);
+const CustomerNotifications = lazyWithRetry(
+  "./views/portal/CustomerNotifications",
+  () => import("./views/portal/CustomerNotifications"),
+);
+const CustomerReferrals = lazyWithRetry(
+  "./views/portal/CustomerReferrals",
+  () => import("./views/portal/CustomerReferrals"),
+);
+const CustomerProfile = lazyWithRetry(
+  "./views/portal/CustomerProfile",
+  () => import("./views/portal/CustomerProfile"),
+);
+const CustomerSupport = lazyWithRetry(
+  "./views/portal/CustomerSupport",
+  () => import("./views/portal/CustomerSupport"),
+);
+const CustomerCreateRequest = lazyWithRetry(
+  "./views/portal/CustomerCreateRequest",
+  () => import("./views/portal/CustomerCreateRequest"),
+);
+const CustomerRequests = lazyWithRetry(
+  "./views/portal/CustomerRequests",
+  () => import("./views/portal/CustomerRequests"),
+);
+const CustomerRequestDetail = lazyWithRetry(
+  "./views/portal/CustomerRequestDetail",
+  () => import("./views/portal/CustomerRequestDetail"),
+);
+const CustomerQuotationDetail = lazyWithRetry(
+  "./views/portal/CustomerQuotationDetail",
+  () => import("./views/portal/CustomerQuotationDetail"),
+);
+const CustomerPaymentOptions = lazyWithRetry(
+  "./views/portal/CustomerPaymentOptions",
+  () => import("./views/portal/CustomerPaymentOptions"),
+);
+const PortalUserManagement = lazyWithRetry(
+  "./views/portal/PortalUserManagement",
+  () => import("./views/portal/PortalUserManagement"),
+);
 
-import { isResponsiveDebugEnabled } from './utils/debugFlags';
+import { isResponsiveDebugEnabled } from "./utils/debugFlags";
 
 // Lazy loaded views
-const Dashboard = lazyWithRetry('./views/Dashboard', () => import('./views/Dashboard'));
-const Inventory = lazyWithRetry('./views/Inventory', () => import('./views/Inventory'));
-const Purchases = lazyWithRetry('./views/Purchases', () => import('./views/Purchases'));
-const Suppliers = lazyWithRetry('./views/purchases/Suppliers', () => import('./views/purchases/Suppliers'));
-const GoodsReceived = lazyWithRetry('./views/purchases/GoodsReceived', () => import('./views/purchases/GoodsReceived'));
-const POS = lazyWithRetry('./views/POS', () => import('./views/POS'));
-const Architect = lazyWithRetry('./views/Architect', () => import('./views/Architect'));
-const WorkOrders = lazyWithRetry('./views/production/WorkOrders', () => import('./views/production/WorkOrders'));
-const Scheduler = lazyWithRetry('./views/production/Scheduler', () => import('./views/production/Scheduler'));
-const ShopFloor = lazyWithRetry('./views/production/ShopFloor', () => import('./views/production/ShopFloor'));
-const ShopFloorKiosk = lazyWithRetry('./views/production/ShopFloorKiosk', () => import('./views/production/ShopFloorKiosk'));
-const GangRunEstimator = lazyWithRetry('./views/production/GangRunEstimator', () => import('./views/production/GangRunEstimator'));
-const MRP = lazyWithRetry('./views/production/MRP', () => import('./views/production/MRP'));
-const MachineMaintenance = lazyWithRetry('./views/production/MachineMaintenance', () => import('./views/production/MachineMaintenance'));
-const ExaminationHub = lazyWithRetry('./views/examination/ExaminationHub', () => import('./views/examination/ExaminationHub'));
-const ExaminationInvoices = lazyWithRetry('./views/examination/ExaminationInvoices', () => import('./views/examination/ExaminationInvoices'));
-const ExaminationBatchForm = lazyWithRetry('./views/examination/ExaminationBatchForm', () => import('./views/examination/ExaminationBatchForm'));
-const ExaminationBatchDetail = lazyWithRetry('./views/examination/ExaminationBatchDetail', () => import('./views/examination/ExaminationBatchDetail'));
-const ExaminationJobForm = lazyWithRetry('./views/examination/ExaminationJobForm', () => import('./views/examination/ExaminationJobForm'));
-const InvoiceGroupManager = lazyWithRetry('./views/examination/InvoiceGroupManager', () => import('./views/examination/InvoiceGroupManager'));
-const RecurringProfiles = lazyWithRetry('./views/examination/RecurringProfiles', () => import('./views/examination/RecurringProfiles'));
-const ExaminationPrinting = lazyWithRetry('./views/production/ExaminationPrinting', () => import('./views/production/ExaminationPrinting'));
-const Subcontracting = lazyWithRetry('./views/purchases/Subcontracting', () => import('./views/purchases/Subcontracting'));
-const Expenses = lazyWithRetry('./views/accounts/Expenses', () => import('./views/accounts/Expenses'));
-const TransportExpenses = lazyWithRetry('./views/accounts/TransportExpenses', () => import('./views/accounts/TransportExpenses'));
-const IncomeView = lazyWithRetry('./views/accounts/Income', () => import('./views/accounts/Income'));
-const ChartOfAccounts = lazyWithRetry('./views/accounts/ChartOfAccounts', () => import('./views/accounts/ChartOfAccounts'));
-const FinancialReports = lazyWithRetry('./views/accounts/FinancialReports', () => import('./views/accounts/FinancialReports'));
-const LedgerExplorer = lazyWithRetry('./views/accounts/LedgerExplorer', () => import('./views/accounts/LedgerExplorer'));
-const Reconciliation = lazyWithRetry('./views/accounts/Reconciliation', () => import('./views/accounts/Reconciliation'));
-const Budgets = lazyWithRetry('./views/accounts/Budgets', () => import('./views/accounts/Budgets'));
-const Banking = lazyWithRetry('./views/accounts/banking-v2', () => import('./views/accounts/banking-v2'));
-const Transfers = lazyWithRetry('./views/accounts/Transfers', () => import('./views/accounts/Transfers'));
-const Payroll = lazyWithRetry('./views/accounts/Payroll', () => import('./views/accounts/Payroll'));
-const FixedAssets = lazyWithRetry('./views/accounts/fixed-assets-v2', () => import('./views/accounts/fixed-assets-v2'));
-const Loans = lazyWithRetry('./views/accounts/Loans', () => import('./views/accounts/Loans'));
-const OwnerEquity = lazyWithRetry('./views/accounts/OwnerEquity', () => import('./views/accounts/OwnerEquity'));
-const YearEndClosing = lazyWithRetry('./views/accounts/YearEndClosing', () => import('./views/accounts/YearEndClosing'));
-const FinanceHub = lazyWithRetry('./views/FinanceHub', () => import('./views/FinanceHub'));
-const AuditLogs = lazyWithRetry('./views/AuditLogs', () => import('./views/AuditLogs'));
-const Forecasting = lazyWithRetry('./views/Forecasting', () => import('./views/Forecasting'));
-const ItemDetailPage = lazyWithRetry('./views/inventory/ItemDetail/ItemDetailPage', () => import('./views/inventory/ItemDetail/ItemDetailPage'));
-const SupplyChainHub = lazyWithRetry('./views/SupplyChainHub', () => import('./views/SupplyChainHub'));
-const WarehousePage = lazyWithRetry('./views/warehouse/WarehousePage', () => import('./views/warehouse/WarehousePage'));
-const InventoryReports = lazyWithRetry('./views/inventory/InventoryReports', () => import('./views/inventory/InventoryReports'));
-const IndustrialHub = lazyWithRetry('./views/IndustrialHub', () => import('./views/IndustrialHub'));
-const RevenueHub = lazyWithRetry('./views/RevenueHub', () => import('./views/RevenueHub'));
-const TransportBudgetDashboard = React.lazy(() => import('./views/reports/TransportBudgetDashboard'));
-const SalesFlowHub = lazyWithRetry('./views/SalesFlowHub', () => import('./views/SalesFlowHub'));
-const SalesExchanges = lazyWithRetry('./views/sales/SalesExchanges', () => import('./views/sales/SalesExchanges'));
-const LeadBoard = lazyWithRetry('./views/sales/LeadBoard', () => import('./views/sales/LeadBoard'));
-const SalesOrdersView = lazyWithRetry('./views/sales/SalesOrders', () => import('./views/sales/SalesOrders'));
-const Referrals = lazyWithRetry('./views/sales/Referrals', () => import('./views/sales/Referrals'));
-const ProcurementHub = lazyWithRetry('./views/ProcurementHub', () => import('./views/ProcurementHub'));
-const CustomersHub = lazyWithRetry('./views/CustomersHub', () => import('./views/CustomersHub'));
-const FiscalReportsHub = lazyWithRetry('./views/FiscalReportsHub', () => import('./views/FiscalReportsHub'));
-const InternalToolsHub = lazyWithRetry('./views/InternalToolsHub', () => import('./views/InternalToolsHub'));
-const Payments = lazyWithRetry('./views/sales/Payments', () => import('./views/sales/Payments'));
-const Orders = lazyWithRetry('./views/sales/Orders', () => import('./views/sales/Orders'));
-const QuotationRequests = lazyWithRetry('./views/sales/QuotationRequests', () => import('./views/sales/QuotationRequests'));
-const QuotationRequestsHub = lazyWithRetry('./views/sales/QuotationRequestsHub', () => import('./views/sales/QuotationRequestsHub'));
-const JobTickets = lazyWithRetry('./views/sales/JobTickets', () => import('./views/sales/JobTickets'));
-const Clients = lazyWithRetry('./views/sales/Clients', () => import('./views/sales/Clients'));
-const ShippingManager = lazyWithRetry('./views/sales/ShippingManager', () => import('./views/sales/ShippingManager'));
-const Tasks = lazyWithRetry('./views/Tasks', () => import('./views/Tasks'));
-const Reports = lazyWithRetry('./views/Reports', () => import('./views/Reports'));
-const Settings = lazyWithRetry('./views/Settings', () => import('./views/Settings'));
-const AssetManagement = lazyWithRetry('./views/AssetManagement', () => import('./views/AssetManagement'));
-const SubscriptionsView = lazyWithRetry('./components/subscriptions/RecurringBilling', () => import('./components/subscriptions/RecurringBilling'));
-const UserManagement = lazyWithRetry('./views/admin/UserManagement', () => import('./views/admin/UserManagement'));
-const ProfileActivity = lazyWithRetry('./views/admin/ProfileActivity', () => import('./views/admin/ProfileActivity'));
-const Profile = lazyWithRetry('./views/Profile', () => import('./views/Profile'));
-const SyncHealth = lazyWithRetry('./views/admin/SyncHealth', () => import('./views/admin/SyncHealth'));
-const ExaminationInvoiceDiag = lazyWithRetry('./views/admin/ExaminationInvoiceDiag', () => import('./views/admin/ExaminationInvoiceDiag'));
-const BOMRecipes = lazyWithRetry('./views/production/BOMRecipes', () => import('./views/production/BOMRecipes'));
-const DataImport = lazyWithRetry('./views/admin/DataImport', () => import('./views/admin/DataImport'));
-const GlobalSearch = lazyWithRetry('./views/GlobalSearch', () => import('./views/GlobalSearch'));
-const ChequeManager = lazyWithRetry('./views/tools/ChequeManager', () => import('./views/tools/ChequeManager'));
-const VatView = lazyWithRetry('./views/vat/VatView', () => import('./views/vat/VatView'));
-const BarcodePrinter = lazyWithRetry('./views/tools/BarcodePrinter', () => import('./views/tools/BarcodePrinter'));
-const CustomerCredentialRegeneration = lazyWithRetry('./views/tools/CustomerCredentialRegeneration', () => import('./views/tools/CustomerCredentialRegeneration'));
-const MarketAdjustments = lazyWithRetry('./views/tools/MarketAdjustments', () => import('./views/tools/MarketAdjustments'));
-const SmartOperationsHub = lazyWithRetry('./views/SmartOperationsHub', () => import('./views/SmartOperationsHub'));
-const MarketingMessages = lazyWithRetry('./views/tools/MarketingMessages', () => import('./views/tools/MarketingMessages'));
-const PriceCards = lazyWithRetry('./views/tools/PriceCards', () => import('./views/tools/PriceCards'));
-const AdsManager = lazyWithRetry('./views/tools/AdsManager', () => import('./views/tools/AdsManager'));
-const FAQManager = lazyWithRetry('./views/tools/FAQManager', () => import('./views/tools/FAQManager'));
-const PromotionsAdmin = lazyWithRetry('./views/admin/PromotionsAdmin', () => import('./views/admin/PromotionsAdmin'));
-const AnalyticsHub = lazyWithRetry('./views/ai/AnalyticsHub', () => import('./views/ai/AnalyticsHub'));
-const GangRunOptimizer = lazyWithRetry('./views/ai/GangRunOptimizer', () => import('./views/ai/GangRunOptimizer'));
-const CashFlowForecaster = lazyWithRetry('./views/ai/CashFlowForecaster', () => import('./views/ai/CashFlowForecaster'));
-const ReorderOptimizer = lazyWithRetry('./views/ai/ReorderOptimizer', () => import('./views/ai/ReorderOptimizer'));
-const POMatcher = lazyWithRetry('./views/ai/POMatcher', () => import('./views/ai/POMatcher'));
-const SmartScheduler = lazyWithRetry('./views/ai/SmartScheduler', () => import('./views/ai/SmartScheduler'));
-const AuditInvestigator = lazyWithRetry('./views/ai/AuditInvestigator', () => import('./views/ai/AuditInvestigator'));
-const BOMGenerator = lazyWithRetry('./views/ai/BOMGenerator', () => import('./views/ai/BOMGenerator'));
-const ServiceJobsPage = lazyWithRetry('./views/service/ServiceJobsPage', () => import('./views/service/ServiceJobsPage'));
-const ServiceRecipeEditorPage = lazyWithRetry('./views/service/ServiceRecipeEditorPage', () => import('./views/service/ServiceRecipeEditorPage'));
+const Dashboard = lazyWithRetry(
+  "./views/Dashboard",
+  () => import("./views/Dashboard"),
+);
+const Inventory = lazyWithRetry(
+  "./views/Inventory",
+  () => import("./views/Inventory"),
+);
+const Purchases = lazyWithRetry(
+  "./views/Purchases",
+  () => import("./views/Purchases"),
+);
+const Suppliers = lazyWithRetry(
+  "./views/purchases/Suppliers",
+  () => import("./views/purchases/Suppliers"),
+);
+const GoodsReceived = lazyWithRetry(
+  "./views/purchases/GoodsReceived",
+  () => import("./views/purchases/GoodsReceived"),
+);
+const POS = lazyWithRetry("./views/POS", () => import("./views/POS"));
+const Architect = lazyWithRetry(
+  "./views/Architect",
+  () => import("./views/Architect"),
+);
+const WorkOrders = lazyWithRetry(
+  "./views/production/WorkOrders",
+  () => import("./views/production/WorkOrders"),
+);
+const Scheduler = lazyWithRetry(
+  "./views/production/Scheduler",
+  () => import("./views/production/Scheduler"),
+);
+const ShopFloor = lazyWithRetry(
+  "./views/production/ShopFloor",
+  () => import("./views/production/ShopFloor"),
+);
+const ShopFloorKiosk = lazyWithRetry(
+  "./views/production/ShopFloorKiosk",
+  () => import("./views/production/ShopFloorKiosk"),
+);
+const GangRunEstimator = lazyWithRetry(
+  "./views/production/GangRunEstimator",
+  () => import("./views/production/GangRunEstimator"),
+);
+const MRP = lazyWithRetry(
+  "./views/production/MRP",
+  () => import("./views/production/MRP"),
+);
+const MachineMaintenance = lazyWithRetry(
+  "./views/production/MachineMaintenance",
+  () => import("./views/production/MachineMaintenance"),
+);
+const ExaminationHub = lazyWithRetry(
+  "./views/examination/ExaminationHub",
+  () => import("./views/examination/ExaminationHub"),
+);
+const ExaminationInvoices = lazyWithRetry(
+  "./views/examination/ExaminationInvoices",
+  () => import("./views/examination/ExaminationInvoices"),
+);
+const ExaminationBatchForm = lazyWithRetry(
+  "./views/examination/ExaminationBatchForm",
+  () => import("./views/examination/ExaminationBatchForm"),
+);
+const ExaminationBatchDetail = lazyWithRetry(
+  "./views/examination/ExaminationBatchDetail",
+  () => import("./views/examination/ExaminationBatchDetail"),
+);
+const ExaminationJobForm = lazyWithRetry(
+  "./views/examination/ExaminationJobForm",
+  () => import("./views/examination/ExaminationJobForm"),
+);
+const InvoiceGroupManager = lazyWithRetry(
+  "./views/examination/InvoiceGroupManager",
+  () => import("./views/examination/InvoiceGroupManager"),
+);
+const RecurringProfiles = lazyWithRetry(
+  "./views/examination/RecurringProfiles",
+  () => import("./views/examination/RecurringProfiles"),
+);
+const ExaminationPrinting = lazyWithRetry(
+  "./views/production/ExaminationPrinting",
+  () => import("./views/production/ExaminationPrinting"),
+);
+const Subcontracting = lazyWithRetry(
+  "./views/purchases/Subcontracting",
+  () => import("./views/purchases/Subcontracting"),
+);
+const Expenses = lazyWithRetry(
+  "./views/accounts/Expenses",
+  () => import("./views/accounts/Expenses"),
+);
+const TransportExpenses = lazyWithRetry(
+  "./views/accounts/TransportExpenses",
+  () => import("./views/accounts/TransportExpenses"),
+);
+const IncomeView = lazyWithRetry(
+  "./views/accounts/Income",
+  () => import("./views/accounts/Income"),
+);
+const ChartOfAccounts = lazyWithRetry(
+  "./views/accounts/ChartOfAccounts",
+  () => import("./views/accounts/ChartOfAccounts"),
+);
+const FinancialReports = lazyWithRetry(
+  "./views/accounts/FinancialReports",
+  () => import("./views/accounts/FinancialReports"),
+);
+const LedgerExplorer = lazyWithRetry(
+  "./views/accounts/LedgerExplorer",
+  () => import("./views/accounts/LedgerExplorer"),
+);
+const Reconciliation = lazyWithRetry(
+  "./views/accounts/Reconciliation",
+  () => import("./views/accounts/Reconciliation"),
+);
+const Budgets = lazyWithRetry(
+  "./views/accounts/Budgets",
+  () => import("./views/accounts/Budgets"),
+);
+const Banking = lazyWithRetry(
+  "./views/accounts/banking-v2",
+  () => import("./views/accounts/banking-v2"),
+);
+const Transfers = lazyWithRetry(
+  "./views/accounts/Transfers",
+  () => import("./views/accounts/Transfers"),
+);
+const Payroll = lazyWithRetry(
+  "./views/accounts/Payroll",
+  () => import("./views/accounts/Payroll"),
+);
+const FixedAssets = lazyWithRetry(
+  "./views/accounts/fixed-assets-v2",
+  () => import("./views/accounts/fixed-assets-v2"),
+);
+const Loans = lazyWithRetry(
+  "./views/accounts/Loans",
+  () => import("./views/accounts/Loans"),
+);
+const OwnerEquity = lazyWithRetry(
+  "./views/accounts/OwnerEquity",
+  () => import("./views/accounts/OwnerEquity"),
+);
+const YearEndClosing = lazyWithRetry(
+  "./views/accounts/YearEndClosing",
+  () => import("./views/accounts/YearEndClosing"),
+);
+const FinanceHub = lazyWithRetry(
+  "./views/FinanceHub",
+  () => import("./views/FinanceHub"),
+);
+const AuditLogs = lazyWithRetry(
+  "./views/AuditLogs",
+  () => import("./views/AuditLogs"),
+);
+const Forecasting = lazyWithRetry(
+  "./views/Forecasting",
+  () => import("./views/Forecasting"),
+);
+const ItemDetailPage = lazyWithRetry(
+  "./views/inventory/ItemDetail/ItemDetailPage",
+  () => import("./views/inventory/ItemDetail/ItemDetailPage"),
+);
+const SupplyChainHub = lazyWithRetry(
+  "./views/SupplyChainHub",
+  () => import("./views/SupplyChainHub"),
+);
+const WarehousePage = lazyWithRetry(
+  "./views/warehouse/WarehousePage",
+  () => import("./views/warehouse/WarehousePage"),
+);
+const InventoryReports = lazyWithRetry(
+  "./views/inventory/InventoryReports",
+  () => import("./views/inventory/InventoryReports"),
+);
+const IndustrialHub = lazyWithRetry(
+  "./views/IndustrialHub",
+  () => import("./views/IndustrialHub"),
+);
+const RevenueHub = lazyWithRetry(
+  "./views/RevenueHub",
+  () => import("./views/RevenueHub"),
+);
+const TransportBudgetDashboard = React.lazy(
+  () => import("./views/reports/TransportBudgetDashboard"),
+);
+const SalesFlowHub = lazyWithRetry(
+  "./views/SalesFlowHub",
+  () => import("./views/SalesFlowHub"),
+);
+const SalesExchanges = lazyWithRetry(
+  "./views/sales/SalesExchanges",
+  () => import("./views/sales/SalesExchanges"),
+);
+const LeadBoard = lazyWithRetry(
+  "./views/sales/LeadBoard",
+  () => import("./views/sales/LeadBoard"),
+);
+const SalesOrdersView = lazyWithRetry(
+  "./views/sales/SalesOrders",
+  () => import("./views/sales/SalesOrders"),
+);
+const Referrals = lazyWithRetry(
+  "./views/sales/Referrals",
+  () => import("./views/sales/Referrals"),
+);
+const ProcurementHub = lazyWithRetry(
+  "./views/ProcurementHub",
+  () => import("./views/ProcurementHub"),
+);
+const SupplierPayments = lazyWithRetry(
+  "./views/procurement/SupplierPayments",
+  () => import("./views/procurement/SupplierPayments"),
+);
+const CustomersHub = lazyWithRetry(
+  "./views/CustomersHub",
+  () => import("./views/CustomersHub"),
+);
+const FiscalReportsHub = lazyWithRetry(
+  "./views/FiscalReportsHub",
+  () => import("./views/FiscalReportsHub"),
+);
+const InternalToolsHub = lazyWithRetry(
+  "./views/InternalToolsHub",
+  () => import("./views/InternalToolsHub"),
+);
+const Payments = lazyWithRetry(
+  "./views/sales/Payments",
+  () => import("./views/sales/Payments"),
+);
+const Orders = lazyWithRetry(
+  "./views/sales/Orders",
+  () => import("./views/sales/Orders"),
+);
+const QuotationRequests = lazyWithRetry(
+  "./views/sales/QuotationRequests",
+  () => import("./views/sales/QuotationRequests"),
+);
+const QuotationRequestsHub = lazyWithRetry(
+  "./views/sales/QuotationRequestsHub",
+  () => import("./views/sales/QuotationRequestsHub"),
+);
+const JobTickets = lazyWithRetry(
+  "./views/sales/JobTickets",
+  () => import("./views/sales/JobTickets"),
+);
+const Clients = lazyWithRetry(
+  "./views/sales/Clients",
+  () => import("./views/sales/Clients"),
+);
+const ShippingManager = lazyWithRetry(
+  "./views/sales/ShippingManager",
+  () => import("./views/sales/ShippingManager"),
+);
+const Tasks = lazyWithRetry("./views/Tasks", () => import("./views/Tasks"));
+const Reports = lazyWithRetry(
+  "./views/Reports",
+  () => import("./views/Reports"),
+);
+const Settings = lazyWithRetry(
+  "./views/Settings",
+  () => import("./views/Settings"),
+);
+const AssetManagement = lazyWithRetry(
+  "./views/AssetManagement",
+  () => import("./views/AssetManagement"),
+);
+const SubscriptionsView = lazyWithRetry(
+  "./components/subscriptions/RecurringBilling",
+  () => import("./components/subscriptions/RecurringBilling"),
+);
+const UserManagement = lazyWithRetry(
+  "./views/admin/UserManagement",
+  () => import("./views/admin/UserManagement"),
+);
+const ProfileActivity = lazyWithRetry(
+  "./views/admin/ProfileActivity",
+  () => import("./views/admin/ProfileActivity"),
+);
+const Profile = lazyWithRetry(
+  "./views/Profile",
+  () => import("./views/Profile"),
+);
+const SyncHealth = lazyWithRetry(
+  "./views/admin/SyncHealth",
+  () => import("./views/admin/SyncHealth"),
+);
+const ExaminationInvoiceDiag = lazyWithRetry(
+  "./views/admin/ExaminationInvoiceDiag",
+  () => import("./views/admin/ExaminationInvoiceDiag"),
+);
+const BOMRecipes = lazyWithRetry(
+  "./views/production/BOMRecipes",
+  () => import("./views/production/BOMRecipes"),
+);
+const DataImport = lazyWithRetry(
+  "./views/admin/DataImport",
+  () => import("./views/admin/DataImport"),
+);
+const GlobalSearch = lazyWithRetry(
+  "./views/GlobalSearch",
+  () => import("./views/GlobalSearch"),
+);
+const ChequeManager = lazyWithRetry(
+  "./views/tools/ChequeManager",
+  () => import("./views/tools/ChequeManager"),
+);
+const VatView = lazyWithRetry(
+  "./views/vat/VatView",
+  () => import("./views/vat/VatView"),
+);
+const BarcodePrinter = lazyWithRetry(
+  "./views/tools/BarcodePrinter",
+  () => import("./views/tools/BarcodePrinter"),
+);
+const CustomerCredentialRegeneration = lazyWithRetry(
+  "./views/tools/CustomerCredentialRegeneration",
+  () => import("./views/tools/CustomerCredentialRegeneration"),
+);
+const MarketAdjustments = lazyWithRetry(
+  "./views/tools/MarketAdjustments",
+  () => import("./views/tools/MarketAdjustments"),
+);
+const SmartOperationsHub = lazyWithRetry(
+  "./views/SmartOperationsHub",
+  () => import("./views/SmartOperationsHub"),
+);
+const MarketingMessages = lazyWithRetry(
+  "./views/tools/MarketingMessages",
+  () => import("./views/tools/MarketingMessages"),
+);
+const PriceCards = lazyWithRetry(
+  "./views/tools/PriceCards",
+  () => import("./views/tools/PriceCards"),
+);
+const AdsManager = lazyWithRetry(
+  "./views/tools/AdsManager",
+  () => import("./views/tools/AdsManager"),
+);
+const FAQManager = lazyWithRetry(
+  "./views/tools/FAQManager",
+  () => import("./views/tools/FAQManager"),
+);
+const PromotionsAdmin = lazyWithRetry(
+  "./views/admin/PromotionsAdmin",
+  () => import("./views/admin/PromotionsAdmin"),
+);
+const AnalyticsHub = lazyWithRetry(
+  "./views/ai/AnalyticsHub",
+  () => import("./views/ai/AnalyticsHub"),
+);
+const GangRunOptimizer = lazyWithRetry(
+  "./views/ai/GangRunOptimizer",
+  () => import("./views/ai/GangRunOptimizer"),
+);
+const CashFlowForecaster = lazyWithRetry(
+  "./views/ai/CashFlowForecaster",
+  () => import("./views/ai/CashFlowForecaster"),
+);
+const ReorderOptimizer = lazyWithRetry(
+  "./views/ai/ReorderOptimizer",
+  () => import("./views/ai/ReorderOptimizer"),
+);
+const POMatcher = lazyWithRetry(
+  "./views/ai/POMatcher",
+  () => import("./views/ai/POMatcher"),
+);
+const SmartScheduler = lazyWithRetry(
+  "./views/ai/SmartScheduler",
+  () => import("./views/ai/SmartScheduler"),
+);
+const AuditInvestigator = lazyWithRetry(
+  "./views/ai/AuditInvestigator",
+  () => import("./views/ai/AuditInvestigator"),
+);
+const BOMGenerator = lazyWithRetry(
+  "./views/ai/BOMGenerator",
+  () => import("./views/ai/BOMGenerator"),
+);
+const ServiceJobsPage = lazyWithRetry(
+  "./views/service/ServiceJobsPage",
+  () => import("./views/service/ServiceJobsPage"),
+);
+const ServiceRecipeEditorPage = lazyWithRetry(
+  "./views/service/ServiceRecipeEditorPage",
+  () => import("./views/service/ServiceRecipeEditorPage"),
+);
 
-const SmartSalesDashboard = lazyWithRetry('./views/SmartSalesDashboard', () => import('./views/SmartSalesDashboard'));
-const InvoiceIntelligence = lazyWithRetry('./views/InvoiceIntelligence', () => import('./views/InvoiceIntelligence'));
-const CustomerRiskScore = lazyWithRetry('./views/CustomerRiskScore', () => import('./views/CustomerRiskScore'));
-const NaturalLanguageReporting = lazyWithRetry('./views/NaturalLanguageReporting', () => import('./views/NaturalLanguageReporting'));
-const AccountingAssistant = lazyWithRetry('./views/AccountingAssistant', () => import('./views/AccountingAssistant'));
-const AnomalyDetectionView = lazyWithRetry('./views/AnomalyDetection', () => import('./views/AnomalyDetection'));
-const ReportSummaryView = lazyWithRetry('./views/ReportSummary', () => import('./views/ReportSummary'));
-const AdvancedDataTableView = lazyWithRetry('./views/AdvancedDataTable', () => import('./views/AdvancedDataTable'));
+const SmartSalesDashboard = lazyWithRetry(
+  "./views/SmartSalesDashboard",
+  () => import("./views/SmartSalesDashboard"),
+);
+const InvoiceIntelligence = lazyWithRetry(
+  "./views/InvoiceIntelligence",
+  () => import("./views/InvoiceIntelligence"),
+);
+const CustomerRiskScore = lazyWithRetry(
+  "./views/CustomerRiskScore",
+  () => import("./views/CustomerRiskScore"),
+);
+const NaturalLanguageReporting = lazyWithRetry(
+  "./views/NaturalLanguageReporting",
+  () => import("./views/NaturalLanguageReporting"),
+);
+const AccountingAssistant = lazyWithRetry(
+  "./views/AccountingAssistant",
+  () => import("./views/AccountingAssistant"),
+);
+const AnomalyDetectionView = lazyWithRetry(
+  "./views/AnomalyDetection",
+  () => import("./views/AnomalyDetection"),
+);
+const ReportSummaryView = lazyWithRetry(
+  "./views/ReportSummary",
+  () => import("./views/ReportSummary"),
+);
+const AdvancedDataTableView = lazyWithRetry(
+  "./views/AdvancedDataTable",
+  () => import("./views/AdvancedDataTable"),
+);
 
-const AIWorkspace = lazyWithRetry('./views/AIWorkspace', () => import('./views/AIWorkspace'));
-const AIWorkspaceDashboard = lazyWithRetry('./views/ai/AIWorkspaceDashboard', () => import('./views/ai/AIWorkspaceDashboard'));
-const AIWorkspaceChat = lazyWithRetry('./views/ai/AIWorkspaceChat', () => import('./views/ai/AIWorkspaceChat'));
+const AIWorkspace = lazyWithRetry(
+  "./views/AIWorkspace",
+  () => import("./views/AIWorkspace"),
+);
+const AIWorkspaceDashboard = lazyWithRetry(
+  "./views/ai/AIWorkspaceDashboard",
+  () => import("./views/ai/AIWorkspaceDashboard"),
+);
+const AIWorkspaceChat = lazyWithRetry(
+  "./views/ai/AIWorkspaceChat",
+  () => import("./views/ai/AIWorkspaceChat"),
+);
 // VATReport removed
 
 const PwaUpdateNotificationWrapper: React.FC = () => {
   const { updateAvailable, applyUpdate, dismissUpdate } = usePwaInstall();
   if (!updateAvailable) return null;
-  return <PwaUpdateNotification onUpdate={applyUpdate} onDismiss={dismissUpdate} />;
+  return (
+    <PwaUpdateNotification onUpdate={applyUpdate} onDismiss={dismissUpdate} />
+  );
 };
 
 const PageLoader = () => (
@@ -240,11 +650,16 @@ const PageLoader = () => (
         <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
       </div>
     </div>
-    <p className="mt-4 text-sm font-medium text-slate-500 animate-pulse">Loading module...</p>
+    <p className="mt-4 text-sm font-medium text-slate-500 animate-pulse">
+      Loading module...
+    </p>
   </div>
 );
 
-const ProtectedRoute: React.FC<{ permission: string, children: React.ReactNode }> = ({ permission, children }) => {
+const ProtectedRoute: React.FC<{
+  permission: string;
+  children: React.ReactNode;
+}> = ({ permission, children }) => {
   const { user, checkPermission } = useAuth();
   if (!user) {
     return <Navigate to="/" replace />;
@@ -253,8 +668,13 @@ const ProtectedRoute: React.FC<{ permission: string, children: React.ReactNode }
     return (
       <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
         <div className="p-8 rounded-3xl bg-white/50 backdrop-blur-md text-center max-w-md border border-white shadow-soft">
-          <h3 className="text-lg font-bold text-slate-700 dark:text-slate-200 mb-2">Access Restricted</h3>
-          <p className="text-sm text-slate-600 dark:text-slate-400">You don't have the required permission <code>{permission}</code> to view this module.</p>
+          <h3 className="text-lg font-bold text-slate-700 dark:text-slate-200 mb-2">
+            Access Restricted
+          </h3>
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            You don't have the required permission <code>{permission}</code> to
+            view this module.
+          </p>
         </div>
       </div>
     );
@@ -270,17 +690,24 @@ const ReminderMonitor: React.FC = () => {
     const checkReminders = () => {
       const now = new Date();
       (reminders || []).forEach((task: any) => {
-        if (task.hasAlarm && task.reminderDate && !notifiedTasks.current.has(task.id)) {
+        if (
+          task.hasAlarm &&
+          task.reminderDate &&
+          !notifiedTasks.current.has(task.id)
+        ) {
           const reminderTime = new Date(task.reminderDate);
-          if (reminderTime <= now && now.getTime() - reminderTime.getTime() < 5 * 60 * 1000) {
-            notify(`TASK ALERT: ${task.text || task.title}`, 'info');
+          if (
+            reminderTime <= now &&
+            now.getTime() - reminderTime.getTime() < 5 * 60 * 1000
+          ) {
+            notify(`TASK ALERT: ${task.text || task.title}`, "info");
 
             addAlert({
               id: `ALERT-${task.id}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-              message: `Task Due: ${task.text || task.title}. Details: ${task.notes || 'N/A'}`,
-              type: 'System',
+              message: `Task Due: ${task.text || task.title}. Details: ${task.notes || "N/A"}`,
+              type: "System",
               date: new Date().toISOString(),
-              severity: 'Medium'
+              severity: "Medium",
             });
 
             notifiedTasks.current.add(task.id);
@@ -320,20 +747,20 @@ const AssessmentScheduleMonitor: React.FC = () => {
       let customers: any[] = [];
       let schools: any[] = [];
       try {
-        const { dbService } = await import('./services/db');
-        items = (await dbService.getAll('contractAssessments')) || [];
+        const { dbService } = await import("./services/db");
+        items = (await dbService.getAll("contractAssessments")) || [];
         try {
-          contracts = (await dbService.getAll('assessmentContracts')) || [];
+          contracts = (await dbService.getAll("assessmentContracts")) || [];
         } catch {
           contracts = [];
         }
         try {
-          customers = (await dbService.getAll('customers')) || [];
+          customers = (await dbService.getAll("customers")) || [];
         } catch {
           customers = [];
         }
         try {
-          schools = (await dbService.getAll('schools')) || [];
+          schools = (await dbService.getAll("schools")) || [];
         } catch {
           schools = [];
         }
@@ -346,48 +773,64 @@ const AssessmentScheduleMonitor: React.FC = () => {
         // (e.g. "Chiwaka Primary School").
         const schoolId = item?.school_id;
         if (schoolId) {
-          const school = (schools || []).find((s: any) => String(s?.id) === String(schoolId));
-          const schoolName = String(school?.name || '').trim();
+          const school = (schools || []).find(
+            (s: any) => String(s?.id) === String(schoolId),
+          );
+          const schoolName = String(school?.name || "").trim();
           if (schoolName) return schoolName;
         }
         // Then the customer / business display name.
         const customerId = item?.customer_id;
         if (customerId) {
-          const customer = (customers || []).find((c: any) => String(c?.id) === String(customerId));
+          const customer = (customers || []).find(
+            (c: any) => String(c?.id) === String(customerId),
+          );
           if (customer) {
             const display = String(
-              customer.businessName || customer.companyName || customer.name || ''
+              customer.businessName ||
+                customer.companyName ||
+                customer.name ||
+                "",
             ).trim();
             if (display) return display;
           }
         }
         // Then the parent contract's denormalized counterparty name.
-        const contract = (contracts || []).find((c: any) => String(c?.id) === String(item?.contract_id));
+        const contract = (contracts || []).find(
+          (c: any) => String(c?.id) === String(item?.contract_id),
+        );
         if (contract) {
-          const contractName = String(contract.customerName || '').trim();
+          const contractName = String(contract.customerName || "").trim();
           if (contractName) return contractName;
           // A school linked on the contract is better than a raw id.
           const contractSchoolId = (contract as any).school_id;
           if (contractSchoolId) {
-            const school = (schools || []).find((s: any) => String(s?.id) === String(contractSchoolId));
-            const schoolName = String(school?.name || '').trim();
+            const school = (schools || []).find(
+              (s: any) => String(s?.id) === String(contractSchoolId),
+            );
+            const schoolName = String(school?.name || "").trim();
             if (schoolName) return schoolName;
           }
           const contractCustomerId = (contract as any).customer_id;
           if (contractCustomerId) {
-            const customer = (customers || []).find((c: any) => String(c?.id) === String(contractCustomerId));
+            const customer = (customers || []).find(
+              (c: any) => String(c?.id) === String(contractCustomerId),
+            );
             if (customer) {
               const display = String(
-                customer.businessName || customer.companyName || customer.name || ''
+                customer.businessName ||
+                  customer.companyName ||
+                  customer.name ||
+                  "",
               ).trim();
               if (display) return display;
             }
           }
           // Human-friendly contract number beats a raw UUID.
-          const contractNumber = String(contract.contract_number || '').trim();
+          const contractNumber = String(contract.contract_number || "").trim();
           if (contractNumber) return `Contract ${contractNumber}`;
         }
-        return 'Customer';
+        return "Customer";
       };
 
       const resolveAssessmentNo = (item: any): number => {
@@ -407,34 +850,50 @@ const AssessmentScheduleMonitor: React.FC = () => {
         }
         // Fall back to the position within its contract, ordered by
         // scheduled date (then creation order) so the number is stable.
-        const siblings = (items || []).filter((s: any) => String(s?.contract_id) === String(item?.contract_id));
+        const siblings = (items || []).filter(
+          (s: any) => String(s?.contract_id) === String(item?.contract_id),
+        );
         const dateOf = (s: any) => {
-          const raw = s?.assessment_date || s?.scheduled_date || s?.data?.assessment_date || s?.data?.scheduled_date;
+          const raw =
+            s?.assessment_date ||
+            s?.scheduled_date ||
+            s?.data?.assessment_date ||
+            s?.data?.scheduled_date;
           const t = raw ? new Date(raw).getTime() : NaN;
           return Number.isNaN(t) ? Number.MAX_SAFE_INTEGER : t;
         };
         const sorted = [...siblings].sort((a: any, b: any) => {
           const diff = dateOf(a) - dateOf(b);
           if (diff !== 0) return diff;
-          const createdDiff = String(a?.created_at || '').localeCompare(String(b?.created_at || ''));
+          const createdDiff = String(a?.created_at || "").localeCompare(
+            String(b?.created_at || ""),
+          );
           if (createdDiff !== 0) return createdDiff;
-          return String(a?.id || '').localeCompare(String(b?.id || ''));
+          return String(a?.id || "").localeCompare(String(b?.id || ""));
         });
-        const idx = sorted.findIndex((s: any) => String(s?.id) === String(item?.id));
+        const idx = sorted.findIndex(
+          (s: any) => String(s?.id) === String(item?.id),
+        );
         return idx >= 0 ? idx + 1 : 1;
       };
 
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
       for (const item of items) {
-        if (String(item?.status || '').toLowerCase() !== 'reserved') continue;
-        const rawDate = item?.assessment_date || item?.scheduled_date || item?.data?.assessment_date || item?.data?.scheduled_date;
+        if (String(item?.status || "").toLowerCase() !== "reserved") continue;
+        const rawDate =
+          item?.assessment_date ||
+          item?.scheduled_date ||
+          item?.data?.assessment_date ||
+          item?.data?.scheduled_date;
         if (!rawDate) continue;
         const due = new Date(rawDate);
         due.setHours(0, 0, 0, 0);
         if (Number.isNaN(due.getTime())) continue;
-        const daysLeft = Math.round((due.getTime() - today.getTime()) / 86400000);
+        const daysLeft = Math.round(
+          (due.getTime() - today.getTime()) / 86400000,
+        );
         if (daysLeft < 0 || daysLeft > 14) continue;
         const key = `assess-sched-notified:${String(item.id)}:${todayStr}`;
         if (notifiedToday.current.has(key)) continue;
@@ -448,27 +907,28 @@ const AssessmentScheduleMonitor: React.FC = () => {
         }
         const customerName = resolveCustomerName(item);
         const assessmentNo = resolveAssessmentNo(item);
-        const dateStr = due.toLocaleDateString('en-GB');
-        const message = daysLeft === 0
-          ? `Assessment NO.${assessmentNo} for ${customerName} starts today (${dateStr}).`
-          : daysLeft === 1
-            ? `Assessment NO.${assessmentNo} for ${customerName} will start tomorrow (${dateStr}).`
-            : `Assessment NO.${assessmentNo} for ${customerName} will start in ${daysLeft} days (${dateStr}).`;
+        const dateStr = due.toLocaleDateString("en-GB");
+        const message =
+          daysLeft === 0
+            ? `Assessment NO.${assessmentNo} for ${customerName} starts today (${dateStr}).`
+            : daysLeft === 1
+              ? `Assessment NO.${assessmentNo} for ${customerName} will start tomorrow (${dateStr}).`
+              : `Assessment NO.${assessmentNo} for ${customerName} will start in ${daysLeft} days (${dateStr}).`;
         // Sticky: stays on screen until the user closes it.
-        notify(message, 'info', { sticky: true });
+        notify(message, "info", { sticky: true });
         addAlert({
           id: `ALERT-ASSESS-${String(item.id)}-${todayStr}-${Date.now()}`,
-          title: 'Assessment Reminder',
+          title: "Assessment Reminder",
           message,
-          type: 'INFO',
-          module: 'Printing Contracts',
-          actionUrl: '/sales-flow/printing-contracts',
+          type: "INFO",
+          module: "Printing Contracts",
+          actionUrl: "/sales-flow/printing-contracts",
           date: new Date().toISOString(),
-          severity: daysLeft <= 3 ? 'High' : 'Medium'
+          severity: daysLeft <= 3 ? "High" : "Medium",
         });
         notifiedToday.current.add(key);
         try {
-          localStorage.setItem(key, '1');
+          localStorage.setItem(key, "1");
         } catch {
           // Best-effort persistence only.
         }
@@ -487,19 +947,19 @@ const ResponsiveDebugUtility: React.FC = () => {
   const isDev = isResponsiveDebugEnabled();
   const [width, setWidth] = useState(() => window.innerWidth);
   const [breakpoint, setBreakpoint] = useState(() => {
-    if (window.innerWidth <= 767) return 'mobile';
-    if (window.innerWidth <= 1024) return 'tablet';
-    if (window.innerWidth <= 1439) return 'desktop';
-    return 'wide';
+    if (window.innerWidth <= 767) return "mobile";
+    if (window.innerWidth <= 1024) return "tablet";
+    if (window.innerWidth <= 1439) return "desktop";
+    return "wide";
   });
 
   useEffect(() => {
     if (!isDev) return;
     const getBreakpoint = (nextWidth: number) => {
-      if (nextWidth <= 767) return 'mobile';
-      if (nextWidth <= 1024) return 'tablet';
-      if (nextWidth <= 1439) return 'desktop';
-      return 'wide';
+      if (nextWidth <= 767) return "mobile";
+      if (nextWidth <= 1024) return "tablet";
+      if (nextWidth <= 1439) return "desktop";
+      return "wide";
     };
 
     const handleResize = () => {
@@ -508,22 +968,26 @@ const ResponsiveDebugUtility: React.FC = () => {
       setWidth(nextWidth);
       setBreakpoint((current) => {
         if (current !== nextBreakpoint) {
-          console.info(`[ResponsiveDebug] breakpoint ${current} -> ${nextBreakpoint} (${nextWidth}px)`);
+          console.info(
+            `[ResponsiveDebug] breakpoint ${current} -> ${nextBreakpoint} (${nextWidth}px)`,
+          );
         }
         return nextBreakpoint;
       });
     };
 
-    window.addEventListener('resize', handleResize);
+    window.addEventListener("resize", handleResize);
     handleResize();
-    return () => window.removeEventListener('resize', handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, [isDev]);
 
   if (!isDev) return null;
 
   return (
     <div className="fixed bottom-3 right-3 z-[10001] rounded-lg bg-slate-900/90 text-white px-3 py-2 shadow-lg backdrop-blur-sm pointer-events-none">
-      <div className="text-[10px] font-bold uppercase tracking-wider">{breakpoint}</div>
+      <div className="text-[10px] font-bold uppercase tracking-wider">
+        {breakpoint}
+      </div>
       <div className="text-xs font-semibold leading-none mt-1">{width}px</div>
     </div>
   );
@@ -536,26 +1000,33 @@ const AppLayout: React.FC = () => {
 
   useEffect(() => {
     if (!user) {
-      navigate('/', { replace: true });
+      navigate("/", { replace: true });
     }
   }, [user, navigate]);
 
   if (!user) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center overflow-hidden" style={{ background: '#F5F7F9' }}>
+      <div
+        className="h-screen w-screen flex items-center justify-center overflow-hidden"
+        style={{ background: "#F5F7F9" }}
+      >
         <div className="flex flex-col items-center gap-8 relative z-10">
           <div
             className="w-24 h-24 rounded-full flex items-center justify-center ring-1 ring-white/20 transition-all duration-500 hover:scale-105"
             style={{
-              background: 'linear-gradient(to bottom right, #3b82f6, #4f46e5)',
-              boxShadow: '0 8px 32px rgba(59, 130, 246, 0.3)',
+              background: "linear-gradient(to bottom right, #3b82f6, #4f46e5)",
+              boxShadow: "0 8px 32px rgba(59, 130, 246, 0.3)",
             }}
           >
-            <span className="text-white text-5xl font-black drop-shadow-[0_2px_4px_rgba(0,0,0,0.2)]">P</span>
+            <span className="text-white text-5xl font-black drop-shadow-[0_2px_4px_rgba(0,0,0,0.2)]">
+              P
+            </span>
           </div>
           <div className="text-center space-y-2">
             <h1 className="text-4xl font-black tracking-tight animate-fade-in">
-              <span className="text-blue-600">Prime</span> <span className="text-green-600">ERP</span> <span className="text-blue-600">System</span>
+              <span className="text-blue-600">Prime</span>{" "}
+              <span className="text-green-600">ERP</span>{" "}
+              <span className="text-blue-600">System</span>
             </h1>
             <p className="slate-400 font-bold uppercase tracking-[0.2em] text-[10px] animate-pulse">
               Powered by AI
@@ -566,51 +1037,49 @@ const AppLayout: React.FC = () => {
     );
   }
 
-  const {
-    isOpen,
-    data,
-    filePreview,
-    type,
-    closePreview
-  } = useDocumentStore();
-  const {
-    isPosModalOpen,
-    setIsPosModalOpen,
-  } = useSales();
+  const { isOpen, data, filePreview, type, closePreview } = useDocumentStore();
+  const { isPosModalOpen, setIsPosModalOpen } = useSales();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
 
   useEffect(() => {
-    const theme = companyConfig?.appearance?.theme || 'Light';
-    const density = companyConfig?.appearance?.density || 'Comfortable';
-    const radius = companyConfig?.appearance?.borderRadius || 'Medium';
+    const theme = companyConfig?.appearance?.theme || "Light";
+    const density = companyConfig?.appearance?.density || "Comfortable";
+    const radius = companyConfig?.appearance?.borderRadius || "Medium";
 
     // Apply Theme
-    if (theme === 'Dark') {
-      document.documentElement.classList.add('dark');
-    } else if (theme === 'Light') {
-      document.documentElement.classList.remove('dark');
-    } else if (theme === 'System') {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (theme === "Dark") {
+      document.documentElement.classList.add("dark");
+    } else if (theme === "Light") {
+      document.documentElement.classList.remove("dark");
+    } else if (theme === "System") {
+      const prefersDark = window.matchMedia(
+        "(prefers-color-scheme: dark)",
+      ).matches;
       if (prefersDark) {
-        document.documentElement.classList.add('dark');
+        document.documentElement.classList.add("dark");
       } else {
-        document.documentElement.classList.remove('dark');
+        document.documentElement.classList.remove("dark");
       }
     }
 
     // Apply Density
-    if (density === 'Compact') {
-      document.documentElement.classList.add('density-compact');
+    if (density === "Compact") {
+      document.documentElement.classList.add("density-compact");
     } else {
-      document.documentElement.classList.remove('density-compact');
+      document.documentElement.classList.remove("density-compact");
     }
 
     // Apply Border Radius
-    document.documentElement.classList.remove('radius-none', 'radius-small', 'radius-medium', 'radius-large', 'radius-full');
+    document.documentElement.classList.remove(
+      "radius-none",
+      "radius-small",
+      "radius-medium",
+      "radius-large",
+      "radius-full",
+    );
     document.documentElement.classList.add(`radius-${radius.toLowerCase()}`);
-
   }, [companyConfig?.appearance]);
 
   useEffect(() => {
@@ -624,370 +1093,1355 @@ const AppLayout: React.FC = () => {
     }
   }, [location.pathname]);
 
-  useKeyboard([
-    {
-      id: 'nav-dashboard', key: 'd', alt: true, priority: 100,
-      handler: () => window.location.hash = '#/',
-      description: 'Go to dashboard',
-    },
-    {
-      id: 'nav-settings', key: 's', alt: true, priority: 100,
-      handler: () => window.location.hash = '#/settings',
-      description: 'Go to settings',
-    },
-    {
-      id: 'nav-users', key: 'u', alt: true, priority: 100,
-      handler: () => window.location.hash = '#/admin/users',
-      description: 'Go to users',
-    },
-    {
-      id: 'nav-home', key: 'h', alt: true, priority: 100,
-      handler: () => window.location.hash = '#/',
-      description: 'Go home',
-    },
-    {
-      id: 'sidebar-toggle', key: '\\', alt: true, priority: 100,
-      handler: () => setSidebarCollapsed(p => !p),
-      description: 'Toggle sidebar',
-    },
-  ], [location.pathname]);
+  useKeyboard(
+    [
+      {
+        id: "nav-dashboard",
+        key: "d",
+        alt: true,
+        priority: 100,
+        handler: () => (window.location.hash = "#/"),
+        description: "Go to dashboard",
+      },
+      {
+        id: "nav-settings",
+        key: "s",
+        alt: true,
+        priority: 100,
+        handler: () => (window.location.hash = "#/settings"),
+        description: "Go to settings",
+      },
+      {
+        id: "nav-users",
+        key: "u",
+        alt: true,
+        priority: 100,
+        handler: () => (window.location.hash = "#/admin/users"),
+        description: "Go to users",
+      },
+      {
+        id: "nav-home",
+        key: "h",
+        alt: true,
+        priority: 100,
+        handler: () => (window.location.hash = "#/"),
+        description: "Go home",
+      },
+      {
+        id: "sidebar-toggle",
+        key: "\\",
+        alt: true,
+        priority: 100,
+        handler: () => setSidebarCollapsed((p) => !p),
+        description: "Toggle sidebar",
+      },
+    ],
+    [location.pathname],
+  );
 
   return (
     <div className="app-layout-scroll">
       <div className="app-layout-frame flex h-screen bg-[var(--dashboard-bg)] overflow-hidden transition-colors duration-200">
-      {sidebarOpen && (
-        <button
-          type="button"
-          className="fixed inset-0 z-30 bg-slate-900/40 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-          aria-label="Close Sidebar"
-        />
-      )}
-      <ReminderMonitor />
-      <AssessmentScheduleMonitor />
-      <Sidebar
-        isOpen={sidebarOpen}
-        toggle={() => setSidebarOpen(!sidebarOpen)}
-        isCollapsed={sidebarCollapsed}
-        toggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-      />
-      <div className="app-content-shell flex-1 flex flex-col h-full min-w-0 transition-all duration-300">
-        <div className="pb-1.5 shrink-0">
-          <AppTopBar
-            onOpenSidebar={() => setSidebarOpen(true)}
-            onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
-            sidebarCollapsed={sidebarCollapsed}
-            onOpenMessages={() => setIsWhatsAppModalOpen(true)}
+        {sidebarOpen && (
+          <button
+            type="button"
+            className="fixed inset-0 z-30 bg-slate-900/40 md:hidden"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Close Sidebar"
           />
-        </div>
-        <main className="app-content-scroll flex-1 min-h-0 overflow-auto relative custom-scrollbar">
-
-          <Toast />
-          <PwaInstallBanner />
-          <PwaUpdateNotificationWrapper />
-          <ResponsiveDebugUtility />
-
-          {/* Global PDF Preview Layer */}
-          {(data || filePreview) && (
-            <PreviewModal
-              isOpen={isOpen}
-              onClose={closePreview}
-              file={filePreview}
-              type={type}
-              data={data}
+        )}
+        <ReminderMonitor />
+        <AssessmentScheduleMonitor />
+        <Sidebar
+          isOpen={sidebarOpen}
+          toggle={() => setSidebarOpen(!sidebarOpen)}
+          isCollapsed={sidebarCollapsed}
+          toggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        />
+        <div className="app-content-shell flex-1 flex flex-col h-full min-w-0 transition-all duration-300">
+          <div className="pb-1.5 shrink-0">
+            <AppTopBar
+              onOpenSidebar={() => setSidebarOpen(true)}
+              onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+              sidebarCollapsed={sidebarCollapsed}
+              onOpenMessages={() => setIsWhatsAppModalOpen(true)}
             />
-          )}
-
-          {/* Global POS Modal Layer */}
-          {isPosModalOpen && (
-            <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-200">
-              <div className="bg-[#FEFDFB] w-full max-w-6xl h-full rounded-[14px] shadow-[0_30px_70px_-20px_rgba(0,0,0,.55),0_8px_24px_-8px_rgba(0,0,0,.35),0_0_0_1px_rgba(255,255,255,.04)] overflow-hidden flex flex-col animate-in zoom-in-95 duration-300" style={{ fontFamily: "'Inter', 'DM Sans', sans-serif" }}>
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, #146b60, #3fa294 40%, #d99a3f 100%)', zIndex: 1 }} />
-                <div className="px-6 py-3 border-b border-[#e4ddd1] flex items-center justify-between shrink-0" style={{ marginTop: 3 }}>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-[#146b60] flex items-center justify-center text-white shadow-lg">
-                      <Coins size={16} />
-                    </div>
-                    <div>
-                      <h2 className="text-sm font-black text-[#0b3e39] tracking-tight">Terminal POS</h2>
-                      <span className="text-[9px] font-bold text-[#5c6567] uppercase tracking-widest">Live Transaction Interface</span>
-                    </div>
-                  </div>
-<button
-                     onClick={() => { if (!window.confirm('Close terminal? Any unsaved work will be lost.')) return; setIsPosModalOpen(false); }}
-                     className="p-2 hover:bg-[#eef7f6] rounded-lg text-[#5c6567] hover:text-[#0b3e39] transition-all"
-                   >
-                    <X size={20} />
-                  </button>
-                </div>
-                <div className="flex-1 overflow-hidden" style={{ fontFamily: "'Inter', 'DM Sans', sans-serif" }}>
-                  <ProtectedRoute permission="sales.pos">
-                    <Suspense fallback={<PageLoader />}>
-                      <POS />
-                    </Suspense>
-                  </ProtectedRoute>
-                </div>
-              </div>
-            </div>
-          )}
-
-
-
-          <div className="h-full w-full min-w-0 min-h-full">
-            <Suspense fallback={<PageLoader />}>
-              <Routes>
-                <Route path="/" element={<ErrorBoundary name="Dashboard"><Dashboard /></ErrorBoundary>} />
-                <Route path="/dashboard" element={<ErrorBoundary name="Dashboard"><Dashboard /></ErrorBoundary>} />
-                <Route path="/install" element={<PwaInstallPage />} />
-                <Route path="/search" element={<ErrorBoundary name="Search"><GlobalSearch /></ErrorBoundary>} />
-
-                {/* Hierarchical Redirects - no error boundary needed */}
-                <Route path="/inventory" element={<Navigate to="/supply-chain/inventory" replace />} />
-                <Route path="/purchases" element={<Navigate to="/procurement/bills" replace />} />
-                <Route path="/purchases/grn" element={<Navigate to="/supply-chain/grn" replace />} />
-                <Route path="/purchases/new" element={<Navigate to="/procurement/bills" replace state={{ action: 'create' }} />} />
-                <Route path="/purchases/subcontracting" element={<Navigate to="/procurement/subcontracting" replace />} />
-                <Route path="/pos" element={<Navigate to="/sales-flow/pos" replace />} />
-                <Route path="/sales/quotations" element={<Navigate to="/sales-flow/quotations" replace />} />
-                <Route path="/sales/invoices" element={<Navigate to="/sales-flow/invoices" replace />} />
-                <Route path="/sales/shipping" element={<Navigate to="/supply-chain/shipping" replace />} />
-                <Route path="/sales/subscriptions" element={<Navigate to="/sales-flow/printing-contracts" replace />} />
-                <Route path="/sales/receipts" element={<Navigate to="/sales-flow/payments" replace />} />
-                <Route path="/sales-flow/receipts" element={<Navigate to="/sales-flow/payments" replace />} />
-                <Route path="/sales-flow/orders/new" element={<Navigate to="/sales-flow/orders" replace />} />
-                <Route path="/sales-flow/payments/new" element={<Navigate to="/sales-flow/payments" replace />} />
-                <Route path="/reports/statements" element={<Navigate to="/revenue/contacts?type=customer-statement" replace />} />
-                <Route path="/accounts/chart" element={<Navigate to="/accounts/chart-of-accounts" replace />} />
-                <Route path="/production/work-orders" element={<Navigate to="/industrial/work-orders" replace />} />
-                <Route path="/production/scheduler" element={<Navigate to="/industrial/scheduler" replace />} />
-                <Route path="/production/shop-floor" element={<Navigate to="/industrial/shop-floor" replace />} />
-                <Route path="/production/kiosk" element={<Navigate to="/industrial/kiosk" replace />} />
-                <Route path="/production/mrp" element={<Navigate to="/industrial/mrp" replace />} />
-                <Route path="/production/examination-printing" element={<Navigate to="/examination/batches" replace />} />
-                <Route path="/accounts/expenses" element={<Navigate to="/procurement/expenses" replace />} />
-                <Route path="/accounts/expenses/new" element={<Navigate to="/procurement/expenses" replace />} />
-                <Route path="/accounts/reconciliation" element={<Navigate to="/fiscal-reports/reconciliation" replace />} />
-                <Route path="/accounts/budgets" element={<Navigate to="/fiscal-reports/budgets" replace />} />
-                <Route path="/accounts/financials" element={<Navigate to="/fiscal-reports/financials" replace />} />
-                <Route path="/tools/cheques" element={<Navigate to="/internal-tools/cheques" replace />} />
-                <Route path="/tools/barcodes" element={<Navigate to="/internal-tools/barcodes" replace />} />
-                <Route path="/admin/import" element={<Navigate to="/internal-tools/import" replace />} />
-                <Route path="/sales" element={<Navigate to="/sales-flow" replace />} />
-                <Route path="/production" element={<Navigate to="/industrial" replace />} />
-                <Route path="/accounts" element={<Navigate to="/fiscal-reports" replace />} />
-                <Route path="/admin" element={<Navigate to="/settings" replace />} />
-
-                {/* Supply Chain */}
-                <Route element={<ErrorBoundary name="Supply Chain"><Outlet /></ErrorBoundary>}>
-                  <Route path="/supply-chain" element={<SupplyChainHub />} />
-                  <Route path="/supply-chain/inventory" element={<Inventory />} />
-                  <Route path="/supply-chain/inventory/:itemId" element={<ItemDetailPage />} />
-                  <Route path="/supply-chain/grn" element={<GoodsReceived />} />
-                  <Route path="/supply-chain/shipping" element={<ProtectedRoute permission="sales.view"><ShippingManager /></ProtectedRoute>} />
-                  <Route path="/supply-chain/forecasting" element={<Forecasting />} />
-                  <Route path="/supply-chain/warehouses" element={<WarehousePage />} />
-                  <Route path="/supply-chain/inventory-reports" element={<InventoryReports />} />
-                </Route>
-
-                {/* Industrial / Production */}
-                <Route element={<ErrorBoundary name="Industrial"><Outlet /></ErrorBoundary>}>
-                  <Route path="/industrial" element={<IndustrialHub />} />
-                  <Route path="/industrial/work-orders" element={<ProtectedRoute permission="production.view"><WorkOrders /></ProtectedRoute>} />
-                  <Route path="/industrial/scheduler" element={<ProtectedRoute permission="production.view"><Scheduler /></ProtectedRoute>} />
-                  <Route path="/industrial/shop-floor" element={<ProtectedRoute permission="production.view"><ShopFloor /></ProtectedRoute>} />
-                  <Route path="/industrial/kiosk" element={<ProtectedRoute permission="production.view"><ShopFloorKiosk /></ProtectedRoute>} />
-                  <Route path="/industrial/mrp" element={<ProtectedRoute permission="production.view"><MRP /></ProtectedRoute>} />
-                  <Route path="/industrial/bom-recipes" element={<ProtectedRoute permission="production.view"><BOMRecipes /></ProtectedRoute>} />
-                  <Route path="/industrial/maintenance" element={<ProtectedRoute permission="production.view"><MachineMaintenance /></ProtectedRoute>} />
-                  <Route path="/industrial/gang-run" element={<ProtectedRoute permission="production.view"><GangRunEstimator /></ProtectedRoute>} />
-                  <Route path="/industrial/service-jobs" element={<ProtectedRoute permission="production.view"><ServiceJobsPage /></ProtectedRoute>} />
-                  <Route path="/industrial/service-recipes" element={<ProtectedRoute permission="production.view"><ServiceRecipeEditorPage /></ProtectedRoute>} />
-                  <Route path="/industrial/exams" element={<Navigate to="/industrial" replace />} />
-                </Route>
-
-                {/* Revenue */}
-                <Route element={<ErrorBoundary name="Revenue"><Outlet /></ErrorBoundary>}>
-                  <Route path="/revenue" element={<RevenueHub />} />
-                  <Route path="/revenue/sales-audit" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
-                  <Route path="/revenue/margin-performance" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
-                  <Route path="/revenue/rounding-analytics" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
-                  <Route path="/revenue/contacts" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
-                  <Route path="/revenue/wallet-statement" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
-                  <Route path="/revenue/auditor" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
-                  <Route path="/revenue/transport-budget" element={
-          <ProtectedRoute permission="reports.view">
-            <React.Suspense fallback={
-              <div style={{ padding: '24px', textAlign: 'center', background: '#FEFDFB', borderRadius: 14, border: `1.4px solid #e4ddd1` }}>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 50, background: '#eef7f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-teal-600"></div>
-                  </div>
-                  <p style={{ color: '#5c6567', fontSize: 14, margin: 0 }}>Loading Transport Budget Dashboard...</p>
-                </div>
-              </div>
-            }>
-              <TransportBudgetDashboard />
-            </React.Suspense>
-          </ProtectedRoute>
-        } />
-                </Route>
-
-                {/* Customers */}
-                <Route path="/customers" element={<ErrorBoundary name="Customers"><CustomersHub /></ErrorBoundary>} />
-                <Route path="/customers/new" element={<Navigate to="/customers" replace />} />
-                <Route path="/portal/users" element={<ErrorBoundary name="PortalUsers"><PortalUserManagement /></ErrorBoundary>} />
-
-                {/* Sales Flow */}
-                <Route element={<ErrorBoundary name="Sales"><Outlet /></ErrorBoundary>}>
-                  <Route path="/sales-flow" element={<SalesFlowHub />} />
-                  <Route path="/sales-flow/pos" element={<ProtectedRoute permission="sales.pos"><POS /></ProtectedRoute>} />
-                  <Route path="/sales-flow/quotations" element={<ProtectedRoute permission="sales.view"><Orders /></ProtectedRoute>} />
-                  <Route path="/sales-flow/requests" element={<ProtectedRoute permission="sales.view"><QuotationRequestsHub /></ProtectedRoute>} />
-                  <Route path="/sales-flow/orders" element={<ProtectedRoute permission="sales.view"><Orders /></ProtectedRoute>} />
-                  <Route path="/sales-flow/invoices" element={<ProtectedRoute permission="sales.view"><Orders /></ProtectedRoute>} />
-                  <Route path="/sales-flow/subscriptions" element={<ProtectedRoute permission="sales.view"><SubscriptionsView /></ProtectedRoute>} />
-                  <Route path="/sales-flow/printing-contracts" element={<ProtectedRoute permission="sales.view"><SubscriptionsView /></ProtectedRoute>} />
-                  <Route path="/sales-flow/exchanges" element={<ProtectedRoute permission="sales.view"><SalesExchanges /></ProtectedRoute>} />
-                  <Route path="/sales-flow/leads" element={<ProtectedRoute permission="sales.view"><LeadBoard /></ProtectedRoute>} />
-                  <Route path="/sales-flow/sales-orders" element={<ProtectedRoute permission="sales.view"><SalesOrdersView /></ProtectedRoute>} />
-                  <Route path="/sales-flow/job-tickets" element={<ProtectedRoute permission="sales.view"><JobTickets /></ProtectedRoute>} />
-                  <Route path="/sales-flow/referral-rewards" element={<Navigate to="/smart-operations/referrals" replace />} />
-                  <Route path="/sales-flow/tasks" element={<Tasks />} />
-                  <Route path="/sales-flow/customers" element={<Navigate to="/sales-flow/clients" replace />} />
-                  <Route path="/sales-flow/clients" element={<ProtectedRoute permission="sales.view"><Clients /></ProtectedRoute>} />
-                  <Route path="/sales-flow/payments" element={<ProtectedRoute permission="sales.view"><Payments /></ProtectedRoute>} />
-                  <Route path="/sales-flow/payment-requests" element={<ProtectedRoute permission="sales.view"><Navigate to="/sales-flow/requests" replace state={{ tab: 'payments' }} /></ProtectedRoute>} />
-                </Route>
-
-                {/* Procurement */}
-                <Route element={<ErrorBoundary name="Procurement"><Outlet /></ErrorBoundary>}>
-                  <Route path="/procurement" element={<ProcurementHub />} />
-                  <Route path="/procurement/bills" element={<Purchases />} />
-                  <Route path="/procurement/suppliers" element={<ProtectedRoute permission="procurement.view"><Suppliers /></ProtectedRoute>} />
-                  <Route path="/procurement/subcontracting" element={<Subcontracting />} />
-                  <Route path="/procurement/expenses" element={<ProtectedRoute permission="accounts.view"><Expenses /></ProtectedRoute>} />
-                  <Route path="/procurement/transport-expenses" element={<ProtectedRoute permission="accounts.view"><TransportExpenses /></ProtectedRoute>} />
-                  <Route path="/procurement/payments" element={<ProtectedRoute permission="procurement.view"><Payments /></ProtectedRoute>} />
-                </Route>
-
-                {/* Fiscal Reports */}
-                <Route element={<ErrorBoundary name="Fiscal Reports"><Outlet /></ErrorBoundary>}>
-                  <Route path="/fiscal-reports" element={<FiscalReportsHub />} />
-                  <Route path="/fiscal-reports/financials" element={<ProtectedRoute permission="accounts.view"><FinancialReports /></ProtectedRoute>} />
-                  <Route path="/fiscal-reports/ledgers" element={<ProtectedRoute permission="accounts.view"><LedgerExplorer /></ProtectedRoute>} />
-                  <Route path="/fiscal-reports/reconciliation" element={<ProtectedRoute permission="accounts.view"><Reconciliation /></ProtectedRoute>} />
-                  <Route path="/fiscal-reports/budgets" element={<ProtectedRoute permission="accounts.view"><Budgets /></ProtectedRoute>} />
-                  <Route path="/fiscal-reports/vat" element={<Navigate to="/fiscal-reports" replace />} />
-                </Route>
-
-                {/* Internal Tools */}
-                <Route element={<ErrorBoundary name="Internal Tools"><Outlet /></ErrorBoundary>}>
-                  <Route path="/internal-tools" element={<InternalToolsHub />} />
-                  <Route path="/internal-tools/cheques" element={<ChequeManager />} />
-                  <Route path="/internal-tools/barcodes" element={<BarcodePrinter />} />
-                  <Route path="/internal-tools/import" element={<DataImport />} />
-                  <Route path="/internal-tools/assets" element={<AssetManagement />} />
-                  <Route path="/internal-tools/customer-credentials" element={<CustomerCredentialRegeneration />} />
-                </Route>
-
-                {/* Smart Operations */}
-                <Route element={<ErrorBoundary name="Smart Operations"><Outlet /></ErrorBoundary>}>
-                  <Route path="/smart-operations" element={<SmartOperationsHub />} />
-                  <Route path="/smart-operations/adjustments" element={<MarketAdjustments />} />
-                  <Route path="/smart-operations/messages" element={<MarketingMessages />} />
-                  <Route path="/smart-operations/price-cards" element={<PriceCards />} />
-                  <Route path="/smart-operations/ads" element={<ProtectedRoute permission="admin.settings"><AdsManager /></ProtectedRoute>} />
-                  <Route path="/smart-operations/faq" element={<ProtectedRoute permission="admin.settings"><FAQManager /></ProtectedRoute>} />
-                  <Route path="/smart-operations/referrals" element={<ProtectedRoute permission="referrals.view"><Referrals /></ProtectedRoute>} />
-                  <Route path="/smart-operations/promotions" element={<ProtectedRoute permission="admin.settings"><PromotionsAdmin /></ProtectedRoute>} />
-                </Route>
-
-                {/* AI Analytics (redirects to AI Workspace) */}
-                <Route path="/ai-analytics" element={<AnalyticsHub />} />
-                <Route path="/ai-analytics/*" element={<Navigate to="/ai-workspace" replace />} />
-
-                {/* Smart Features */}
-                <Route element={<ErrorBoundary name="Smart Features"><Outlet /></ErrorBoundary>}>
-                  <Route path="/smart-features" element={<Navigate to="/smart-features/sales-dashboard" replace />} />
-                  <Route path="/smart-features/sales-dashboard" element={<SmartSalesDashboard />} />
-                  <Route path="/smart-features/invoice-intelligence" element={<InvoiceIntelligence />} />
-                  <Route path="/smart-features/customer-risk" element={<CustomerRiskScore />} />
-                  <Route path="/smart-features/natural-language-reporting" element={<NaturalLanguageReporting />} />
-                  <Route path="/smart-features/accounting-assistant" element={<AccountingAssistant />} />
-                  <Route path="/smart-features/anomaly-detection" element={<AnomalyDetectionView />} />
-                  <Route path="/smart-features/report-summaries" element={<ReportSummaryView />} />
-                  <Route path="/smart-features/advanced-data-table" element={<AdvancedDataTableView />} />
-                </Route>
-
-                {/* Examination */}
-                <Route element={<ErrorBoundary name="Examination"><Outlet /></ErrorBoundary>}>
-                  <Route path="/examination" element={<Navigate to="/examination/batches" replace />} />
-                  <Route path="/examination/batches" element={<ProtectedRoute permission="production.view"><ExaminationHub /></ProtectedRoute>} />
-                  <Route path="/examination/batches/new" element={<ProtectedRoute permission="production.view"><ExaminationBatchForm /></ProtectedRoute>} />
-                  <Route path="/examination/batches/:id" element={<ProtectedRoute permission="production.view"><ExaminationBatchDetail /></ProtectedRoute>} />
-                  <Route path="/examination/invoices" element={<ProtectedRoute permission="production.view"><ExaminationInvoices /></ProtectedRoute>} />
-                  <Route path="/examination/jobs/new" element={<ProtectedRoute permission="production.view"><ExaminationJobForm /></ProtectedRoute>} />
-                  <Route path="/examination/jobs/:id" element={<ProtectedRoute permission="production.view"><ExaminationJobForm /></ProtectedRoute>} />
-                  <Route path="/examination/groups" element={<ProtectedRoute permission="production.view"><InvoiceGroupManager /></ProtectedRoute>} />
-                  <Route path="/examination/recurring" element={<ProtectedRoute permission="production.view"><RecurringProfiles /></ProtectedRoute>} />
-                </Route>
-
-                {/* VAT */}
-                <Route path="/vat" element={<ErrorBoundary name="VAT"><ProtectedRoute permission="accounts.view"><VatView /></ProtectedRoute></ErrorBoundary>} />
-
-                {/* Reports, Audit, Admin, Settings, Accounting, Architect */}
-                <Route path="/reports" element={<ErrorBoundary name="Reports"><ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute></ErrorBoundary>} />
-                <Route path="/audit" element={<ErrorBoundary name="Audit"><AuditLogs /></ErrorBoundary>} />
-                <Route path="/admin/users" element={<ErrorBoundary name="Admin"><ProtectedRoute permission="admin.users"><UserManagement /></ProtectedRoute></ErrorBoundary>} />
-                <Route path="/admin/profile" element={<ErrorBoundary name="Admin"><ProfileActivity /></ErrorBoundary>} />
-                <Route path="/admin/sync-health" element={<ErrorBoundary name="Admin"><ProtectedRoute permission="admin.settings"><SyncHealth /></ProtectedRoute></ErrorBoundary>} />
-                <Route path="/admin/examination-invoice-diag" element={<ErrorBoundary name="Admin"><ProtectedRoute permission="admin.settings"><ExaminationInvoiceDiag /></ProtectedRoute></ErrorBoundary>} />
-                <Route path="/profile" element={<ErrorBoundary name="Profile"><Profile /></ErrorBoundary>} />
-                <Route path="/settings" element={<ErrorBoundary name="Settings"><ProtectedRoute permission="admin.settings"><Settings /></ProtectedRoute></ErrorBoundary>} />
-
-                <Route element={<ErrorBoundary name="Accounting"><Outlet /></ErrorBoundary>}>
-                  <Route path="/accounts/income" element={<ProtectedRoute permission="accounts.view"><IncomeView /></ProtectedRoute>} />
-                  <Route path="/accounts/banking" element={<ProtectedRoute permission="accounts.view"><Banking /></ProtectedRoute>} />
-                  <Route path="/accounts/transfers" element={<ProtectedRoute permission="accounts.view"><Transfers /></ProtectedRoute>} />
-                  <Route path="/accounts/payroll" element={<ProtectedRoute permission="accounts.view"><Payroll /></ProtectedRoute>} />
-                  <Route path="/accounts/chart-of-accounts" element={<ProtectedRoute permission="accounts.view"><ChartOfAccounts /></ProtectedRoute>} />
-                  <Route path="/accounts/fixed-assets" element={<ProtectedRoute permission="accounts.view"><FixedAssets /></ProtectedRoute>} />
-                  <Route path="/accounts/loans" element={<ProtectedRoute permission="accounts.view"><Loans /></ProtectedRoute>} />
-                  <Route path="/accounts/owner-equity" element={<ProtectedRoute permission="accounts.view"><OwnerEquity /></ProtectedRoute>} />
-                  <Route path="/accounts/year-end-closing" element={<ProtectedRoute permission="accounts.view"><YearEndClosing /></ProtectedRoute>} />
-                </Route>
-
-                <Route path="/finance" element={<ErrorBoundary name="FinanceHub"><FinanceHub /></ErrorBoundary>} />
-
-                {/* Assessment Contracts */}
-
-                <Route path="/architect" element={<ErrorBoundary name="Architect"><Architect /></ErrorBoundary>} />
-                {/* AI Workspace */}
-                <Route element={<ErrorBoundary name="AI Workspace"><Outlet /></ErrorBoundary>}>
-                  <Route path="/ai-workspace" element={<AIWorkspace />} />
-                  <Route path="/ai-workspace/dashboard" element={<AIWorkspaceDashboard />} />
-                  <Route path="/ai-workspace/assistant" element={<AIWorkspaceChat />} />
-                  <Route path="/ai-workspace/gang-run" element={<GangRunOptimizer />} />
-                  <Route path="/ai-workspace/cash-flow" element={<CashFlowForecaster />} />
-                  {/* Retired duplicates — superseded by the /smart-features implementations */}
-                  <Route path="/ai-workspace/anomalies" element={<Navigate to="/smart-features/anomaly-detection" replace />} />
-                  <Route path="/ai-workspace/churn" element={<Navigate to="/smart-features/customer-risk" replace />} />
-                  <Route path="/ai-workspace/reorder" element={<ReorderOptimizer />} />
-                  <Route path="/ai-workspace/po-match" element={<POMatcher />} />
-                  <Route path="/ai-workspace/scheduler" element={<SmartScheduler />} />
-                  <Route path="/ai-workspace/query" element={<Navigate to="/smart-features/natural-language-reporting" replace />} />
-                  <Route path="/ai-workspace/audit" element={<AuditInvestigator />} />
-                  <Route path="/ai-workspace/bom" element={<BOMGenerator />} />
-                </Route>
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-          </Suspense>
           </div>
-        </main>
-      </div>
+          <main className="app-content-scroll flex-1 min-h-0 overflow-auto relative custom-scrollbar">
+            <Toast />
+            <PwaInstallBanner />
+            <PwaUpdateNotificationWrapper />
+            <ResponsiveDebugUtility />
+
+            {/* Global PDF Preview Layer */}
+            {(data || filePreview) && (
+              <PreviewModal
+                isOpen={isOpen}
+                onClose={closePreview}
+                file={filePreview}
+                type={type}
+                data={data}
+              />
+            )}
+
+            {/* Global POS Modal Layer */}
+            {isPosModalOpen && (
+              <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-200">
+                <div
+                  className="bg-[#FEFDFB] w-full max-w-6xl h-full rounded-[14px] shadow-[0_30px_70px_-20px_rgba(0,0,0,.55),0_8px_24px_-8px_rgba(0,0,0,.35),0_0_0_1px_rgba(255,255,255,.04)] overflow-hidden flex flex-col animate-in zoom-in-95 duration-300"
+                  style={{ fontFamily: "'Inter', 'DM Sans', sans-serif" }}
+                >
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: 3,
+                      background:
+                        "linear-gradient(90deg, #146b60, #3fa294 40%, #d99a3f 100%)",
+                      zIndex: 1,
+                    }}
+                  />
+                  <div
+                    className="px-6 py-3 border-b border-[#e4ddd1] flex items-center justify-between shrink-0"
+                    style={{ marginTop: 3 }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-[#146b60] flex items-center justify-center text-white shadow-lg">
+                        <Coins size={16} />
+                      </div>
+                      <div>
+                        <h2 className="text-sm font-black text-[#0b3e39] tracking-tight">
+                          Terminal POS
+                        </h2>
+                        <span className="text-[9px] font-bold text-[#5c6567] uppercase tracking-widest">
+                          Live Transaction Interface
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            "Close terminal? Any unsaved work will be lost.",
+                          )
+                        )
+                          return;
+                        setIsPosModalOpen(false);
+                      }}
+                      className="p-2 hover:bg-[#eef7f6] rounded-lg text-[#5c6567] hover:text-[#0b3e39] transition-all"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+                  <div
+                    className="flex-1 overflow-hidden"
+                    style={{ fontFamily: "'Inter', 'DM Sans', sans-serif" }}
+                  >
+                    <ProtectedRoute permission="sales.pos">
+                      <Suspense fallback={<PageLoader />}>
+                        <POS />
+                      </Suspense>
+                    </ProtectedRoute>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="h-full w-full min-w-0 min-h-full">
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
+                  <Route
+                    path="/"
+                    element={
+                      <ErrorBoundary name="Dashboard">
+                        <Dashboard />
+                      </ErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/dashboard"
+                    element={
+                      <ErrorBoundary name="Dashboard">
+                        <Dashboard />
+                      </ErrorBoundary>
+                    }
+                  />
+                  <Route path="/install" element={<PwaInstallPage />} />
+                  <Route
+                    path="/search"
+                    element={
+                      <ErrorBoundary name="Search">
+                        <GlobalSearch />
+                      </ErrorBoundary>
+                    }
+                  />
+
+                  {/* Hierarchical Redirects - no error boundary needed */}
+                  <Route
+                    path="/inventory"
+                    element={<Navigate to="/supply-chain/inventory" replace />}
+                  />
+                  <Route
+                    path="/purchases"
+                    element={<Navigate to="/procurement/bills" replace />}
+                  />
+                  <Route
+                    path="/purchases/grn"
+                    element={<Navigate to="/supply-chain/grn" replace />}
+                  />
+                  <Route
+                    path="/purchases/new"
+                    element={
+                      <Navigate
+                        to="/procurement/bills"
+                        replace
+                        state={{ action: "create" }}
+                      />
+                    }
+                  />
+                  <Route
+                    path="/purchases/subcontracting"
+                    element={
+                      <Navigate to="/procurement/subcontracting" replace />
+                    }
+                  />
+                  <Route
+                    path="/pos"
+                    element={<Navigate to="/sales-flow/pos" replace />}
+                  />
+                  <Route
+                    path="/sales/quotations"
+                    element={<Navigate to="/sales-flow/quotations" replace />}
+                  />
+                  <Route
+                    path="/sales/invoices"
+                    element={<Navigate to="/sales-flow/invoices" replace />}
+                  />
+                  <Route
+                    path="/sales/shipping"
+                    element={<Navigate to="/supply-chain/shipping" replace />}
+                  />
+                  <Route
+                    path="/sales/subscriptions"
+                    element={
+                      <Navigate to="/sales-flow/printing-contracts" replace />
+                    }
+                  />
+                  <Route
+                    path="/sales/receipts"
+                    element={<Navigate to="/sales-flow/payments" replace />}
+                  />
+                  <Route
+                    path="/sales-flow/receipts"
+                    element={<Navigate to="/sales-flow/payments" replace />}
+                  />
+                  <Route
+                    path="/sales-flow/orders/new"
+                    element={<Navigate to="/sales-flow/orders" replace />}
+                  />
+                  <Route
+                    path="/sales-flow/payments/new"
+                    element={<Navigate to="/sales-flow/payments" replace />}
+                  />
+                  <Route
+                    path="/reports/statements"
+                    element={
+                      <Navigate
+                        to="/revenue/contacts?type=customer-statement"
+                        replace
+                      />
+                    }
+                  />
+                  <Route
+                    path="/accounts/chart"
+                    element={
+                      <Navigate to="/accounts/chart-of-accounts" replace />
+                    }
+                  />
+                  <Route
+                    path="/production/work-orders"
+                    element={<Navigate to="/industrial/work-orders" replace />}
+                  />
+                  <Route
+                    path="/production/scheduler"
+                    element={<Navigate to="/industrial/scheduler" replace />}
+                  />
+                  <Route
+                    path="/production/shop-floor"
+                    element={<Navigate to="/industrial/shop-floor" replace />}
+                  />
+                  <Route
+                    path="/production/kiosk"
+                    element={<Navigate to="/industrial/kiosk" replace />}
+                  />
+                  <Route
+                    path="/production/mrp"
+                    element={<Navigate to="/industrial/mrp" replace />}
+                  />
+                  <Route
+                    path="/production/examination-printing"
+                    element={<Navigate to="/examination/batches" replace />}
+                  />
+                  <Route
+                    path="/accounts/expenses"
+                    element={<Navigate to="/procurement/expenses" replace />}
+                  />
+                  <Route
+                    path="/accounts/expenses/new"
+                    element={<Navigate to="/procurement/expenses" replace />}
+                  />
+                  <Route
+                    path="/accounts/reconciliation"
+                    element={
+                      <Navigate to="/fiscal-reports/reconciliation" replace />
+                    }
+                  />
+                  <Route
+                    path="/accounts/budgets"
+                    element={<Navigate to="/fiscal-reports/budgets" replace />}
+                  />
+                  <Route
+                    path="/accounts/financials"
+                    element={
+                      <Navigate to="/fiscal-reports/financials" replace />
+                    }
+                  />
+                  <Route
+                    path="/tools/cheques"
+                    element={<Navigate to="/internal-tools/cheques" replace />}
+                  />
+                  <Route
+                    path="/tools/barcodes"
+                    element={<Navigate to="/internal-tools/barcodes" replace />}
+                  />
+                  <Route
+                    path="/admin/import"
+                    element={<Navigate to="/internal-tools/import" replace />}
+                  />
+                  <Route
+                    path="/sales"
+                    element={<Navigate to="/sales-flow" replace />}
+                  />
+                  <Route
+                    path="/production"
+                    element={<Navigate to="/industrial" replace />}
+                  />
+                  <Route
+                    path="/accounts"
+                    element={<Navigate to="/fiscal-reports" replace />}
+                  />
+                  <Route
+                    path="/admin"
+                    element={<Navigate to="/settings" replace />}
+                  />
+
+                  {/* Supply Chain */}
+                  <Route
+                    element={
+                      <ErrorBoundary name="Supply Chain">
+                        <Outlet />
+                      </ErrorBoundary>
+                    }
+                  >
+                    <Route path="/supply-chain" element={<SupplyChainHub />} />
+                    <Route
+                      path="/supply-chain/inventory"
+                      element={<Inventory />}
+                    />
+                    <Route
+                      path="/supply-chain/inventory/:itemId"
+                      element={<ItemDetailPage />}
+                    />
+                    <Route
+                      path="/supply-chain/grn"
+                      element={<GoodsReceived />}
+                    />
+                    <Route
+                      path="/supply-chain/shipping"
+                      element={
+                        <ProtectedRoute permission="sales.view">
+                          <ShippingManager />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/supply-chain/forecasting"
+                      element={<Forecasting />}
+                    />
+                    <Route
+                      path="/supply-chain/warehouses"
+                      element={<WarehousePage />}
+                    />
+                    <Route
+                      path="/supply-chain/inventory-reports"
+                      element={<InventoryReports />}
+                    />
+                  </Route>
+
+                  {/* Industrial / Production */}
+                  <Route
+                    element={
+                      <ErrorBoundary name="Industrial">
+                        <Outlet />
+                      </ErrorBoundary>
+                    }
+                  >
+                    <Route path="/industrial" element={<IndustrialHub />} />
+                    <Route
+                      path="/industrial/work-orders"
+                      element={
+                        <ProtectedRoute permission="production.view">
+                          <WorkOrders />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/industrial/scheduler"
+                      element={
+                        <ProtectedRoute permission="production.view">
+                          <Scheduler />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/industrial/shop-floor"
+                      element={
+                        <ProtectedRoute permission="production.view">
+                          <ShopFloor />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/industrial/kiosk"
+                      element={
+                        <ProtectedRoute permission="production.view">
+                          <ShopFloorKiosk />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/industrial/mrp"
+                      element={
+                        <ProtectedRoute permission="production.view">
+                          <MRP />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/industrial/bom-recipes"
+                      element={
+                        <ProtectedRoute permission="production.view">
+                          <BOMRecipes />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/industrial/maintenance"
+                      element={
+                        <ProtectedRoute permission="production.view">
+                          <MachineMaintenance />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/industrial/gang-run"
+                      element={
+                        <ProtectedRoute permission="production.view">
+                          <GangRunEstimator />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/industrial/service-jobs"
+                      element={
+                        <ProtectedRoute permission="production.view">
+                          <ServiceJobsPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/industrial/service-recipes"
+                      element={
+                        <ProtectedRoute permission="production.view">
+                          <ServiceRecipeEditorPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/industrial/exams"
+                      element={<Navigate to="/industrial" replace />}
+                    />
+                  </Route>
+
+                  {/* Revenue */}
+                  <Route
+                    element={
+                      <ErrorBoundary name="Revenue">
+                        <Outlet />
+                      </ErrorBoundary>
+                    }
+                  >
+                    <Route path="/revenue" element={<RevenueHub />} />
+                    <Route
+                      path="/revenue/sales-audit"
+                      element={
+                        <ProtectedRoute permission="reports.view">
+                          <Reports />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/revenue/margin-performance"
+                      element={
+                        <ProtectedRoute permission="reports.view">
+                          <Reports />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/revenue/rounding-analytics"
+                      element={
+                        <ProtectedRoute permission="reports.view">
+                          <Reports />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/revenue/contacts"
+                      element={
+                        <ProtectedRoute permission="reports.view">
+                          <Reports />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/revenue/wallet-statement"
+                      element={
+                        <ProtectedRoute permission="reports.view">
+                          <Reports />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/revenue/auditor"
+                      element={
+                        <ProtectedRoute permission="reports.view">
+                          <Reports />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/revenue/transport-budget"
+                      element={
+                        <ProtectedRoute permission="reports.view">
+                          <React.Suspense
+                            fallback={
+                              <div
+                                style={{
+                                  padding: "24px",
+                                  textAlign: "center",
+                                  background: "#FEFDFB",
+                                  borderRadius: 14,
+                                  border: `1.4px solid #e4ddd1`,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    alignItems: "center",
+                                    gap: 12,
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      width: 40,
+                                      height: 40,
+                                      borderRadius: 50,
+                                      background: "#eef7f6",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                    }}
+                                  >
+                                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-teal-600"></div>
+                                  </div>
+                                  <p
+                                    style={{
+                                      color: "#5c6567",
+                                      fontSize: 14,
+                                      margin: 0,
+                                    }}
+                                  >
+                                    Loading Transport Budget Dashboard...
+                                  </p>
+                                </div>
+                              </div>
+                            }
+                          >
+                            <TransportBudgetDashboard />
+                          </React.Suspense>
+                        </ProtectedRoute>
+                      }
+                    />
+                  </Route>
+
+                  {/* Customers */}
+                  <Route
+                    path="/customers"
+                    element={
+                      <ErrorBoundary name="Customers">
+                        <CustomersHub />
+                      </ErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/customers/new"
+                    element={<Navigate to="/customers" replace />}
+                  />
+                  <Route
+                    path="/portal/users"
+                    element={
+                      <ErrorBoundary name="PortalUsers">
+                        <PortalUserManagement />
+                      </ErrorBoundary>
+                    }
+                  />
+
+                  {/* Sales Flow */}
+                  <Route
+                    element={
+                      <ErrorBoundary name="Sales">
+                        <Outlet />
+                      </ErrorBoundary>
+                    }
+                  >
+                    <Route path="/sales-flow" element={<SalesFlowHub />} />
+                    <Route
+                      path="/sales-flow/pos"
+                      element={
+                        <ProtectedRoute permission="sales.pos">
+                          <POS />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/sales-flow/quotations"
+                      element={
+                        <ProtectedRoute permission="sales.view">
+                          <Orders />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/sales-flow/requests"
+                      element={
+                        <ProtectedRoute permission="sales.view">
+                          <QuotationRequestsHub />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/sales-flow/orders"
+                      element={
+                        <ProtectedRoute permission="sales.view">
+                          <Orders />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/sales-flow/invoices"
+                      element={
+                        <ProtectedRoute permission="sales.view">
+                          <Orders />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/sales-flow/subscriptions"
+                      element={
+                        <ProtectedRoute permission="sales.view">
+                          <SubscriptionsView />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/sales-flow/printing-contracts"
+                      element={
+                        <ProtectedRoute permission="sales.view">
+                          <SubscriptionsView />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/sales-flow/exchanges"
+                      element={
+                        <ProtectedRoute permission="sales.view">
+                          <SalesExchanges />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/sales-flow/leads"
+                      element={
+                        <ProtectedRoute permission="sales.view">
+                          <LeadBoard />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/sales-flow/sales-orders"
+                      element={
+                        <ProtectedRoute permission="sales.view">
+                          <SalesOrdersView />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/sales-flow/job-tickets"
+                      element={
+                        <ProtectedRoute permission="sales.view">
+                          <JobTickets />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/sales-flow/referral-rewards"
+                      element={
+                        <Navigate to="/smart-operations/referrals" replace />
+                      }
+                    />
+                    <Route path="/sales-flow/tasks" element={<Tasks />} />
+                    <Route
+                      path="/sales-flow/customers"
+                      element={<Navigate to="/sales-flow/clients" replace />}
+                    />
+                    <Route
+                      path="/sales-flow/clients"
+                      element={
+                        <ProtectedRoute permission="sales.view">
+                          <Clients />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/sales-flow/payments"
+                      element={
+                        <ProtectedRoute permission="sales.view">
+                          <Payments />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/sales-flow/payment-requests"
+                      element={
+                        <ProtectedRoute permission="sales.view">
+                          <Navigate
+                            to="/sales-flow/requests"
+                            replace
+                            state={{ tab: "payments" }}
+                          />
+                        </ProtectedRoute>
+                      }
+                    />
+                  </Route>
+
+                  {/* Procurement */}
+                  <Route
+                    element={
+                      <ErrorBoundary name="Procurement">
+                        <Outlet />
+                      </ErrorBoundary>
+                    }
+                  >
+                    <Route path="/procurement" element={<ProcurementHub />} />
+                    <Route path="/procurement/bills" element={<Purchases />} />
+                    <Route
+                      path="/procurement/suppliers"
+                      element={
+                        <ProtectedRoute permission="procurement.view">
+                          <Suppliers />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/procurement/subcontracting"
+                      element={<Subcontracting />}
+                    />
+                    <Route
+                      path="/procurement/expenses"
+                      element={
+                        <ProtectedRoute permission="accounts.view">
+                          <Expenses />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/procurement/transport-expenses"
+                      element={
+                        <ProtectedRoute permission="accounts.view">
+                          <TransportExpenses />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/procurement/payments"
+                      element={
+                        <ProtectedRoute permission="procurement.view">
+                          <SupplierPayments />
+                        </ProtectedRoute>
+                      }
+                    />
+                  </Route>
+
+                  {/* Fiscal Reports */}
+                  <Route
+                    element={
+                      <ErrorBoundary name="Fiscal Reports">
+                        <Outlet />
+                      </ErrorBoundary>
+                    }
+                  >
+                    <Route
+                      path="/fiscal-reports"
+                      element={<FiscalReportsHub />}
+                    />
+                    <Route
+                      path="/fiscal-reports/financials"
+                      element={
+                        <ProtectedRoute permission="accounts.view">
+                          <FinancialReports />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/fiscal-reports/ledgers"
+                      element={
+                        <ProtectedRoute permission="accounts.view">
+                          <LedgerExplorer />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/fiscal-reports/reconciliation"
+                      element={
+                        <ProtectedRoute permission="accounts.view">
+                          <Reconciliation />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/fiscal-reports/budgets"
+                      element={
+                        <ProtectedRoute permission="accounts.view">
+                          <Budgets />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/fiscal-reports/vat"
+                      element={<Navigate to="/fiscal-reports" replace />}
+                    />
+                  </Route>
+
+                  {/* Internal Tools */}
+                  <Route
+                    element={
+                      <ErrorBoundary name="Internal Tools">
+                        <Outlet />
+                      </ErrorBoundary>
+                    }
+                  >
+                    <Route
+                      path="/internal-tools"
+                      element={<InternalToolsHub />}
+                    />
+                    <Route
+                      path="/internal-tools/cheques"
+                      element={<ChequeManager />}
+                    />
+                    <Route
+                      path="/internal-tools/barcodes"
+                      element={<BarcodePrinter />}
+                    />
+                    <Route
+                      path="/internal-tools/import"
+                      element={<DataImport />}
+                    />
+                    <Route
+                      path="/internal-tools/assets"
+                      element={<AssetManagement />}
+                    />
+                    <Route
+                      path="/internal-tools/customer-credentials"
+                      element={<CustomerCredentialRegeneration />}
+                    />
+                  </Route>
+
+                  {/* Smart Operations */}
+                  <Route
+                    element={
+                      <ErrorBoundary name="Smart Operations">
+                        <Outlet />
+                      </ErrorBoundary>
+                    }
+                  >
+                    <Route
+                      path="/smart-operations"
+                      element={<SmartOperationsHub />}
+                    />
+                    <Route
+                      path="/smart-operations/adjustments"
+                      element={<MarketAdjustments />}
+                    />
+                    <Route
+                      path="/smart-operations/messages"
+                      element={<MarketingMessages />}
+                    />
+                    <Route
+                      path="/smart-operations/price-cards"
+                      element={<PriceCards />}
+                    />
+                    <Route
+                      path="/smart-operations/ads"
+                      element={
+                        <ProtectedRoute permission="admin.settings">
+                          <AdsManager />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/smart-operations/faq"
+                      element={
+                        <ProtectedRoute permission="admin.settings">
+                          <FAQManager />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/smart-operations/referrals"
+                      element={
+                        <ProtectedRoute permission="referrals.view">
+                          <Referrals />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/smart-operations/promotions"
+                      element={
+                        <ProtectedRoute permission="admin.settings">
+                          <PromotionsAdmin />
+                        </ProtectedRoute>
+                      }
+                    />
+                  </Route>
+
+                  {/* AI Analytics (redirects to AI Workspace) */}
+                  <Route path="/ai-analytics" element={<AnalyticsHub />} />
+                  <Route
+                    path="/ai-analytics/*"
+                    element={<Navigate to="/ai-workspace" replace />}
+                  />
+
+                  {/* Smart Features */}
+                  <Route
+                    element={
+                      <ErrorBoundary name="Smart Features">
+                        <Outlet />
+                      </ErrorBoundary>
+                    }
+                  >
+                    <Route
+                      path="/smart-features"
+                      element={
+                        <Navigate
+                          to="/smart-features/sales-dashboard"
+                          replace
+                        />
+                      }
+                    />
+                    <Route
+                      path="/smart-features/sales-dashboard"
+                      element={<SmartSalesDashboard />}
+                    />
+                    <Route
+                      path="/smart-features/invoice-intelligence"
+                      element={<InvoiceIntelligence />}
+                    />
+                    <Route
+                      path="/smart-features/customer-risk"
+                      element={<CustomerRiskScore />}
+                    />
+                    <Route
+                      path="/smart-features/natural-language-reporting"
+                      element={<NaturalLanguageReporting />}
+                    />
+                    <Route
+                      path="/smart-features/accounting-assistant"
+                      element={<AccountingAssistant />}
+                    />
+                    <Route
+                      path="/smart-features/anomaly-detection"
+                      element={<AnomalyDetectionView />}
+                    />
+                    <Route
+                      path="/smart-features/report-summaries"
+                      element={<ReportSummaryView />}
+                    />
+                    <Route
+                      path="/smart-features/advanced-data-table"
+                      element={<AdvancedDataTableView />}
+                    />
+                  </Route>
+
+                  {/* Examination */}
+                  <Route
+                    element={
+                      <ErrorBoundary name="Examination">
+                        <Outlet />
+                      </ErrorBoundary>
+                    }
+                  >
+                    <Route
+                      path="/examination"
+                      element={<Navigate to="/examination/batches" replace />}
+                    />
+                    <Route
+                      path="/examination/batches"
+                      element={
+                        <ProtectedRoute permission="production.view">
+                          <ExaminationHub />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/examination/batches/new"
+                      element={
+                        <ProtectedRoute permission="production.view">
+                          <ExaminationBatchForm />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/examination/batches/:id"
+                      element={
+                        <ProtectedRoute permission="production.view">
+                          <ExaminationBatchDetail />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/examination/invoices"
+                      element={
+                        <ProtectedRoute permission="production.view">
+                          <ExaminationInvoices />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/examination/jobs/new"
+                      element={
+                        <ProtectedRoute permission="production.view">
+                          <ExaminationJobForm />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/examination/jobs/:id"
+                      element={
+                        <ProtectedRoute permission="production.view">
+                          <ExaminationJobForm />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/examination/groups"
+                      element={
+                        <ProtectedRoute permission="production.view">
+                          <InvoiceGroupManager />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/examination/recurring"
+                      element={
+                        <ProtectedRoute permission="production.view">
+                          <RecurringProfiles />
+                        </ProtectedRoute>
+                      }
+                    />
+                  </Route>
+
+                  {/* VAT */}
+                  <Route
+                    path="/vat"
+                    element={
+                      <ErrorBoundary name="VAT">
+                        <ProtectedRoute permission="accounts.view">
+                          <VatView />
+                        </ProtectedRoute>
+                      </ErrorBoundary>
+                    }
+                  />
+
+                  {/* Reports, Audit, Admin, Settings, Accounting, Architect */}
+                  <Route
+                    path="/reports"
+                    element={
+                      <ErrorBoundary name="Reports">
+                        <ProtectedRoute permission="reports.view">
+                          <Reports />
+                        </ProtectedRoute>
+                      </ErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/audit"
+                    element={
+                      <ErrorBoundary name="Audit">
+                        <AuditLogs />
+                      </ErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/admin/users"
+                    element={
+                      <ErrorBoundary name="Admin">
+                        <ProtectedRoute permission="admin.users">
+                          <UserManagement />
+                        </ProtectedRoute>
+                      </ErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/admin/profile"
+                    element={
+                      <ErrorBoundary name="Admin">
+                        <ProfileActivity />
+                      </ErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/admin/sync-health"
+                    element={
+                      <ErrorBoundary name="Admin">
+                        <ProtectedRoute permission="admin.settings">
+                          <SyncHealth />
+                        </ProtectedRoute>
+                      </ErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/admin/examination-invoice-diag"
+                    element={
+                      <ErrorBoundary name="Admin">
+                        <ProtectedRoute permission="admin.settings">
+                          <ExaminationInvoiceDiag />
+                        </ProtectedRoute>
+                      </ErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/profile"
+                    element={
+                      <ErrorBoundary name="Profile">
+                        <Profile />
+                      </ErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/settings"
+                    element={
+                      <ErrorBoundary name="Settings">
+                        <ProtectedRoute permission="admin.settings">
+                          <Settings />
+                        </ProtectedRoute>
+                      </ErrorBoundary>
+                    }
+                  />
+
+                  <Route
+                    element={
+                      <ErrorBoundary name="Accounting">
+                        <Outlet />
+                      </ErrorBoundary>
+                    }
+                  >
+                    <Route
+                      path="/accounts/income"
+                      element={
+                        <ProtectedRoute permission="accounts.view">
+                          <IncomeView />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/accounts/banking"
+                      element={
+                        <ProtectedRoute permission="accounts.view">
+                          <Banking />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/accounts/transfers"
+                      element={
+                        <ProtectedRoute permission="accounts.view">
+                          <Transfers />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/accounts/payroll"
+                      element={
+                        <ProtectedRoute permission="accounts.view">
+                          <Payroll />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/accounts/chart-of-accounts"
+                      element={
+                        <ProtectedRoute permission="accounts.view">
+                          <ChartOfAccounts />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/accounts/fixed-assets"
+                      element={
+                        <ProtectedRoute permission="accounts.view">
+                          <FixedAssets />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/accounts/loans"
+                      element={
+                        <ProtectedRoute permission="accounts.view">
+                          <Loans />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/accounts/owner-equity"
+                      element={
+                        <ProtectedRoute permission="accounts.view">
+                          <OwnerEquity />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/accounts/year-end-closing"
+                      element={
+                        <ProtectedRoute permission="accounts.view">
+                          <YearEndClosing />
+                        </ProtectedRoute>
+                      }
+                    />
+                  </Route>
+
+                  <Route
+                    path="/finance"
+                    element={
+                      <ErrorBoundary name="FinanceHub">
+                        <FinanceHub />
+                      </ErrorBoundary>
+                    }
+                  />
+
+                  {/* Assessment Contracts */}
+
+                  <Route
+                    path="/architect"
+                    element={
+                      <ErrorBoundary name="Architect">
+                        <Architect />
+                      </ErrorBoundary>
+                    }
+                  />
+                  {/* AI Workspace */}
+                  <Route
+                    element={
+                      <ErrorBoundary name="AI Workspace">
+                        <Outlet />
+                      </ErrorBoundary>
+                    }
+                  >
+                    <Route path="/ai-workspace" element={<AIWorkspace />} />
+                    <Route
+                      path="/ai-workspace/dashboard"
+                      element={<AIWorkspaceDashboard />}
+                    />
+                    <Route
+                      path="/ai-workspace/assistant"
+                      element={<AIWorkspaceChat />}
+                    />
+                    <Route
+                      path="/ai-workspace/gang-run"
+                      element={<GangRunOptimizer />}
+                    />
+                    <Route
+                      path="/ai-workspace/cash-flow"
+                      element={<CashFlowForecaster />}
+                    />
+                    {/* Retired duplicates — superseded by the /smart-features implementations */}
+                    <Route
+                      path="/ai-workspace/anomalies"
+                      element={
+                        <Navigate
+                          to="/smart-features/anomaly-detection"
+                          replace
+                        />
+                      }
+                    />
+                    <Route
+                      path="/ai-workspace/churn"
+                      element={
+                        <Navigate to="/smart-features/customer-risk" replace />
+                      }
+                    />
+                    <Route
+                      path="/ai-workspace/reorder"
+                      element={<ReorderOptimizer />}
+                    />
+                    <Route
+                      path="/ai-workspace/po-match"
+                      element={<POMatcher />}
+                    />
+                    <Route
+                      path="/ai-workspace/scheduler"
+                      element={<SmartScheduler />}
+                    />
+                    <Route
+                      path="/ai-workspace/query"
+                      element={
+                        <Navigate
+                          to="/smart-features/natural-language-reporting"
+                          replace
+                        />
+                      }
+                    />
+                    <Route
+                      path="/ai-workspace/audit"
+                      element={<AuditInvestigator />}
+                    />
+                    <Route
+                      path="/ai-workspace/bom"
+                      element={<BOMGenerator />}
+                    />
+                  </Route>
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </Suspense>
+            </div>
+          </main>
+        </div>
       </div>
 
-      {location.pathname === '/' && <AICopilot />}
+      {location.pathname === "/" && <AICopilot />}
     </div>
   );
 };
@@ -999,38 +2453,350 @@ const PortalRoutes = (
   <React.Fragment>
     <Route path="/portal/login" element={<CustomerLogin />} />
     <Route path="/verify/invoice/:invoiceNumber" element={<InvoiceVerify />} />
-    <Route path="/verify/:documentType/:documentNumber" element={<DocumentVerify />} />
+    <Route
+      path="/verify/:documentType/:documentNumber"
+      element={<DocumentVerify />}
+    />
     <Route path="/portal/activate" element={<CustomerActivate />} />
-    <Route path="/portal/forgot-password" element={<ToastProvider><CustomerForgotPassword /></ToastProvider>} />
-    <Route path="/portal/reset-password" element={<ToastProvider><CustomerResetPassword /></ToastProvider>} />
+    <Route
+      path="/portal/forgot-password"
+      element={
+        <ToastProvider>
+          <CustomerForgotPassword />
+        </ToastProvider>
+      }
+    />
+    <Route
+      path="/portal/reset-password"
+      element={
+        <ToastProvider>
+          <CustomerResetPassword />
+        </ToastProvider>
+      }
+    />
     <Route path="/portal" element={<CustomerLayout />}>
       <Route index element={<Navigate to="/portal/dashboard" replace />} />
-      <Route path="dashboard" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerDashboard /></Suspense>} />
-      <Route path="requests" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerRequests /></Suspense>} />
-      <Route path="requests/:id" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerRequestDetail /></Suspense>} />
-      <Route path="orders" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerOrders /></Suspense>} />
-      <Route path="orders/:id" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerOrderDetail /></Suspense>} />
-      <Route path="shipments" element={<Navigate to="/portal/deliveries" replace />} />
-      <Route path="deliveries" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerDeliveries /></Suspense>} />
-      <Route path="shipments/:id" element={<Navigate to="/portal/deliveries" replace />} />
-      <Route path="quotations" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerQuotations /></Suspense>} />
-      <Route path="quotations/:id" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerQuotationDetail /></Suspense>} />
-      <Route path="new-request" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerCreateRequest /></Suspense>} />
+      <Route
+        path="dashboard"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerDashboard />
+          </Suspense>
+        }
+      />
+      <Route
+        path="requests"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerRequests />
+          </Suspense>
+        }
+      />
+      <Route
+        path="requests/:id"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerRequestDetail />
+          </Suspense>
+        }
+      />
+      <Route
+        path="orders"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerOrders />
+          </Suspense>
+        }
+      />
+      <Route
+        path="orders/:id"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerOrderDetail />
+          </Suspense>
+        }
+      />
+      <Route
+        path="shipments"
+        element={<Navigate to="/portal/deliveries" replace />}
+      />
+      <Route
+        path="deliveries"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerDeliveries />
+          </Suspense>
+        }
+      />
+      <Route
+        path="shipments/:id"
+        element={<Navigate to="/portal/deliveries" replace />}
+      />
+      <Route
+        path="quotations"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerQuotations />
+          </Suspense>
+        }
+      />
+      <Route
+        path="quotations/:id"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerQuotationDetail />
+          </Suspense>
+        }
+      />
+      <Route
+        path="new-request"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerCreateRequest />
+          </Suspense>
+        }
+      />
 
-      <Route path="invoices" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerInvoices /></Suspense>} />
-      <Route path="invoices/:id" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerInvoiceDetail /></Suspense>} />
-      <Route path="payments" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerPayments /></Suspense>} />
-      <Route path="payments/:id" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerPaymentDetail /></Suspense>} />
-      <Route path="payment-options" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerPaymentOptions /></Suspense>} />
-      <Route path="statements" element={<Navigate to="/portal/account-statements" replace />} />
-      <Route path="account-statements" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerAccountStatements /></Suspense>} />
-      <Route path="wallet" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerWallet /></Suspense>} />
-      <Route path="loyalty" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerLoyalty /></Suspense>} />
-      <Route path="documents" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerDocuments /></Suspense>} />
-      <Route path="notifications" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerNotifications /></Suspense>} />
-      <Route path="referrals" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerReferrals /></Suspense>} />
-      <Route path="profile" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerProfile /></Suspense>} />
-      <Route path="support" element={<Suspense fallback={<div className="p-8 flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" /></div>}><CustomerSupport /></Suspense>} />
+      <Route
+        path="invoices"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerInvoices />
+          </Suspense>
+        }
+      />
+      <Route
+        path="invoices/:id"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerInvoiceDetail />
+          </Suspense>
+        }
+      />
+      <Route
+        path="payments"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerPayments />
+          </Suspense>
+        }
+      />
+      <Route
+        path="payments/:id"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerPaymentDetail />
+          </Suspense>
+        }
+      />
+      <Route
+        path="payment-options"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerPaymentOptions />
+          </Suspense>
+        }
+      />
+      <Route
+        path="statements"
+        element={<Navigate to="/portal/account-statements" replace />}
+      />
+      <Route
+        path="account-statements"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerAccountStatements />
+          </Suspense>
+        }
+      />
+      <Route
+        path="wallet"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerWallet />
+          </Suspense>
+        }
+      />
+      <Route
+        path="loyalty"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerLoyalty />
+          </Suspense>
+        }
+      />
+      <Route
+        path="documents"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerDocuments />
+          </Suspense>
+        }
+      />
+      <Route
+        path="notifications"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerNotifications />
+          </Suspense>
+        }
+      />
+      <Route
+        path="referrals"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerReferrals />
+          </Suspense>
+        }
+      />
+      <Route
+        path="profile"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerProfile />
+          </Suspense>
+        }
+      />
+      <Route
+        path="support"
+        element={
+          <Suspense
+            fallback={
+              <div className="p-8 flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-700 rounded-full animate-spin" />
+              </div>
+            }
+          >
+            <CustomerSupport />
+          </Suspense>
+        }
+      />
     </Route>
   </React.Fragment>
 );
@@ -1039,12 +2805,14 @@ const PortalRoutes = (
 // clean path) or the portal.primeerp.com host. It gets its own branding
 // (PrimePORTAL) everywhere the ERP would otherwise show "Prime ERP System".
 function isPortalContext(): boolean {
-  const hash = String(window.location.hash || '').toLowerCase();
-  if (hash.startsWith('#/portal')) return true;
-  const path = String(window.location.pathname || '').toLowerCase();
-  if (path.startsWith('/portal')) return true;
-  const host = String(window.location.hostname || '').toLowerCase();
-  return host === 'portal.primeerp.com' || host.endsWith('.portal.primeerp.com');
+  const hash = String(window.location.hash || "").toLowerCase();
+  if (hash.startsWith("#/portal")) return true;
+  const path = String(window.location.pathname || "").toLowerCase();
+  if (path.startsWith("/portal")) return true;
+  const host = String(window.location.hostname || "").toLowerCase();
+  return (
+    host === "portal.primeerp.com" || host.endsWith(".portal.primeerp.com")
+  );
 }
 
 const RootNavigator: React.FC = () => {
@@ -1054,15 +2822,22 @@ const RootNavigator: React.FC = () => {
   // Keep the browser tab labelled correctly for each surface (the static
   // <title> in index.html is also corrected pre-mount).
   useEffect(() => {
-    document.title = isPortal ? 'PrimePORTAL' : 'Prime ERP System';
+    document.title = isPortal ? "PrimePORTAL" : "Prime ERP System";
   }, [isPortal]);
 
   if (!isInitialized) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center overflow-hidden" style={{ background: isPortal ? '#F3F7F6' : '#F5F7F9' }}>
+      <div
+        className="h-screen w-screen flex items-center justify-center overflow-hidden"
+        style={{ background: isPortal ? "#F3F7F6" : "#F5F7F9" }}
+      >
         {/* Decorative Background Accents */}
-        <div className={`fixed top-0 right-0 w-[500px] h-[500px] rounded-full blur-[120px] animate-pulse ${isPortal ? 'bg-teal-500/5' : 'bg-blue-500/5'}`} />
-        <div className={`fixed bottom-0 left-0 w-[500px] h-[500px] rounded-full blur-[120px] animate-pulse delay-700 ${isPortal ? 'bg-indigo-500/5' : 'bg-indigo-500/5'}`} />
+        <div
+          className={`fixed top-0 right-0 w-[500px] h-[500px] rounded-full blur-[120px] animate-pulse ${isPortal ? "bg-teal-500/5" : "bg-blue-500/5"}`}
+        />
+        <div
+          className={`fixed bottom-0 left-0 w-[500px] h-[500px] rounded-full blur-[120px] animate-pulse delay-700 ${isPortal ? "bg-indigo-500/5" : "bg-indigo-500/5"}`}
+        />
 
         <div className="flex flex-col items-center gap-8 relative z-10">
           {/* Premium Logo */}
@@ -1070,21 +2845,23 @@ const RootNavigator: React.FC = () => {
             className="w-24 h-24 rounded-full flex items-center justify-center ring-1 ring-white/20 transition-all duration-500 hover:scale-105"
             style={{
               background: isPortal
-                ? 'linear-gradient(135deg, #146b60 0%, #0f544c 100%)'
-                : 'linear-gradient(to bottom right, #3b82f6, #4f46e5)',
+                ? "linear-gradient(135deg, #146b60 0%, #0f544c 100%)"
+                : "linear-gradient(to bottom right, #3b82f6, #4f46e5)",
               boxShadow: isPortal
-                ? '0 8px 32px rgba(15, 84, 76, 0.30)'
-                : '0 8px 32px rgba(59, 130, 246, 0.3)',
+                ? "0 8px 32px rgba(15, 84, 76, 0.30)"
+                : "0 8px 32px rgba(59, 130, 246, 0.3)",
             }}
           >
-            <span className="text-white text-5xl font-black drop-shadow-[0_2px_4px_rgba(0,0,0,0.2)]">P</span>
+            <span className="text-white text-5xl font-black drop-shadow-[0_2px_4px_rgba(0,0,0,0.2)]">
+              P
+            </span>
           </div>
 
           <div className="text-center space-y-2">
             {isPortal ? (
               <>
                 <h1 className="text-4xl font-black tracking-tight animate-fade-in text-[#0F2C59]">
-                  Prime<span style={{ color: '#d99a3f' }}>PORTAL</span>
+                  Prime<span style={{ color: "#d99a3f" }}>PORTAL</span>
                 </h1>
                 <p className="text-[#146b60] font-bold uppercase tracking-[0.2em] text-[10px] animate-pulse">
                   Customer Portal
@@ -1093,7 +2870,9 @@ const RootNavigator: React.FC = () => {
             ) : (
               <>
                 <h1 className="text-4xl font-black tracking-tight animate-fade-in">
-                  <span className="text-blue-600">Prime</span> <span className="text-green-600">ERP</span> <span className="text-blue-600">System</span>
+                  <span className="text-blue-600">Prime</span>{" "}
+                  <span className="text-green-600">ERP</span>{" "}
+                  <span className="text-blue-600">System</span>
                 </h1>
                 <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-[10px] animate-pulse">
                   Powered by AI
@@ -1108,9 +2887,11 @@ const RootNavigator: React.FC = () => {
               className="h-full rounded-full animate-progress-indeterminate"
               style={{
                 background: isPortal
-                  ? 'linear-gradient(to right, #146b60, #3fa294, #d99a3f)'
-                  : 'linear-gradient(to right, #3b82f6, #4f46e5, #9333ea)',
-                boxShadow: isPortal ? '0 0 16px rgba(63, 162, 148, 0.30)' : '0 0 16px rgba(99, 102, 241, 0.25)',
+                  ? "linear-gradient(to right, #146b60, #3fa294, #d99a3f)"
+                  : "linear-gradient(to right, #3b82f6, #4f46e5, #9333ea)",
+                boxShadow: isPortal
+                  ? "0 0 16px rgba(63, 162, 148, 0.30)"
+                  : "0 0 16px rgba(99, 102, 241, 0.25)",
               }}
             ></div>
           </div>
@@ -1122,7 +2903,7 @@ const RootNavigator: React.FC = () => {
   const SUPABASE_ENABLED = Boolean(
     import.meta.env.VITE_SUPABASE_URL &&
     import.meta.env.VITE_SUPABASE_ANON_KEY &&
-    import.meta.env.VITE_SUPABASE_URL !== 'https://placeholder.supabase.co'
+    import.meta.env.VITE_SUPABASE_URL !== "https://placeholder.supabase.co",
   );
 
   // When Supabase is enabled and user is authenticated, skip local setup check
@@ -1179,8 +2960,10 @@ const RootNavigator: React.FC = () => {
 
 const App: React.FC = () => {
   // PDF worker mode: headless window for off-thread PDF generation
-  const urlParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
-  if (urlParams.get('worker') === 'true') {
+  const urlParams = new URLSearchParams(
+    typeof window !== "undefined" ? window.location.search : "",
+  );
+  if (urlParams.get("worker") === "true") {
     return <PdfWorker />;
   }
 
@@ -1217,7 +3000,7 @@ const App: React.FC = () => {
           </NotificationProvider>
         </KeyboardProvider>
       </ErrorBoundary>
-      </HashRouter>
+    </HashRouter>
   );
 };
 
