@@ -114,13 +114,7 @@ function getPaymentDate(payment: SupplierPayment): string {
 
 function getSupplierId(payment: SupplierPayment): string {
   const p = payment as any;
-  return (
-    p.supplierId ||
-    p.supplier_id ||
-    p.supplier ||
-    p.supplierID ||
-    ""
-  );
+  return p.supplierId || p.supplier_id || p.supplier || p.supplierID || "";
 }
 
 function getSupplierNameFromPayment(
@@ -131,13 +125,7 @@ function getSupplierNameFromPayment(
   const id = getSupplierId(payment);
   const supplier = suppliers.find((s: any) => s.id === id);
   if (supplier?.name) return supplier.name;
-  return (
-    p.supplierName ||
-    p.supplier_name ||
-    p.supplier ||
-    id ||
-    "-"
-  );
+  return p.supplierName || p.supplier_name || p.supplier || id || "-";
 }
 
 interface SupplierPaymentsProps {
@@ -220,7 +208,12 @@ const SupplierPayments: React.FC<SupplierPaymentsProps> = ({
       data = data.filter((p) => {
         const supplier = suppliers.find((s) => s.id === getSupplierId(p));
         const supplierName = getSupplierNameFromPayment(p, suppliers) || "";
-        const ref = ((p as any).reference || (p as any).reference_no || (p as any).referenceNumber || "").toLowerCase();
+        const ref = (
+          (p as any).reference ||
+          (p as any).reference_no ||
+          (p as any).referenceNumber ||
+          ""
+        ).toLowerCase();
         const notes = (p.notes || "").toLowerCase();
         const paymentNum = (p.id || "").toLowerCase();
         return (
@@ -274,12 +267,8 @@ const SupplierPayments: React.FC<SupplierPaymentsProps> = ({
           bVal = b.amount;
           break;
         case "supplier":
-          aVal =
-            getSupplierNameFromPayment(a, suppliers) ||
-            getSupplierId(a);
-          bVal =
-            getSupplierNameFromPayment(b, suppliers) ||
-            getSupplierId(b);
+          aVal = getSupplierNameFromPayment(a, suppliers) || getSupplierId(a);
+          bVal = getSupplierNameFromPayment(b, suppliers) || getSupplierId(b);
           break;
         case "method":
           aVal = getPaymentMethod(a);
@@ -368,7 +357,8 @@ const SupplierPayments: React.FC<SupplierPaymentsProps> = ({
     try {
       notify("Preparing payment voucher...", "info");
       const supplier = suppliers.find((s) => s.id === getSupplierId(payment));
-      const supplierName = getSupplierNameFromPayment(payment, suppliers) || "Unknown";
+      const supplierName =
+        getSupplierNameFromPayment(payment, suppliers) || "Unknown";
       const doc = buildSupplierPaymentDoc(
         {
           ...payment,
@@ -824,7 +814,11 @@ const SupplierPayments: React.FC<SupplierPaymentsProps> = ({
                       </td>
                       <td className="table-body-cell text-center">
                         <span className="text-[11px] text-slate-500 font-mono truncate max-w-[100px] block">
-                          {(payment as any).reference || (payment as any).reference_no || (payment as any).referenceNumber || (payment as any).paymentNumber || "-"}
+                          {(payment as any).reference ||
+                            (payment as any).reference_no ||
+                            (payment as any).referenceNumber ||
+                            (payment as any).paymentNumber ||
+                            "-"}
                         </span>
                       </td>
                       <td className="table-body-cell text-center">

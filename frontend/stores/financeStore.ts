@@ -1,18 +1,41 @@
-
-import { create } from 'zustand';
-import { Account, LedgerEntry, Invoice, Expense, RecurringInvoice, ScheduledPayment, WalletTransaction, DeliveryNote, Budget, Transfer, Employee, PayrollRun, Payslip, Income, Cheque, SupplierPayment, AssessmentContract, AssessmentContractItem, ContractAmendment } from '../types';
-import { api } from '../services/api';
-import { dbService } from '../services/db';
-import { transactionService } from '../services/transactionService';
-import { generateNextSalesInvoiceNumber } from '../services/documentNumberService';
-import { DEFAULT_ACCOUNTS } from '../constants';
-import { generateNextId } from '../utils/helpers';
-import { assertAllowedContractTransition, assertAllowedItemWrite, assertAllowedItemCreate } from '../utils/contractLifecycle';
-import { ensureDocumentVerificationToken } from '../utils/documentVerification';
-import { ensureContractIntegrity } from '../services/printingContractService';
-import { customerNotificationService } from '../services/customerNotificationService';
-import { logger } from '../services/logger';
-import { isSupabaseConfigured } from '../services/cloudMode';
+import { create } from "zustand";
+import {
+  Account,
+  LedgerEntry,
+  Invoice,
+  Expense,
+  RecurringInvoice,
+  ScheduledPayment,
+  WalletTransaction,
+  DeliveryNote,
+  Budget,
+  Transfer,
+  Employee,
+  PayrollRun,
+  Payslip,
+  Income,
+  Cheque,
+  SupplierPayment,
+  AssessmentContract,
+  AssessmentContractItem,
+  ContractAmendment,
+} from "../types";
+import { api } from "../services/api";
+import { dbService } from "../services/db";
+import { transactionService } from "../services/transactionService";
+import { generateNextSalesInvoiceNumber } from "../services/documentNumberService";
+import { DEFAULT_ACCOUNTS } from "../constants";
+import { generateNextId } from "../utils/helpers";
+import {
+  assertAllowedContractTransition,
+  assertAllowedItemWrite,
+  assertAllowedItemCreate,
+} from "../utils/contractLifecycle";
+import { ensureDocumentVerificationToken } from "../utils/documentVerification";
+import { ensureContractIntegrity } from "../services/printingContractService";
+import { customerNotificationService } from "../services/customerNotificationService";
+import { logger } from "../services/logger";
+import { isSupabaseConfigured } from "../services/cloudMode";
 
 interface FinanceState {
   accounts: Account[];
@@ -30,41 +53,45 @@ interface FinanceState {
   employees: Employee[];
   payrollRuns: PayrollRun[];
   payslips: Payslip[];
-   cheques: Cheque[];
-   supplierPayments: SupplierPayment[];
-   assessmentContracts: AssessmentContract[];
-   contractAssessments: AssessmentContractItem[];
-   contractAmendments: ContractAmendment[];
-   isLoading: boolean;
+  cheques: Cheque[];
+  supplierPayments: SupplierPayment[];
+  assessmentContracts: AssessmentContract[];
+  contractAssessments: AssessmentContractItem[];
+  contractAmendments: ContractAmendment[];
+  isLoading: boolean;
 
   fetchFinanceData: () => Promise<void>;
-  
+
   addAccount: (account: Account) => Promise<void>;
   updateAccount: (account: Account) => Promise<void>;
   deleteAccount: (id: string) => Promise<void>;
-  
+
   addInvoice: (invoice: Invoice) => Promise<string>;
   updateInvoice: (invoice: Invoice) => Promise<void>;
   deleteInvoice: (id: string) => Promise<void>;
-  
+
   addExpense: (expense: Expense) => Promise<void>;
   addIncome: (income: Income) => Promise<void>;
   updateIncome: (income: Income) => Promise<void>;
   deleteIncome: (id: string) => Promise<void>;
-  
+
   addLedgerEntry: (entry: LedgerEntry) => Promise<void>;
   toggleReconciled: (id: string) => Promise<void>;
-  
+
   addRecurringInvoice: (inv: RecurringInvoice) => Promise<void>;
   deleteRecurringInvoice: (id: string) => Promise<void>;
   updateRecurringInvoice: (inv: RecurringInvoice) => Promise<void>;
-  
+
   addScheduledPayment: (payment: ScheduledPayment) => Promise<void>;
   updateScheduledPayment: (payment: ScheduledPayment) => Promise<void>;
-  
+
   addWalletTransaction: (tx: WalletTransaction) => Promise<void>;
 
-  consumeContractAssessment: (args: { contractId: string; assessmentItemId: string; idempotencyKey?: string }) => Promise<{
+  consumeContractAssessment: (args: {
+    contractId: string;
+    assessmentItemId: string;
+    idempotencyKey?: string;
+  }) => Promise<{
     success: boolean;
     walletTransactionId: string;
     ledgerEntryId: string;
@@ -102,42 +129,44 @@ interface FinanceState {
     ledgerEntryIds: string[];
     newBalance: number | null;
   }>;
-  
+
   addDeliveryNote: (note: DeliveryNote) => Promise<void>;
   updateDeliveryNote: (note: DeliveryNote) => Promise<void>;
   deleteDeliveryNote: (id: string) => Promise<void>;
-  
+
   saveBudget: (budget: Budget) => Promise<void>;
   updateOpeningBalance: (amount: number) => Promise<void>;
 
   addTransfer: (transfer: Transfer) => Promise<void>;
-  
+
   addEmployee: (emp: Employee) => Promise<void>;
   updateEmployee: (emp: Employee) => Promise<void>;
   deleteEmployee: (id: string) => Promise<void>;
-  
+
   addPayrollRun: (run: PayrollRun) => Promise<void>;
   addPayslips: (slips: Payslip[]) => Promise<void>;
 
   addCheque: (cheque: Cheque) => Promise<void>;
   updateCheque: (cheque: Cheque) => Promise<void>;
   deleteCheque: (id: string) => Promise<void>;
-  
-   recordSupplierPayment: (payment: SupplierPayment) => Promise<void>;
-   updateSupplierPayment: (payment: SupplierPayment) => Promise<void>;
-   voidSupplierPayment: (id: string) => Promise<void>;
 
-   addAssessmentContract: (contract: AssessmentContract) => Promise<void>;
-   updateAssessmentContract: (contract: AssessmentContract) => Promise<void>;
-   deleteAssessmentContract: (id: string) => Promise<void>;
+  recordSupplierPayment: (payment: SupplierPayment) => Promise<void>;
+  updateSupplierPayment: (payment: SupplierPayment) => Promise<void>;
+  voidSupplierPayment: (id: string) => Promise<void>;
 
-   addContractAssessment: (assessment: AssessmentContractItem) => Promise<void>;
-   updateContractAssessment: (assessment: AssessmentContractItem) => Promise<void>;
-   deleteContractAssessment: (id: string) => Promise<void>;
+  addAssessmentContract: (contract: AssessmentContract) => Promise<void>;
+  updateAssessmentContract: (contract: AssessmentContract) => Promise<void>;
+  deleteAssessmentContract: (id: string) => Promise<void>;
 
-   addContractAmendment: (amendment: ContractAmendment) => Promise<void>;
-   updateContractAmendment: (amendment: ContractAmendment) => Promise<void>;
-   deleteContractAmendment: (id: string) => Promise<void>;
+  addContractAssessment: (assessment: AssessmentContractItem) => Promise<void>;
+  updateContractAssessment: (
+    assessment: AssessmentContractItem,
+  ) => Promise<void>;
+  deleteContractAssessment: (id: string) => Promise<void>;
+
+  addContractAmendment: (amendment: ContractAmendment) => Promise<void>;
+  updateContractAmendment: (amendment: ContractAmendment) => Promise<void>;
+  deleteContractAmendment: (id: string) => Promise<void>;
 }
 
 export const useFinanceStore = create<FinanceState>((set, get) => ({
@@ -156,135 +185,199 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   employees: [],
   payrollRuns: [],
   payslips: [],
-   cheques: [],
-   supplierPayments: [],
-   assessmentContracts: [],
-   contractAssessments: [],
-   contractAmendments: [],
-   isLoading: false,
+  cheques: [],
+  supplierPayments: [],
+  assessmentContracts: [],
+  contractAssessments: [],
+  contractAmendments: [],
+  isLoading: false,
 
   fetchFinanceData: async () => {
     set({ isLoading: true });
     try {
       const [
-          accounts, ledger, invoices, recurringInvoices, 
-          expenses, income, scheduledPayments, 
-          walletTransactions, deliveryNotes, budgets,
-          transfers, employees, payrollRuns, payslips,
-          cheques, supplierPayments,
-          assessmentContracts, contractAssessments, contractAmendments
+        accounts,
+        ledger,
+        invoices,
+        recurringInvoices,
+        expenses,
+        income,
+        scheduledPayments,
+        walletTransactions,
+        deliveryNotes,
+        budgets,
+        transfers,
+        employees,
+        payrollRuns,
+        payslips,
+        cheques,
+        supplierPayments,
+        assessmentContracts,
+        contractAssessments,
+        contractAmendments,
       ] = await Promise.all([
-        dbService.getAll<Account>('accounts'),
-        dbService.getAll<LedgerEntry>('ledger'),
-        dbService.getAll<Invoice>('invoices'),
-        dbService.getAll<RecurringInvoice>('recurringInvoices'),
-        dbService.getAll<Expense>('expenses'),
-        dbService.getAll<Income>('income'),
-        dbService.getAll<ScheduledPayment>('scheduledPayments'),
-        dbService.getAll<WalletTransaction>('walletTransactions'),
-        dbService.getAll<DeliveryNote>('deliveryNotes'),
-        dbService.getAll<Budget>('budgets'),
-        dbService.getAll<Transfer>('transfers'),
-        dbService.getAll<Employee>('employees'),
-        dbService.getAll<PayrollRun>('payrollRuns'),
-        dbService.getAll<Payslip>('payslips'),
-        dbService.getAll<Cheque>('cheques'),
-        dbService.getAll<SupplierPayment>('supplierPayments'),
-        dbService.getAll<AssessmentContract>('assessmentContracts').catch(() => [] as AssessmentContract[]),
-        dbService.getAll<AssessmentContractItem>('contractAssessments').catch(() => [] as AssessmentContractItem[]),
-        dbService.getAll<ContractAmendment>('contractAmendments').catch(() => [] as ContractAmendment[]),
+        dbService.getAll<Account>("accounts"),
+        dbService.getAll<LedgerEntry>("ledger"),
+        dbService.getAll<Invoice>("invoices"),
+        dbService.getAll<RecurringInvoice>("recurringInvoices"),
+        dbService.getAll<Expense>("expenses"),
+        dbService.getAll<Income>("income"),
+        dbService.getAll<ScheduledPayment>("scheduledPayments"),
+        dbService.getAll<WalletTransaction>("walletTransactions"),
+        dbService.getAll<DeliveryNote>("deliveryNotes"),
+        dbService.getAll<Budget>("budgets"),
+        dbService.getAll<Transfer>("transfers"),
+        dbService.getAll<Employee>("employees"),
+        dbService.getAll<PayrollRun>("payrollRuns"),
+        dbService.getAll<Payslip>("payslips"),
+        dbService.getAll<Cheque>("cheques"),
+        dbService.getAll<SupplierPayment>("supplierPayments"),
+        dbService
+          .getAll<AssessmentContract>("assessmentContracts")
+          .catch(() => [] as AssessmentContract[]),
+        dbService
+          .getAll<AssessmentContractItem>("contractAssessments")
+          .catch(() => [] as AssessmentContractItem[]),
+        dbService
+          .getAll<ContractAmendment>("contractAmendments")
+          .catch(() => [] as ContractAmendment[]),
       ]);
 
       let finalAccounts = accounts;
       if (accounts.length === 0) {
-          if (!isSupabaseConfigured()) {
-            finalAccounts = DEFAULT_ACCOUNTS;
-            for(const a of DEFAULT_ACCOUNTS) await dbService.put('accounts', a);
-          } else {
-            finalAccounts = [];
-          }
-       } else {
-           // Ensure core banking accounts exist and have correct names
-           // Database uses UUID IDs (e.g. ACC-XXXX), NOT numeric IDs
-           // So we find by account_number (11210) but don't change the UUID id
-           const coreAccountCodes = ['11110', '11100', '11120', '11210', '11220', '11230', '11240'];
-           for (const code of coreAccountCodes) {
-               const defaultAcc = DEFAULT_ACCOUNTS.find(a => a.code === code);
-               const existingAcc = finalAccounts.find(a => a.account_number === code || a.code === code);
+        if (!isSupabaseConfigured()) {
+          finalAccounts = DEFAULT_ACCOUNTS;
+          for (const a of DEFAULT_ACCOUNTS) await dbService.put("accounts", a);
+        } else {
+          finalAccounts = [];
+        }
+      } else {
+        // Ensure core banking accounts exist and have correct names
+        // Database uses UUID IDs (e.g. ACC-XXXX), NOT numeric IDs
+        // So we find by account_number (11210) but don't change the UUID id
+        const coreAccountCodes = [
+          "11110",
+          "11100",
+          "11120",
+          "11210",
+          "11220",
+          "11230",
+          "11240",
+        ];
+        for (const code of coreAccountCodes) {
+          const defaultAcc = DEFAULT_ACCOUNTS.find((a) => a.code === code);
+          const existingAcc = finalAccounts.find(
+            (a) => a.account_number === code || a.code === code,
+          );
 
-               if (defaultAcc) {
-                   if (!existingAcc) {
-                       // Add missing core account with UUID id, not numeric
-                       const newAcc = {
-                           ...defaultAcc,
-                           id: `ACC-${code}`,
-                           account_number: code
-                       };
-                       await dbService.put('accounts', newAcc);
-                       finalAccounts.push(newAcc);
-                   }
-                   // NOTE: we intentionally do NOT reset existing core account names.
-                   // A user-initiated rename must be preserved; the name reset was
-                   // silently undoing renames every time fetchFinanceData ran
-                   // (triggered by realtime sync callbacks).
-                }
+          if (defaultAcc) {
+            if (!existingAcc) {
+              // Add missing core account with UUID id, not numeric
+              const newAcc = {
+                ...defaultAcc,
+                id: `ACC-${code}`,
+                account_number: code,
+              };
+              await dbService.put("accounts", newAcc);
+              finalAccounts.push(newAcc);
             }
-            // Heal missing hierarchy links on previously-seeded accounts.
-          // Older seeds stored intermediate accounts (11000, 11100, 31000,
-          // 41000, …) without parent_account_id, which breaks COA rollup to
-          // the roots. Only fills EMPTY links from the canonical chart —
-          // never overwrites an existing (possibly user-customised) parent,
-          // never touches balances, journals, or sync metadata.
-          const canonicalParentByCode = new Map<string, string>();
-          for (const def of DEFAULT_ACCOUNTS) {
-              const code = String(def.account_number || def.code || '').trim();
-              const parent = String((def as { parent_account_id?: unknown }).parent_account_id || '').trim();
-              if (code && parent) canonicalParentByCode.set(code, parent);
+            // NOTE: we intentionally do NOT reset existing core account names.
+            // A user-initiated rename must be preserved; the name reset was
+            // silently undoing renames every time fetchFinanceData ran
+            // (triggered by realtime sync callbacks).
           }
-          if (canonicalParentByCode.size > 0) {
-              let healed = false;
-              finalAccounts = await Promise.all(finalAccounts.map(async (stored) => {
-                  const code = String(stored.account_number || stored.code || '').trim();
-                  const hasParent = String((stored as { parent_account_id?: unknown }).parent_account_id || '').trim();
-                  const canonicalParent = code ? canonicalParentByCode.get(code) : undefined;
-                  if (!code || hasParent || !canonicalParent) return stored;
-                  const healedAcc = { ...stored, parent_account_id: canonicalParent };
-                  try {
-                      await dbService.put('accounts', healedAcc);
-                      healed = true;
-                  } catch {
-                      // Keep the in-memory repair even if persistence fails;
-                      // the next load will retry persisting it.
-                  }
-                  return healedAcc;
-              }));
-              if (healed) logger.info('Healed missing COA parent links from canonical chart');
-          }
+        }
+        // Heal missing hierarchy links on previously-seeded accounts.
+        // Older seeds stored intermediate accounts (11000, 11100, 31000,
+        // 41000, …) without parent_account_id, which breaks COA rollup to
+        // the roots. Only fills EMPTY links from the canonical chart —
+        // never overwrites an existing (possibly user-customised) parent,
+        // never touches balances, journals, or sync metadata.
+        const canonicalParentByCode = new Map<string, string>();
+        for (const def of DEFAULT_ACCOUNTS) {
+          const code = String(def.account_number || def.code || "").trim();
+          const parent = String(
+            (def as { parent_account_id?: unknown }).parent_account_id || "",
+          ).trim();
+          if (code && parent) canonicalParentByCode.set(code, parent);
+        }
+        if (canonicalParentByCode.size > 0) {
+          let healed = false;
+          finalAccounts = await Promise.all(
+            finalAccounts.map(async (stored) => {
+              const code = String(
+                stored.account_number || stored.code || "",
+              ).trim();
+              const hasParent = String(
+                (stored as { parent_account_id?: unknown }).parent_account_id ||
+                  "",
+              ).trim();
+              const canonicalParent = code
+                ? canonicalParentByCode.get(code)
+                : undefined;
+              if (!code || hasParent || !canonicalParent) return stored;
+              const healedAcc = {
+                ...stored,
+                parent_account_id: canonicalParent,
+              };
+              try {
+                await dbService.put("accounts", healedAcc);
+                healed = true;
+              } catch {
+                // Keep the in-memory repair even if persistence fails;
+                // the next load will retry persisting it.
+              }
+              return healedAcc;
+            }),
+          );
+          if (healed)
+            logger.info("Healed missing COA parent links from canonical chart");
+        }
       }
 
-      const normalizedSupplierPayments = (supplierPayments || []).map((p: any) => ({
-        ...p,
-        supplierId: p.supplierId || p.supplier_id || p.supplier || "",
-        supplier_id: p.supplier_id || p.supplierId || p.supplier || "",
-        date: p.date || p.payment_date || "",
-        payment_date: p.payment_date || p.date || "",
-        method: p.method || p.paymentMethod || p.payment_method || "Bank",
-        paymentMethod: p.paymentMethod || p.method || p.payment_method || "Bank",
-        payment_method: p.payment_method || p.method || p.paymentMethod || "Bank",
-        reference: p.reference || p.reference_no || p.referenceNumber || "",
-        status: p.status || "Cleared",
-      }));
+      const normalizedSupplierPayments = (supplierPayments || []).map(
+        (p: any) => ({
+          ...p,
+          supplierId: p.supplierId || p.supplier_id || p.supplier || "",
+          supplier_id: p.supplier_id || p.supplierId || p.supplier || "",
+          date: p.date || p.payment_date || "",
+          payment_date: p.payment_date || p.date || "",
+          method: p.method || p.paymentMethod || p.payment_method || "Bank",
+          paymentMethod:
+            p.paymentMethod || p.method || p.payment_method || "Bank",
+          payment_method:
+            p.payment_method || p.method || p.paymentMethod || "Bank",
+          reference: p.reference || p.reference_no || p.referenceNumber || "",
+          status: p.status || "Cleared",
+        }),
+      );
 
-      const openingBalance = await dbService.getSetting<number>('opening_balance').then(v => v ?? 500).catch(() => 500);
-      set({ 
-          accounts: finalAccounts, 
-          ledger, invoices, recurringInvoices, expenses, income,
-          scheduledPayments, walletTransactions, deliveryNotes, budgets,
-          openingBalance,
-          transfers, employees, payrollRuns, payslips, cheques, supplierPayments: normalizedSupplierPayments,
-          assessmentContracts, contractAssessments, contractAmendments
+      const openingBalance = await dbService
+        .getSetting<number>("opening_balance")
+        .then((v) => v ?? 500)
+        .catch(() => 500);
+      set({
+        accounts: finalAccounts,
+        ledger,
+        invoices,
+        recurringInvoices,
+        expenses,
+        income,
+        scheduledPayments,
+        walletTransactions,
+        deliveryNotes,
+        budgets,
+        openingBalance,
+        transfers,
+        employees,
+        payrollRuns,
+        payslips,
+        cheques,
+        supplierPayments: normalizedSupplierPayments,
+        assessmentContracts,
+        contractAssessments,
+        contractAmendments,
       });
-
     } catch (error) {
       logger.error("Failed to load finance data", error);
     } finally {
@@ -293,296 +386,426 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   },
 
   addAccount: async (account) => {
-      const newAccount = { ...account, id: account.id || generateNextId('ACC', get().accounts) };
-      set(state => ({ accounts: [...state.accounts, newAccount] }));
-      await api.finance.saveAccount(newAccount);
+    const newAccount = {
+      ...account,
+      id: account.id || generateNextId("ACC", get().accounts),
+    };
+    set((state) => ({ accounts: [...state.accounts, newAccount] }));
+    await api.finance.saveAccount(newAccount);
   },
   updateAccount: async (account) => {
-      set(state => ({ accounts: state.accounts.map(a => a.id === account.id ? account : a) }));
-      await api.finance.saveAccount(account);
+    set((state) => ({
+      accounts: state.accounts.map((a) => (a.id === account.id ? account : a)),
+    }));
+    await api.finance.saveAccount(account);
   },
   deleteAccount: async (id) => {
-      const account = get().accounts.find(a => a.id === id);
-      if (!account) return;
-      const updated = { ...account, is_active: false };
-      set(state => ({ accounts: state.accounts.map(a => a.id === id ? updated : a) }));
-      await api.finance.saveAccount(updated);
+    const account = get().accounts.find((a) => a.id === id);
+    if (!account) return;
+    const updated = { ...account, is_active: false };
+    set((state) => ({
+      accounts: state.accounts.map((a) => (a.id === id ? updated : a)),
+    }));
+    await api.finance.saveAccount(updated);
   },
 
-addInvoice: async (invoice) => {
-      const newInvoice = {
-        ...invoice,
-        id: String(invoice.id || '').trim() || await generateNextSalesInvoiceNumber()
-      };
-      set(state => ({ invoices: [newInvoice, ...state.invoices] }));
-      await api.finance.saveInvoice(newInvoice);
-      
-      // Trigger customer notification
-      if (newInvoice.customerPhone) {
-        await customerNotificationService.triggerNotification('INVOICE', {
-          id: newInvoice.id,
-          customerName: newInvoice.customerName,
-          phoneNumber: newInvoice.customerPhone,
-          amount: newInvoice.total ? `${newInvoice.currency || 'KES'} ${Number(newInvoice.total).toLocaleString()}` : '',
-          dueDate: newInvoice.dueDate ? new Date(newInvoice.dueDate).toLocaleDateString() : '',
-        });
-      }
-      return newInvoice.id;
-    },
+  addInvoice: async (invoice) => {
+    const newInvoice = {
+      ...invoice,
+      id:
+        String(invoice.id || "").trim() ||
+        (await generateNextSalesInvoiceNumber()),
+    };
+    set((state) => ({ invoices: [newInvoice, ...state.invoices] }));
+    await api.finance.saveInvoice(newInvoice);
+
+    // Trigger customer notification
+    if (newInvoice.customerPhone) {
+      await customerNotificationService.triggerNotification("INVOICE", {
+        id: newInvoice.id,
+        customerName: newInvoice.customerName,
+        phoneNumber: newInvoice.customerPhone,
+        amount: newInvoice.total
+          ? `${newInvoice.currency || "KES"} ${Number(newInvoice.total).toLocaleString()}`
+          : "",
+        dueDate: newInvoice.dueDate
+          ? new Date(newInvoice.dueDate).toLocaleDateString()
+          : "",
+      });
+    }
+    return newInvoice.id;
+  },
   updateInvoice: async (invoice) => {
-      set(state => ({ invoices: state.invoices.map(i => i.id === invoice.id ? invoice : i) }));
-      await api.finance.saveInvoice(invoice);
+    set((state) => ({
+      invoices: state.invoices.map((i) => (i.id === invoice.id ? invoice : i)),
+    }));
+    await api.finance.saveInvoice(invoice);
   },
   deleteInvoice: async (id) => {
-      set(state => ({ invoices: state.invoices.filter(i => i.id !== id) }));
-      await api.finance.deleteInvoice(id);
+    set((state) => ({ invoices: state.invoices.filter((i) => i.id !== id) }));
+    await api.finance.deleteInvoice(id);
   },
 
   addExpense: async (expense) => {
-      const newExpense = { ...expense, id: expense.id || generateNextId('EXP', get().expenses) };
-      set(state => ({ expenses: [newExpense, ...state.expenses] }));
-      await api.finance.saveExpense(newExpense);
+    const newExpense = {
+      ...expense,
+      id: expense.id || generateNextId("EXP", get().expenses),
+    };
+    set((state) => ({ expenses: [newExpense, ...state.expenses] }));
+    await api.finance.saveExpense(newExpense);
   },
 
   addIncome: async (income) => {
-      const newIncome = { ...income, id: income.id || generateNextId('INC', get().income) };
-      set(state => ({ income: [newIncome, ...state.income] }));
-      await api.finance.saveIncome(newIncome);
+    const newIncome = {
+      ...income,
+      id: income.id || generateNextId("INC", get().income),
+    };
+    set((state) => ({ income: [newIncome, ...state.income] }));
+    await api.finance.saveIncome(newIncome);
   },
   updateIncome: async (income) => {
-      set(state => ({ income: state.income.map(i => i.id === income.id ? income : i) }));
-      await api.finance.saveIncome(income);
+    set((state) => ({
+      income: state.income.map((i) => (i.id === income.id ? income : i)),
+    }));
+    await api.finance.saveIncome(income);
   },
   deleteIncome: async (id) => {
-      set(state => ({ income: state.income.filter(i => i.id !== id) }));
-      await api.finance.deleteIncome(id);
+    set((state) => ({ income: state.income.filter((i) => i.id !== id) }));
+    await api.finance.deleteIncome(id);
   },
 
   addLedgerEntry: async (entry) => {
-      const newEntry = { ...entry, id: entry.id || generateNextId('LED', get().ledger) };
-      set(state => ({ ledger: [newEntry, ...state.ledger] }));
-      await api.finance.saveLedgerEntry(newEntry);
+    const newEntry = {
+      ...entry,
+      id: entry.id || generateNextId("LED", get().ledger),
+    };
+    set((state) => ({ ledger: [newEntry, ...state.ledger] }));
+    await api.finance.saveLedgerEntry(newEntry);
   },
   toggleReconciled: async (id) => {
-      const { ledger } = get();
-      const entry = ledger.find(e => e.id === id);
-      if (entry) {
-          const updated = { ...entry, reconciled: !entry.reconciled };
-          set(state => ({ ledger: state.ledger.map(e => e.id === id ? updated : e) }));
-          await api.finance.saveLedgerEntry(updated);
-      }
+    const { ledger } = get();
+    const entry = ledger.find((e) => e.id === id);
+    if (entry) {
+      const updated = { ...entry, reconciled: !entry.reconciled };
+      set((state) => ({
+        ledger: state.ledger.map((e) => (e.id === id ? updated : e)),
+      }));
+      await api.finance.saveLedgerEntry(updated);
+    }
   },
 
   addRecurringInvoice: async (inv) => {
-      const newRecurring = { ...inv, id: inv.id || generateNextId('REC', get().recurringInvoices) };
-      set(state => ({ recurringInvoices: [...state.recurringInvoices, newRecurring] }));
-      await api.finance.saveRecurringInvoice(newRecurring);
+    const newRecurring = {
+      ...inv,
+      id: inv.id || generateNextId("REC", get().recurringInvoices),
+    };
+    set((state) => ({
+      recurringInvoices: [...state.recurringInvoices, newRecurring],
+    }));
+    await api.finance.saveRecurringInvoice(newRecurring);
   },
   deleteRecurringInvoice: async (id) => {
-      set(state => ({ recurringInvoices: state.recurringInvoices.filter(r => r.id !== id) }));
-      await api.finance.deleteRecurringInvoice(id);
+    set((state) => ({
+      recurringInvoices: state.recurringInvoices.filter((r) => r.id !== id),
+    }));
+    await api.finance.deleteRecurringInvoice(id);
   },
   updateRecurringInvoice: async (inv) => {
-      set(state => ({ recurringInvoices: state.recurringInvoices.map(r => r.id === inv.id ? inv : r) }));
-      await api.finance.saveRecurringInvoice(inv);
+    set((state) => ({
+      recurringInvoices: state.recurringInvoices.map((r) =>
+        r.id === inv.id ? inv : r,
+      ),
+    }));
+    await api.finance.saveRecurringInvoice(inv);
   },
 
   addScheduledPayment: async (payment) => {
-      const newPayment = { ...payment, id: payment.id || generateNextId('SCH', get().scheduledPayments) };
-      set(state => ({ scheduledPayments: [...state.scheduledPayments, newPayment] }));
-      await api.finance.saveScheduledPayment(newPayment);
+    const newPayment = {
+      ...payment,
+      id: payment.id || generateNextId("SCH", get().scheduledPayments),
+    };
+    set((state) => ({
+      scheduledPayments: [...state.scheduledPayments, newPayment],
+    }));
+    await api.finance.saveScheduledPayment(newPayment);
   },
   updateScheduledPayment: async (payment) => {
-      set(state => ({ scheduledPayments: state.scheduledPayments.map(p => p.id === payment.id ? payment : p) }));
-      await api.finance.saveScheduledPayment(payment);
+    set((state) => ({
+      scheduledPayments: state.scheduledPayments.map((p) =>
+        p.id === payment.id ? payment : p,
+      ),
+    }));
+    await api.finance.saveScheduledPayment(payment);
   },
 
   addWalletTransaction: async (tx) => {
-      const newTx = { ...tx, id: tx.id || generateNextId('WTX', get().walletTransactions) };
-      set(state => ({ walletTransactions: [...state.walletTransactions, newTx] }));
-      await api.finance.saveWalletTransaction(newTx);
+    const newTx = {
+      ...tx,
+      id: tx.id || generateNextId("WTX", get().walletTransactions),
+    };
+    set((state) => ({
+      walletTransactions: [...state.walletTransactions, newTx],
+    }));
+    await api.finance.saveWalletTransaction(newTx);
   },
 
-  consumeContractAssessment: async (args: { contractId: string; assessmentItemId: string; idempotencyKey?: string }) => {
-      // Canonical wallet-first consumption: the transactionService owns all
-      // writes (wallet debit + ledger + item + buckets, one atomic op).
-      // Refresh afterwards so contract, wallet and ledger views converge.
-      const result = await api.finance.consumeContractAssessment(args);
-      await get().fetchFinanceData();
-      return result;
+  consumeContractAssessment: async (args: {
+    contractId: string;
+    assessmentItemId: string;
+    idempotencyKey?: string;
+  }) => {
+    // Canonical wallet-first consumption: the transactionService owns all
+    // writes (wallet debit + ledger + item + buckets, one atomic op).
+    // Refresh afterwards so contract, wallet and ledger views converge.
+    const result = await api.finance.consumeContractAssessment(args);
+    await get().fetchFinanceData();
+    return result;
   },
 
-  cancelPrintingContract: async (args: { contractId: string; reason?: string; performedBy?: string; idempotencyKey?: string }) => {
-      // Releases the remaining reservation only — consumed money is untouched.
-      const result = await api.finance.cancelPrintingContract(args);
-      await get().fetchFinanceData();
-      return result;
+  cancelPrintingContract: async (args: {
+    contractId: string;
+    reason?: string;
+    performedBy?: string;
+    idempotencyKey?: string;
+  }) => {
+    // Releases the remaining reservation only — consumed money is untouched.
+    const result = await api.finance.cancelPrintingContract(args);
+    await get().fetchFinanceData();
+    return result;
   },
 
-  voidPrintingContract: async (args: { contractId: string; reason?: string; performedBy?: string; idempotencyKey?: string }) => {
-      // Compensating reversal: wallet credits + reversing ledger postings are
-      // written atomically by transactionService, then all views refresh.
-      const result = await api.finance.voidPrintingContract(args);
-      await get().fetchFinanceData();
-      return result;
+  voidPrintingContract: async (args: {
+    contractId: string;
+    reason?: string;
+    performedBy?: string;
+    idempotencyKey?: string;
+  }) => {
+    // Compensating reversal: wallet credits + reversing ledger postings are
+    // written atomically by transactionService, then all views refresh.
+    const result = await api.finance.voidPrintingContract(args);
+    await get().fetchFinanceData();
+    return result;
   },
 
   addDeliveryNote: async (note) => {
-      const newNote = { ...note, id: note.id || generateNextId('DN', get().deliveryNotes) };
-      set(state => ({ deliveryNotes: [...state.deliveryNotes, newNote] }));
-      await api.finance.saveDeliveryNote(newNote);
+    const newNote = {
+      ...note,
+      id: note.id || generateNextId("DN", get().deliveryNotes),
+    };
+    set((state) => ({ deliveryNotes: [...state.deliveryNotes, newNote] }));
+    await api.finance.saveDeliveryNote(newNote);
   },
   updateDeliveryNote: async (note) => {
-      set(state => ({ deliveryNotes: state.deliveryNotes.map(n => n.id === note.id ? note : n) }));
-      await api.finance.saveDeliveryNote(note);
+    set((state) => ({
+      deliveryNotes: state.deliveryNotes.map((n) =>
+        n.id === note.id ? note : n,
+      ),
+    }));
+    await api.finance.saveDeliveryNote(note);
   },
   deleteDeliveryNote: async (id) => {
-      set(state => ({ deliveryNotes: state.deliveryNotes.filter(n => n.id !== id) }));
-      await api.finance.deleteDeliveryNote(id);
+    set((state) => ({
+      deliveryNotes: state.deliveryNotes.filter((n) => n.id !== id),
+    }));
+    await api.finance.deleteDeliveryNote(id);
   },
 
   saveBudget: async (budget) => {
-      const { budgets } = get();
-      const exists = budgets.find(b => b.accountId === budget.accountId && b.month === budget.month);
-      
-      if (exists) {
-          const updated = { ...exists, amount: budget.amount };
-          set(state => ({ budgets: state.budgets.map(b => b.id === exists.id ? updated : b) }));
-          await api.finance.saveBudget(updated);
-      } else {
-          const newBudget = { ...budget, id: generateNextId('BUD', budgets) };
-          set(state => ({ budgets: [...state.budgets, newBudget] }));
-          await api.finance.saveBudget(newBudget);
-      }
+    const { budgets } = get();
+    const exists = budgets.find(
+      (b) => b.accountId === budget.accountId && b.month === budget.month,
+    );
+
+    if (exists) {
+      const updated = { ...exists, amount: budget.amount };
+      set((state) => ({
+        budgets: state.budgets.map((b) => (b.id === exists.id ? updated : b)),
+      }));
+      await api.finance.saveBudget(updated);
+    } else {
+      const newBudget = { ...budget, id: generateNextId("BUD", budgets) };
+      set((state) => ({ budgets: [...state.budgets, newBudget] }));
+      await api.finance.saveBudget(newBudget);
+    }
   },
 
   updateOpeningBalance: async (amount) => {
-      set({ openingBalance: amount });
-      await dbService.saveSetting('opening_balance', amount);
+    set({ openingBalance: amount });
+    await dbService.saveSetting("opening_balance", amount);
   },
 
   addTransfer: async (transfer) => {
-      const newTransfer = { ...transfer, id: transfer.id || generateNextId('TRF', get().transfers) };
-      set(state => ({ transfers: [...state.transfers, newTransfer] }));
-      await api.finance.saveTransfer(newTransfer);
+    const newTransfer = {
+      ...transfer,
+      id: transfer.id || generateNextId("TRF", get().transfers),
+    };
+    set((state) => ({ transfers: [...state.transfers, newTransfer] }));
+    await api.finance.saveTransfer(newTransfer);
   },
 
   addEmployee: async (emp) => {
-      const newEmp = { ...emp, id: emp.id || generateNextId('EMP', get().employees) };
-      set(state => ({ employees: [...state.employees, newEmp] }));
-      await api.finance.saveEmployee(newEmp);
+    const newEmp = {
+      ...emp,
+      id: emp.id || generateNextId("EMP", get().employees),
+    };
+    set((state) => ({ employees: [...state.employees, newEmp] }));
+    await api.finance.saveEmployee(newEmp);
   },
   updateEmployee: async (emp) => {
-      set(state => ({ employees: state.employees.map(e => e.id === emp.id ? emp : e) }));
-      await api.finance.saveEmployee(emp);
+    set((state) => ({
+      employees: state.employees.map((e) => (e.id === emp.id ? emp : e)),
+    }));
+    await api.finance.saveEmployee(emp);
   },
   deleteEmployee: async (id) => {
-      set(state => ({ employees: state.employees.filter(e => e.id !== id) }));
-      await api.finance.deleteEmployee(id);
+    set((state) => ({ employees: state.employees.filter((e) => e.id !== id) }));
+    await api.finance.deleteEmployee(id);
   },
 
   addPayrollRun: async (run) => {
-      const newRun = { ...run, id: run.id || generateNextId('PAY', get().payrollRuns) };
-      set(state => ({ payrollRuns: [...state.payrollRuns, newRun] }));
-      await api.finance.savePayrollRun(newRun);
+    const newRun = {
+      ...run,
+      id: run.id || generateNextId("PAY", get().payrollRuns),
+    };
+    set((state) => ({ payrollRuns: [...state.payrollRuns, newRun] }));
+    await api.finance.savePayrollRun(newRun);
   },
   addPayslips: async (slips) => {
-      set(state => ({ payslips: [...state.payslips, ...slips] }));
-      // IDs for slips should be handled by caller (e.g. runPayroll), but could be enforced here if needed.
-      // Assuming runPayroll generates them correctly for now.
-      for(const s of slips) await api.finance.savePayslip(s);
+    set((state) => ({ payslips: [...state.payslips, ...slips] }));
+    // IDs for slips should be handled by caller (e.g. runPayroll), but could be enforced here if needed.
+    // Assuming runPayroll generates them correctly for now.
+    for (const s of slips) await api.finance.savePayslip(s);
   },
-
 
   addCheque: async (cheque) => {
-      const newCheque = { ...cheque, id: cheque.id || generateNextId('CHQ', get().cheques) };
-      set(state => ({ cheques: [...state.cheques, newCheque] }));
-      await api.finance.saveCheque(newCheque);
+    const newCheque = {
+      ...cheque,
+      id: cheque.id || generateNextId("CHQ", get().cheques),
+    };
+    set((state) => ({ cheques: [...state.cheques, newCheque] }));
+    await api.finance.saveCheque(newCheque);
   },
   updateCheque: async (cheque) => {
-      set(state => ({ cheques: state.cheques.map(c => c.id === cheque.id ? cheque : c) }));
-      await api.finance.saveCheque(cheque);
+    set((state) => ({
+      cheques: state.cheques.map((c) => (c.id === cheque.id ? cheque : c)),
+    }));
+    await api.finance.saveCheque(cheque);
   },
   deleteCheque: async (id) => {
-      set(state => ({ cheques: state.cheques.filter(c => c.id !== id) }));
-      await api.finance.deleteCheque(id);
+    set((state) => ({ cheques: state.cheques.filter((c) => c.id !== id) }));
+    await api.finance.deleteCheque(id);
   },
-  
-   recordSupplierPayment: async (payment) => {
-       // Issue the permanent verification token up-front so the in-memory
-       // record, the persisted row and the first voucher/QR all share it.
-       const base = { ...payment, id: payment.id || generateNextId('SP', get().supplierPayments) } as SupplierPayment & { verificationToken?: string };
-       const newPayment = ensureDocumentVerificationToken(base);
-       set(state => ({ supplierPayments: [...state.supplierPayments, newPayment] }));
-       await api.finance.recordSupplierPayment(newPayment);
-   },
-  updateSupplierPayment: async (payment) => {
-      set(state => ({ supplierPayments: state.supplierPayments.map(p => p.id === payment.id ? payment : p) }));
-      await api.finance.updateSupplierPayment(payment);
-  },
-   voidSupplierPayment: async (id) => {
-       await api.finance.voidSupplierPayment(id);
-       // Refresh data to get updated PO balances and ledger
-       await get().fetchFinanceData();
-   },
 
-   // ─── Printing Contracts ────────────────────────────────────
-   addAssessmentContract: async (contract: AssessmentContract) => {
-       // The canonical digest is persisted on the record itself, so the QR,
-       // the integrity block and the public verifier all refer to one digest.
-       const signed = await ensureContractIntegrity(contract);
-       set(state => ({ assessmentContracts: [...state.assessmentContracts, signed] }));
-       await api.finance.saveAssessmentContract(signed);
-   },
-    updateAssessmentContract: async (contract: AssessmentContract) => {
-        // Defense in depth: lifecycle edges are enforced here as well as in
-        // the UI, so no caller can jump statuses by writing to the store
-        // directly. Non-status updates pass through untouched.
-        const current = get().assessmentContracts.find(c => c.id === contract.id);
-        if (current && current.status !== contract.status) {
-            assertAllowedContractTransition(current.status, contract.status);
-        }
-        // Any material edit (amounts, terms, parties, signatures, status)
-        // changes the digest; a stale hash would make the printed QR lie.
-        const signed = await ensureContractIntegrity(contract);
-        set(state => ({ assessmentContracts: state.assessmentContracts.map(c => c.id === signed.id ? signed : c) }));
-        await api.finance.saveAssessmentContract(signed);
-    },
-   deleteAssessmentContract: async (id: string) => {
-       set(state => ({ assessmentContracts: state.assessmentContracts.filter(c => c.id !== id) }));
-       await api.finance.deleteAssessmentContract(id);
-   },
+  recordSupplierPayment: async (payment) => {
+    // Issue the permanent verification token up-front so the in-memory
+    // record, the persisted row and the first voucher/QR all share it.
+    const base = {
+      ...payment,
+      id: payment.id || generateNextId("SP", get().supplierPayments),
+    } as SupplierPayment & { verificationToken?: string };
+    const newPayment = ensureDocumentVerificationToken(base);
+    set((state) => ({
+      supplierPayments: [...state.supplierPayments, newPayment],
+    }));
+    await api.finance.recordSupplierPayment(newPayment);
+  },
+  updateSupplierPayment: async (payment) => {
+    set((state) => ({
+      supplierPayments: state.supplierPayments.map((p) =>
+        p.id === payment.id ? payment : p,
+      ),
+    }));
+    await api.finance.updateSupplierPayment(payment);
+  },
+  voidSupplierPayment: async (id) => {
+    await api.finance.voidSupplierPayment(id);
+    // Refresh data to get updated PO balances and ledger
+    await get().fetchFinanceData();
+  },
+
+  // ─── Printing Contracts ────────────────────────────────────
+  addAssessmentContract: async (contract: AssessmentContract) => {
+    // The canonical digest is persisted on the record itself, so the QR,
+    // the integrity block and the public verifier all refer to one digest.
+    const signed = await ensureContractIntegrity(contract);
+    set((state) => ({
+      assessmentContracts: [...state.assessmentContracts, signed],
+    }));
+    await api.finance.saveAssessmentContract(signed);
+  },
+  updateAssessmentContract: async (contract: AssessmentContract) => {
+    // Defense in depth: lifecycle edges are enforced here as well as in
+    // the UI, so no caller can jump statuses by writing to the store
+    // directly. Non-status updates pass through untouched.
+    const current = get().assessmentContracts.find((c) => c.id === contract.id);
+    if (current && current.status !== contract.status) {
+      assertAllowedContractTransition(current.status, contract.status);
+    }
+    // Any material edit (amounts, terms, parties, signatures, status)
+    // changes the digest; a stale hash would make the printed QR lie.
+    const signed = await ensureContractIntegrity(contract);
+    set((state) => ({
+      assessmentContracts: state.assessmentContracts.map((c) =>
+        c.id === signed.id ? signed : c,
+      ),
+    }));
+    await api.finance.saveAssessmentContract(signed);
+  },
+  deleteAssessmentContract: async (id: string) => {
+    set((state) => ({
+      assessmentContracts: state.assessmentContracts.filter((c) => c.id !== id),
+    }));
+    await api.finance.deleteAssessmentContract(id);
+  },
 
   addContractAssessment: async (assessment: AssessmentContractItem) => {
     // New items are born reserved; consumed state is reachable only through
     // the canonical wallet-first operation (consumeContractAssessment).
     assertAllowedItemCreate(assessment);
-    set(state => ({ contractAssessments: [...state.contractAssessments, assessment] }));
+    set((state) => ({
+      contractAssessments: [...state.contractAssessments, assessment],
+    }));
     await api.finance.saveContractAssessment(assessment);
   },
-    updateContractAssessment: async (assessment: AssessmentContractItem) => {
-        // Canonical write-guard: financial edges (reserved→consumed, anything
-        // out of consumed) cannot be performed by direct status mutation.
-        const currentItem = get().contractAssessments.find(a => a.id === assessment.id);
-        assertAllowedItemWrite(currentItem, assessment);
-        set(state => ({ contractAssessments: state.contractAssessments.map(a => a.id === assessment.id ? assessment : a) }));
-        await api.finance.saveContractAssessment(assessment);
-    },
-   deleteContractAssessment: async (id: string) => {
-       set(state => ({ contractAssessments: state.contractAssessments.filter(a => a.id !== id) }));
-       await api.finance.deleteContractAssessment(id);
-   },
+  updateContractAssessment: async (assessment: AssessmentContractItem) => {
+    // Canonical write-guard: financial edges (reserved→consumed, anything
+    // out of consumed) cannot be performed by direct status mutation.
+    const currentItem = get().contractAssessments.find(
+      (a) => a.id === assessment.id,
+    );
+    assertAllowedItemWrite(currentItem, assessment);
+    set((state) => ({
+      contractAssessments: state.contractAssessments.map((a) =>
+        a.id === assessment.id ? assessment : a,
+      ),
+    }));
+    await api.finance.saveContractAssessment(assessment);
+  },
+  deleteContractAssessment: async (id: string) => {
+    set((state) => ({
+      contractAssessments: state.contractAssessments.filter((a) => a.id !== id),
+    }));
+    await api.finance.deleteContractAssessment(id);
+  },
 
-   addContractAmendment: async (amendment: ContractAmendment) => {
-       set(state => ({ contractAmendments: [...state.contractAmendments, amendment] }));
-       await api.finance.saveContractAmendment(amendment);
-   },
-   updateContractAmendment: async (amendment: ContractAmendment) => {
-       set(state => ({ contractAmendments: state.contractAmendments.map(a => a.id === amendment.id ? amendment : a) }));
-       await api.finance.saveContractAmendment(amendment);
-   },
-   deleteContractAmendment: async (id: string) => {
-       set(state => ({ contractAmendments: state.contractAmendments.filter(a => a.id !== id) }));
-       await api.finance.deleteContractAmendment(id);
-   },
+  addContractAmendment: async (amendment: ContractAmendment) => {
+    set((state) => ({
+      contractAmendments: [...state.contractAmendments, amendment],
+    }));
+    await api.finance.saveContractAmendment(amendment);
+  },
+  updateContractAmendment: async (amendment: ContractAmendment) => {
+    set((state) => ({
+      contractAmendments: state.contractAmendments.map((a) =>
+        a.id === amendment.id ? amendment : a,
+      ),
+    }));
+    await api.finance.saveContractAmendment(amendment);
+  },
+  deleteContractAmendment: async (id: string) => {
+    set((state) => ({
+      contractAmendments: state.contractAmendments.filter((a) => a.id !== id),
+    }));
+    await api.finance.deleteContractAmendment(id);
+  },
 }));
