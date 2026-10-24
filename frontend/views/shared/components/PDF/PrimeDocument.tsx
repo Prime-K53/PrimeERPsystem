@@ -5181,7 +5181,7 @@ export const PrimeDocument = ({
     const headerFill = monoFill(mode, "#f1f5f9");
     const softFill = monoFill(mode, "#f8fafc");
     const pageBackground = "#ffffff";
-    const bodySize = 9.5;
+     const bodySize = 12;
 
     const money = (value: number) =>
       `${currency} ${formatAmount(Number(value) || 0)}`;
@@ -5707,9 +5707,9 @@ export const PrimeDocument = ({
           style={[
             s.page,
             {
-              paddingTop: 50,
-              paddingHorizontal: 56.7,
-              paddingBottom: 86,
+              paddingTop: 30,
+              paddingHorizontal: 36,
+              paddingBottom: 40,
               fontFamily: templateSettings.fontFamily,
               fontSize: bodySize,
               color: ink,

@@ -235992,7 +235992,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
     const headerFill = monoFill(mode, "#f1f5f9");
     const softFill = monoFill(mode, "#f8fafc");
     const pageBackground = "#ffffff";
-    const bodySize = 9.5;
+    const bodySize = 12;
     const money = (value2) => `${currency} ${formatAmount2(Number(value2) || 0)}`;
     const readableDate = (value2) => {
       const raw = String(value2 || "").trim();
@@ -236121,13 +236121,12 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
     if (specRows.length === 0) specRows.push(["Specification", "As agreed between the parties."]);
     const verificationUrl = /^https?:\/\//i.test(String(pc.securityQrPayload || "")) ? String(pc.securityQrPayload) : "";
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: `Printing Contract - ${pc.contractNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
-      Page,
-      {
+       Page, {
         size: "A4",
         style: [s4.page, {
-          paddingTop: 50,
-          paddingHorizontal: 56.7,
-          paddingBottom: 86,
+          paddingTop: 30,
+          paddingHorizontal: 36,
+          paddingBottom: 40,
           fontFamily: templateSettings.fontFamily,
           fontSize: bodySize,
           color: ink,

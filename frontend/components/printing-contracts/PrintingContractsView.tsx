@@ -1958,18 +1958,6 @@ const PrintingContractsViewInner: React.FC = () => {
                   style={contractInputStyle} placeholder="e.g. 265899233626" />
               </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <div>
-                <label style={contractLabelStyle}>Grade</label>
-                <input value={formDraft.assessment_grade} onChange={e => setFormDraft({ ...formDraft, assessment_grade: e.target.value })}
-                  style={contractInputStyle} placeholder="Optional" />
-              </div>
-              <div>
-                <label style={contractLabelStyle}>Subject</label>
-                <input value={formDraft.assessment_subject} onChange={e => setFormDraft({ ...formDraft, assessment_subject: e.target.value })}
-                  style={contractInputStyle} placeholder="Optional" />
-              </div>
-            </div>
             {/* Billed branch + academic year: the two facts the schedule
                 preamble states about the engagement itself. A customer's
                 branches come from their sub-accounts, so "Main account" is
@@ -1994,6 +1982,99 @@ const PrintingContractsViewInner: React.FC = () => {
             </div>
           </div>
 
+
+          <ContractSectionLabel>Candidature</ContractSectionLabel>
+          <div style={{ ...contractGridStyle, gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 18 }}>
+            <div>
+              <label style={contractLabelStyle}>Expected candidates</label>
+              <input type="number" min={0} step={1}
+                value={formDraft.profile.candidature.totalCandidature ?? ''}
+                onChange={e => setFormDraft({
+                  ...formDraft,
+                  profile: {
+                    ...formDraft.profile,
+                    candidature: {
+                      ...formDraft.profile.candidature,
+                      totalCandidature: e.target.value === '' ? undefined : Math.max(0, Math.floor(Number(e.target.value))),
+                    },
+                  },
+                })}
+                placeholder="e.g. 450"
+                style={{ ...contractInputStyle, fontVariantNumeric: 'tabular-nums' }} />
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Sittings</label>
+              <input value={formDraft.profile.candidature.sittings}
+                onChange={e => setFormDraft({
+                  ...formDraft,
+                  profile: { ...formDraft.profile, candidature: { ...formDraft.profile.candidature, sittings: e.target.value } },
+                })}
+                placeholder="e.g. Once Off / Morning + Afternoon"
+                style={contractInputStyle} />
+            </div>
+          </div>
+
+          <ContractSectionLabel>Pricing Rules</ContractSectionLabel>
+          <div style={{ ...contractGridStyle, gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={contractLabelStyle}>Pricing model</label>
+              <select value={formDraft.profile.pricingRules.model}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, pricingRules: { ...formDraft.profile.pricingRules, model: e.target.value } } })}
+                style={contractSelectStyle}>
+                <option value="">Select…</option>
+                <option value="per_candidate">Per candidate</option>
+                <option value="per_assessment">Per assessment</option>
+                <option value="per_page">Per page</option>
+                <option value="fixed">Fixed contract price</option>
+              </select>
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Charge per candidate</label>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: contractInkSoft, fontWeight: 700, fontSize: 13 }}>{currency}</span>
+                <input type="number" min={0} step="0.01"
+                  value={formDraft.profile.pricingRules.chargePerCandidate ?? ''}
+                  onChange={e => setFormDraft({
+                    ...formDraft,
+                    profile: {
+                      ...formDraft.profile,
+                      pricingRules: { ...formDraft.profile.pricingRules, chargePerCandidate: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)) },
+                    },
+                  })}
+                  placeholder="0.00"
+                  style={{ ...contractInputStyle, paddingLeft: 28, fontVariantNumeric: 'tabular-nums' }} />
+              </div>
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Tax handling</label>
+              <input value={formDraft.profile.pricingRules.taxHandling}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, pricingRules: { ...formDraft.profile.pricingRules, taxHandling: e.target.value } } })}
+                placeholder="e.g. VAT inclusive"
+                style={contractInputStyle} />
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Discount</label>
+              <input value={formDraft.profile.pricingRules.discount}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, pricingRules: { ...formDraft.profile.pricingRules, discount: e.target.value } } })}
+                placeholder="e.g. 5% for 500+ candidates"
+                style={contractInputStyle} />
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Urgent fee</label>
+              <input value={formDraft.profile.pricingRules.urgentFee}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, pricingRules: { ...formDraft.profile.pricingRules, urgentFee: e.target.value } } })}
+                placeholder="e.g. 10% express surcharge"
+                style={contractInputStyle} />
+            </div>
+            <div>
+              <label style={contractLabelStyle}>Pricing notes</label>
+              <input value={formDraft.profile.pricingRules.rulesNotes}
+                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, pricingRules: { ...formDraft.profile.pricingRules, rulesNotes: e.target.value } } })}
+                placeholder="Reprint, over-run rules…"
+                style={contractInputStyle} />
+            </div>
+          </div>
+
           <ContractSectionLabel>Commercials &amp; Period</ContractSectionLabel>
           {!editingContract ? (
             <>
@@ -2004,7 +2085,6 @@ const PrintingContractsViewInner: React.FC = () => {
                     <thead>
                       <tr style={{ background: contractTeal[50], color: contractTeal[800], fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.06 }}>
                         <th scope="col" style={{ textAlign: 'left', padding: '8px 10px', minWidth: 180 }}>Assessment item</th>
-                        <th scope="col" style={{ textAlign: 'left', padding: '8px 10px', width: 110 }}>Type</th>
                         <th scope="col" style={{ textAlign: 'left', padding: '8px 10px', width: 90 }}>Grade</th>
                         <th scope="col" style={{ textAlign: 'left', padding: '8px 10px', width: 100 }}>Subject</th>
                         <th scope="col" style={{ textAlign: 'right', padding: '8px 10px', width: 64 }}>Qty</th>
@@ -2022,16 +2102,6 @@ const PrintingContractsViewInner: React.FC = () => {
                               placeholder="e.g. Term 2 Grade 7 Mathematics"
                               aria-label="Assessment item name"
                               style={{ ...contractInputStyle, padding: '7px 10px', fontSize: 12 }} />
-                          </td>
-                          <td style={{ padding: 6 }}>
-                            <select value={line.assessment_type}
-                              onChange={e => setFormDraft({ ...formDraft, lines: formDraft.lines.map(l => l.key === line.key ? { ...l, assessment_type: e.target.value } : l) })}
-                              aria-label="Assessment type"
-                              style={{ ...contractSelectStyle, padding: '7px 8px', fontSize: 12 }}>
-                              <option value="examination">Examination</option>
-                              <option value="commercial">Commercial</option>
-                              <option value="general">General</option>
-                            </select>
                           </td>
                           <td style={{ padding: 6 }}>
                             <input value={line.assessment_grade}
@@ -2138,46 +2208,6 @@ const PrintingContractsViewInner: React.FC = () => {
           </div>
           )}
 
-          <ContractSectionLabel>Candidature</ContractSectionLabel>
-          <div style={{ ...contractGridStyle, gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 18 }}>
-            <div>
-              <label style={contractLabelStyle}>Expected candidates</label>
-              <input type="number" min={0} step={1}
-                value={formDraft.profile.candidature.totalCandidature ?? ''}
-                onChange={e => setFormDraft({
-                  ...formDraft,
-                  profile: {
-                    ...formDraft.profile,
-                    candidature: {
-                      ...formDraft.profile.candidature,
-                      totalCandidature: e.target.value === '' ? undefined : Math.max(0, Math.floor(Number(e.target.value))),
-                    },
-                  },
-                })}
-                placeholder="e.g. 450"
-                style={{ ...contractInputStyle, fontVariantNumeric: 'tabular-nums' }} />
-            </div>
-            <div>
-              <label style={contractLabelStyle}>Sittings</label>
-              <input value={formDraft.profile.candidature.sittings}
-                onChange={e => setFormDraft({
-                  ...formDraft,
-                  profile: { ...formDraft.profile, candidature: { ...formDraft.profile.candidature, sittings: e.target.value } },
-                })}
-                placeholder="e.g. Once Off / Morning + Afternoon"
-                style={contractInputStyle} />
-            </div>
-            <div>
-              <label style={contractLabelStyle}>Assessment spec</label>
-              <input value={formDraft.profile.candidature.spec}
-                onChange={e => setFormDraft({
-                  ...formDraft,
-                  profile: { ...formDraft.profile, candidature: { ...formDraft.profile.candidature, spec: e.target.value } },
-                })}
-                placeholder="e.g. 8 Pages"
-                style={contractInputStyle} />
-            </div>
-          </div>
 
           <ContractSectionLabel>Printing Specification</ContractSectionLabel>
           <div style={{ ...contractGridStyle, gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
@@ -2273,66 +2303,6 @@ const PrintingContractsViewInner: React.FC = () => {
             </div>
           </div>
 
-          <ContractSectionLabel>Pricing Rules</ContractSectionLabel>
-          <div style={{ ...contractGridStyle, gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            <div>
-              <label style={contractLabelStyle}>Pricing model</label>
-              <select value={formDraft.profile.pricingRules.model}
-                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, pricingRules: { ...formDraft.profile.pricingRules, model: e.target.value } } })}
-                style={contractSelectStyle}>
-                <option value="">Select…</option>
-                <option value="per_candidate">Per candidate</option>
-                <option value="per_assessment">Per assessment</option>
-                <option value="per_page">Per page</option>
-                <option value="fixed">Fixed contract price</option>
-              </select>
-            </div>
-            <div>
-              <label style={contractLabelStyle}>Charge per candidate</label>
-              <div style={{ position: 'relative' }}>
-                <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: contractInkSoft, fontWeight: 700, fontSize: 13 }}>{currency}</span>
-                <input type="number" min={0} step="0.01"
-                  value={formDraft.profile.pricingRules.chargePerCandidate ?? ''}
-                  onChange={e => setFormDraft({
-                    ...formDraft,
-                    profile: {
-                      ...formDraft.profile,
-                      pricingRules: { ...formDraft.profile.pricingRules, chargePerCandidate: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)) },
-                    },
-                  })}
-                  placeholder="0.00"
-                  style={{ ...contractInputStyle, paddingLeft: 28, fontVariantNumeric: 'tabular-nums' }} />
-              </div>
-            </div>
-            <div>
-              <label style={contractLabelStyle}>Tax handling</label>
-              <input value={formDraft.profile.pricingRules.taxHandling}
-                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, pricingRules: { ...formDraft.profile.pricingRules, taxHandling: e.target.value } } })}
-                placeholder="e.g. VAT inclusive"
-                style={contractInputStyle} />
-            </div>
-            <div>
-              <label style={contractLabelStyle}>Discount</label>
-              <input value={formDraft.profile.pricingRules.discount}
-                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, pricingRules: { ...formDraft.profile.pricingRules, discount: e.target.value } } })}
-                placeholder="e.g. 5% for 500+ candidates"
-                style={contractInputStyle} />
-            </div>
-            <div>
-              <label style={contractLabelStyle}>Urgent fee</label>
-              <input value={formDraft.profile.pricingRules.urgentFee}
-                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, pricingRules: { ...formDraft.profile.pricingRules, urgentFee: e.target.value } } })}
-                placeholder="e.g. 10% express surcharge"
-                style={contractInputStyle} />
-            </div>
-            <div>
-              <label style={contractLabelStyle}>Pricing notes</label>
-              <input value={formDraft.profile.pricingRules.rulesNotes}
-                onChange={e => setFormDraft({ ...formDraft, profile: { ...formDraft.profile, pricingRules: { ...formDraft.profile.pricingRules, rulesNotes: e.target.value } } })}
-                placeholder="Reprint, over-run rules…"
-                style={contractInputStyle} />
-            </div>
-          </div>
 
           <ContractSectionLabel>Delivery Terms</ContractSectionLabel>
           <div style={{ ...contractGridStyle, marginBottom: 12 }}>
