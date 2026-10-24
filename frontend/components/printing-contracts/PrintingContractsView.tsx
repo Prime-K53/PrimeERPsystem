@@ -1457,23 +1457,41 @@ const PrintingContractsViewInner: React.FC = () => {
     try {
       // Backfill the permanent verification token for legacy rows (status
       // untouched, so the lifecycle guard passes through).
-      let source = selected;
-      if (!String(selected.verificationToken || '').trim()) {
+      // Start from the latest in-memory authoritative row if available, so a
+      // stale `selected` cannot drive a different canonical snapshot than the
+      // persisted one.
+      const latestStored = (useFinanceStore.getState().assessmentContracts || [])
+        .find((c: AssessmentContract) => String(c.id || c.id) === String(selected.id));
+      let source = latestStored || selected;
+
+      if (!String(source.verificationToken || '').trim()) {
         const token = generateVerificationToken();
-        await updateAssessmentContract({
-          ...selected,
+        // Keep the full persisted record (including contentHash) when issuing a
+        // verification token. Resetting `source` to only the token extension was
+        // dropping the hash, which then forced legacy-style enrichment and could
+        // produce a different printed digest than the authoritative row.
+        const tokenRecord = await ensureContractIntegrity({
+          ...source,
           verificationToken: token,
           updated_at: new Date().toISOString(),
-          version: num(selected.version) + 1,
+          version: num(source.version) + 1,
         } as AssessmentContract);
-        source = { ...selected, verificationToken: token };
+        await updateAssessmentContract(tokenRecord);
+        source = tokenRecord;
       }
+
       const partyCustomer = (customers || []).find(c => String(c.id) === String(source.customer_id));
       const partySchool = schools.find(s => String(s.id) === String(source.school_id));
       // Legacy rows (and rows last saved before the party snapshot existed)
       // are enriched and re-hashed at print time. The printed document, the
       // persisted record and the public verifier then agree on one digest.
-      if (!source.contentHash || !source.data?.school_name) {
+      const missingPartySnapshot =
+        !source.contentHash ||
+        !source.data?.school_name ||
+        !source.data?.customer_contact ||
+        !source.data?.customer_phone ||
+        !source.data?.customer_address;
+      if (missingPartySnapshot) {
         const enriched = await ensureContractIntegrity({
           ...source,
           data: {
@@ -1490,6 +1508,17 @@ const PrintingContractsViewInner: React.FC = () => {
         await updateAssessmentContract(enriched);
         source = enriched;
       }
+
+      // Final invariant: the structure actually hashed for the printed QR and
+      // integrity block comes from the persisted record's canonical snapshot.
+      // Never let a stale display-only fallback become the integrity source.
+      const integritySource = await ensureContractIntegrity(source);
+      if (String(integritySource.contentHash || '') !== String(source.contentHash || '')) {
+        source = integritySource;
+        await updateAssessmentContract(source);
+      }
+      source = (useFinanceStore.getState().assessmentContracts || [])
+        .find((c: AssessmentContract) => String(c.id || '') === String(source.id)) || source;
       const doc = await buildPrintingContractDoc({
         contract: source,
         customerName: customerNameOf(source.customer_id),
