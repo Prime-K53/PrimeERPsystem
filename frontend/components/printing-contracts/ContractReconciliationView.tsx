@@ -22,7 +22,8 @@ import { customerFundingPosition, diagnoseReservationDrift } from '../../utils/c
 import { dbService } from '../../services/db';
 import { durableSyncQueue } from '../../services/durableSyncQueue';
 import { adjustmentQueueService, type AdjustmentQueueEntry } from '../../services/closedPeriodQueue';
-import { getCustomerDisplayName } from '../../utils/customerDisplay';
+import { customerNameOf as customerNameOfLookup } from '../../utils/customerDisplay';
+import { formatMoney } from '../../utils/posMoney';
 import {
   contractInk,
   contractInkSoft,
@@ -31,11 +32,7 @@ import {
   contractTeal,
 } from './contractModalChrome';
 
-const money = (v: unknown, currency: string) => {
-  const n = Number(v);
-  const safe = Number.isFinite(n) ? n : 0;
-  return `${currency}${safe.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-};
+const money = (v: unknown, currency: string) => formatMoney(Number(v), currency);
 
 interface Props {
   currency: string;
@@ -78,17 +75,7 @@ const ContractReconciliationView: React.FC<Props> = ({ currency, onSelectContrac
     adjustmentQueueService.listAdjustmentQueue().then(setAdjustQueue).catch(() => setAdjustQueue([]));
   }, []);
 
-  const customerNameOf = (id?: string) => {
-    const c = (customers as Customer[]).find((cc) => String(cc.id) === String(id));
-    if (!c) return id || '—';
-    return (
-      getCustomerDisplayName({
-        businessName: (c as any).businessName ?? null,
-        companyName: (c as any).companyName ?? null,
-        legacyCustomerName: (c as any).name ?? null,
-      }) || id || '—'
-    );
-  };
+  const customerNameOf = (id?: string) => customerNameOfLookup(id, customers);
 
   const customerIds = useMemo(() => {
     const ids = new Set<string>();
@@ -327,7 +314,7 @@ const ContractReconciliationView: React.FC<Props> = ({ currency, onSelectContrac
               </p>
               <p style={{ margin: '4px 0 0', color: contractInkSoft }}>
                 Business date: <b style={{ color: contractInk }}>{e.businessDate || 'missing'}</b>
-                {' · '}Reason: {e.rejectionReason.slice(0, 180)}
+                {' · '}Reason: {e.rejectionReason?.slice(0, 180) ?? ''}
               </p>
               {e.contractId && (
                 <button onClick={() => onSelectContract(e.contractId as string)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: contractTeal[700], fontWeight: 700, padding: 0, fontSize: 11 }}>

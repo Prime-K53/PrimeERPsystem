@@ -368,12 +368,6 @@ export const PurchaseHistory: React.FC<PurchaseHistoryProps> = ({ purchases, sup
                 }
                 break;
             case 'delete': {
-                const deletePayStatus = derivePurchasePaymentStatus(po);
-                if (deletePayStatus === 'Paid' || deletePayStatus === 'Partial' || (po.paidAmount || 0) > 0) {
-                    setAdminPasswordInput('');
-                    setAdminPasswordModal({ open: true, po });
-                    return;
-                }
                 if (confirm("Cancel this Bill? This will mark both the order and payment status as Cancelled.")) {
                     updatePurchase({ ...po, status: 'Cancelled', paymentStatus: 'Cancelled' } as Purchase);
                     notify("Bill Cancelled", "success");
@@ -613,76 +607,6 @@ export const PurchaseHistory: React.FC<PurchaseHistoryProps> = ({ purchases, sup
                 <Pagination currentPage={currentPage} maxPage={maxPage} totalItems={totalItems} itemsPerPage={itemsPerPage} onNext={next} onPrev={prev} onFirst={first} onLast={last} onItemsPerPageChange={setItemsPerPage} />
             </div>
 
-        {adminPasswordModal.open && (
-            <div
-                className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
-                onClick={(e) => {
-                    if (e.target === e.currentTarget) {
-                        setAdminPasswordModal({ open: false, po: null });
-                    }
-                }}
-            >
-                <div className="w-full max-w-md animate-in zoom-in-95 duration-200" role="dialog" aria-modal="true">
-                    <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
-                        <div className="flex items-center justify-between py-4 px-6 border-b border-slate-100">
-                            <h2 className="text-lg font-semibold text-slate-800">Admin Verification</h2>
-                            <button
-                                onClick={() => setAdminPasswordModal({ open: false, po: null })}
-                                className="text-slate-400 hover:text-slate-600 transition-colors text-xl font-bold"
-                                type="button"
-                                aria-label="Close"
-                            >
-                                ✕
-                            </button>
-                        </div>
-
-                        <div className="px-6 py-5">
-                            <p className="text-sm text-slate-600 leading-relaxed mb-4">
-                                This bill has payments. Enter Admin Password to cancel:
-                            </p>
-                            <input
-                                type="password"
-                                value={adminPasswordInput}
-                                onChange={(e) => setAdminPasswordInput(e.target.value)}
-                                placeholder="Enter admin password..."
-                                className="w-full p-3 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-slate-400"
-                                autoFocus
-                            />
-                        </div>
-
-                        <div className="flex items-center justify-end gap-3 px-6 py-4 bg-slate-50 border-t border-slate-100">
-                            <button
-                                onClick={() => setAdminPasswordModal({ open: false, po: null })}
-                                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all"
-                                type="button"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={() => {
-                                    if (adminPasswordInput !== 'password') {
-                                        notify("Incorrect Password. Action Cancelled.", "error");
-                                        setAdminPasswordModal({ open: false, po: null });
-                                        return;
-                                    }
-                                    setAdminPasswordModal({ open: false, po: null });
-                                    const po = adminPasswordModal.po;
-                                    if (po && confirm("Cancel this Bill? This will mark both the order and payment status as Cancelled.")) {
-                                        updatePurchase({ ...po, status: 'Cancelled', paymentStatus: 'Cancelled' } as Purchase);
-                                        notify("Bill Cancelled", "success");
-                                    }
-                                }}
-                                disabled={!adminPasswordInput.trim()}
-                                className="px-5 py-2 text-sm font-medium text-white bg-red-600 rounded-xl hover:bg-red-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                type="button"
-                            >
-                                Verify & Cancel
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        )}
         </div>
     );
 };

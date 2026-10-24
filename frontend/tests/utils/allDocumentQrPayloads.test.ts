@@ -28,6 +28,7 @@ import {
   buildSupplierPaymentDoc,
 } from '../../services/receiptCalculationService';
 import { resolveVerificationBaseUrl } from '../../utils/invoiceVerification';
+import { resolveContractVerifyBaseUrl } from '../../utils/documentVerification';
 
 const TOK = 'e'.repeat(64);
 const COMPANY = 'Prime Printing Service';
@@ -229,7 +230,7 @@ describe('decoded QR for statement', () => {
 });
 
 describe('decoded QR for printing_contract', () => {
-  it('decodes to the URL only', async () => {
+  it('decodes to the content-hash verification URL only', async () => {
     const { buildPrintingContractDoc } = await import('../../services/printingContractService');
     const payload = await buildPrintingContractDoc({
       contract: {
@@ -253,10 +254,21 @@ describe('decoded QR for printing_contract', () => {
       } as any,
       customerName: 'Decode School',
     });
+    expect(payload.contentHash).toMatch(/^[0-9a-f]{64}$/);
     const secured: any = await attachDocumentSecurity(payload, COMPANY);
     const decoded = decodeQrDataUrl(String(secured.securityQrCodeDataUrl));
     expect(decoded).toBe(secured.securityQrPayload);
-    assertUrlOnly(decoded, 'printing-contract', 'PC-M001');
+
+    const expected = `${resolveContractVerifyBaseUrl()}/verify?c=PC-M001&h=${payload.contentHash}`;
+    expect(secured.securityQrPayload).toBe(expected);
+    expect(decoded).toContain('/verify?c=PC-M001&h=');
+    expect(decoded).toContain(String(payload.contentHash));
+    // The dedicated content-hash route replaces the legacy token route.
+    expect(decoded).not.toContain('/#/verify/');
+    expect(decoded).not.toContain('?t=');
+    expect(decoded).not.toContain(COMPANY);
+    expect(decoded).not.toContain('Decode School');
+    expect(decoded).not.toContain('Decode print');
   }, 30000);
 });
 

@@ -67,20 +67,14 @@ const FiscalReportsHub: React.FC = () => {
       color: 'bg-blue-50 text-blue-600',
       onClick: () => setSelectedReport(REPORT_TYPE_MAP['Aged receivables'])
     },
-    {
-      label: 'Financials',
-      description: 'Balance sheet, P&L, trial balance, and cash flow.',
-      icon: <BarChart3 />,
-      color: 'bg-blue-50 text-blue-500'
-    },
-    {
-      label: 'Aged reports',
-      description: 'Aged receivables and payables analysis.',
-      icon: <FileText />,
-      color: 'bg-blue-50 text-blue-600',
-      onClick: () => setSelectedReport(REPORT_TYPE_MAP['Aged reports'])
-    }
-  ];
+     {
+       label: 'Aged payables',
+       description: 'Aged payables analysis.',
+       icon: <FileText />,
+       color: 'bg-blue-50 text-blue-600',
+       onClick: () => setSelectedReport(REPORT_TYPE_MAP['Aged reports'])
+     }
+   ];
 
   return (
     <>

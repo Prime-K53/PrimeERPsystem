@@ -18,9 +18,11 @@ import { attachDocumentSecurity } from '../../utils/documentSecurity';
 import {
   buildDocumentVerificationUrl,
   documentTypeSlug,
+  resolveContractVerifyBaseUrl,
   type VerifiableDocumentType,
 } from '../../utils/documentVerification';
 import { mapToInvoiceData } from '../../utils/pdfMapper';
+import { PrintingContractSchema } from '../../views/shared/components/PDF/schemas';
 import {
   buildCustomerReceiptDoc,
   buildSupplierPaymentDoc,
@@ -148,6 +150,50 @@ describe('untokened documents keep the legacy QR (backward compatible)', () => {
     const decoded = decodeQrDataUrl(String(secured.securityQrCodeDataUrl));
     expect(decoded).toBe(secured.securityQrPayload);
     expect(decoded).toContain('INV-OLD');
+    expect(decoded).not.toContain('/#/verify/');
+  }, 30000);
+});
+
+describe('decoded QR for a printing contract integrity claim', () => {
+  it('encodes the URL-safe number and the FULL digest on /verify', async () => {
+    const { buildPrintingContractDoc } = await import('../../services/printingContractService');
+    const doc = await buildPrintingContractDoc({
+      contract: {
+        id: 'c-pc726',
+        company_id: 'co-1',
+        customer_id: 'cust-1',
+        school_id: 'sch-1',
+        contract_number: 'PC-P726/023',
+        title: 'Decode printing',
+        status: 'active',
+        prepaid_amount: 79800,
+        max_assessments: 42,
+        assessment_price: 1900,
+        version: 1,
+        verificationToken: TOK,
+        data: {
+          lines: [{ assessment_name: 'End of term examinations', quantity: 42, unit_price: 1900 }],
+        },
+      } as any,
+      customerName: 'Mtakataka CCAP School',
+    });
+
+    expect(doc.contentHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(doc.integrityShortCode).toBe(
+      `${doc.contentHash.slice(0, 4)}-${doc.contentHash.slice(4, 8)}-${doc.contentHash.slice(8, 12)}`,
+    );
+
+    const secured: any = await attachDocumentSecurity(PrintingContractSchema.parse(doc), COMPANY);
+    const decoded = decodeQrDataUrl(String(secured.securityQrCodeDataUrl));
+
+    // Contract number made URL-safe, full hash (never the short code), and
+    // the dedicated page — not the legacy token route.
+    expect(decoded).toBe(
+      `${resolveContractVerifyBaseUrl()}/verify?c=PC-P726-023&h=${doc.contentHash}`,
+    );
+    expect(decoded).not.toContain(encodeURIComponent('PC-P726/023'));
+    expect(decoded).not.toContain(doc.integrityShortCode!);
+    expect(decoded).not.toContain('?t=');
     expect(decoded).not.toContain('/#/verify/');
   }, 30000);
 });

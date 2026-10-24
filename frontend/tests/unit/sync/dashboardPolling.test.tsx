@@ -20,7 +20,7 @@ import React, { useEffect } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, act } from '@testing-library/react';
 
-vi.mock('../../../stores/financeStore', () => ({ useFinanceStore: () => ({}) }));
+vi.mock('../../../stores/financeStore', () => ({ useFinanceStore: Object.assign(() => ({}), { getState: () => ({}) }) }));
 vi.mock('../../../context/InventoryContext', () => ({ useInventory: () => ({}) }));
 vi.mock('../../../context/ProductionContext', () => ({ useProduction: () => ({}) }));
 vi.mock('../../../context/SalesContext', () => ({ useSales: () => ({}) }));

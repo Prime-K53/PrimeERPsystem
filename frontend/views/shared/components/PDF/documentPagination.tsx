@@ -201,10 +201,17 @@ export function PaginationFurniture({
   identity,
   companyName,
   colorMode = 'brand',
+  pagePrefix,
 }: {
   identity: PaginationIdentity;
   companyName: string;
   colorMode?: PrimeColorMode;
+  /**
+   * Optional prefix printed before "Page X of Y" (e.g. "Contract PC-0007").
+   * Documents that need a formal per-page footer use it; every existing
+   * caller omits it and keeps the exact previous output.
+   */
+  pagePrefix?: string;
 }) {
   const furnitureStyles = paginationFurnitureStyles(colorMode);
   return (
@@ -231,7 +238,7 @@ export function PaginationFurniture({
         fixed
         style={furnitureStyles.pageNumber}
         render={({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) =>
-          `Page ${pageNumber} of ${totalPages}`
+          `${pagePrefix ? `${pagePrefix} · ` : ''}Page ${pageNumber} of ${totalPages}`
         }
       />
     </>

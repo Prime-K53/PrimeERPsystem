@@ -10,6 +10,7 @@ if (typeof window !== 'undefined') {
 import './index.css';
 import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
+import ContractVerify from './views/portal/ContractVerify.tsx';
 // Development-only DevTools diagnostics bridge (no-op in production builds).
 import './utils/devDiagnostics';
 
@@ -66,9 +67,24 @@ if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
 
+/**
+ * Contract QRs point at `<public-app-origin>/verify?c=&h=` — a REAL path, not
+ * the internal HashRouter. When the deployment rewrites unknown paths to
+ * index.html (Vercel/Netlify SPA fallback), mount the public page directly so
+ * it works without an authenticated shell, providers or hash routing.
+ *
+ * `/#/verify?...` still boots the full app and resolves the same component
+ * through the route table in App.tsx.
+ */
+const isStandaloneContractVerify = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const path = String(window.location.pathname || '').replace(/\/+$/, '');
+  return /(^|\/)verify$/.test(path);
+};
+
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <ErrorBoundary>
-    <App />
+    {isStandaloneContractVerify() ? <ContractVerify /> : <App />}
   </ErrorBoundary>
 );

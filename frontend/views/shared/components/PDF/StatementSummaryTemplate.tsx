@@ -53,7 +53,7 @@ const buildFooterLine1 = (config?: CompanyConfig | null) => {
 };
 
 const buildFooterLine2 = (config?: CompanyConfig | null) => {
-  return 'Prime Printing Service, Along M5 Road Mtakataka, Dedza, Malawi, Phone +265 992 528 222,';
+  return 'Prime Printing Service, Along M5 Road, Mtakataka, Phone +265 992 528 222,';
 };
 
 export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOverride?: CompanyConfig | null; channel?: 'erp' | 'portal'; colorMode?: PrimeColorMode }> = ({ data, configOverride = null, channel = 'erp', colorMode = 'brand' }) => {

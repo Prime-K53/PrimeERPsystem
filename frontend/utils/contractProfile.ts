@@ -231,7 +231,9 @@ export const summarisePrintSpec = (p: ContractPrintSpec): string => {
   const bits = [
     p.paperSize,
     p.paperType,
-    p.paperWeight ? `${p.paperWeight}gsm` : '',
+    // `paperWeight` is often stored already suffixed ("80gsm"), so appending
+    // "gsm" unconditionally produced "80gmsgsm" on every printed contract.
+    p.paperWeight ? (/gsm/i.test(p.paperWeight) ? p.paperWeight : `${p.paperWeight}gsm`) : '',
     p.colorMode,
     p.sides,
     p.pagesPerCopy ? `${p.pagesPerCopy}pp` : '',

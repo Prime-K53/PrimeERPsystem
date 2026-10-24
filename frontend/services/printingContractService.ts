@@ -29,6 +29,14 @@ export interface PrintingContractDocData {
   status: string;
   customerName: string;
   schoolName?: string;
+  /** Client party block: contact person, phone, email and postal/physical address. */
+  customerContact?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  customerAddress?: string;
+  /** Small secondary reference (the CUST-xxxx key), never the display name. */
+  customerReference?: string;
+  schoolZone?: string;
   periodStart?: string;
   periodEnd?: string;
   lines: PrintingContractDocLine[];
@@ -42,14 +50,34 @@ export interface PrintingContractDocData {
   chargePerCandidate?: number;
   assessmentSittings?: string;
   printSpecSummary?: string;
+  /** Structured agreed-specification rows (label/value table on the contract). */
+  printPaperSummary?: string;
+  printColorSummary?: string;
+  printTypeSummary?: string;
+  printFinishing?: string;
+  printPackaging?: string;
+  printOrientation?: string;
   pricingRulesSummary?: string;
   deliveryTermsSummary?: string;
+  deliveryMethod?: string;
+  deliveryTimeline?: string;
+  deliveryAddress?: string;
+  deliveryNotes?: string;
+  /** VAT applied to the order, when the contract records one. */
+  vatAmount?: number;
   signatures: {
     company: PrintingContractSignatureBlock | null;
     customer: PrintingContractSignatureBlock | null;
   };
   fullySigned: boolean;
   contentHash: string;
+  /**
+   * Human-typable digest prefix ("4612-f2e1-2ecc"). Derived from `contentHash`
+   * by `contractShortCode`; persisted alongside it so a manual lookup resolves
+   * server-side. NEVER proof on its own — the verify endpoint recomputes the
+   * full hash and compares it constant-time.
+   */
+  integrityShortCode?: string;
   issuedInvoiceId?: string;
 }
 
@@ -57,6 +85,12 @@ export interface BuildPrintingContractDocInput {
   contract: AssessmentContract;
   customerName: string;
   schoolName?: string;
+  /** Client party details sourced from the customer/school records. */
+  customerContact?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  customerAddress?: string;
+  customerReference?: string;
   currencySymbol?: string;
   issuedAtIso?: string;
 }
@@ -108,6 +142,55 @@ const mapSignatureBlock = (block: any): PrintingContractSignatureBlock | null =>
   };
 };
 
+const textOrUndefined = (value: unknown): string | undefined => {
+  const text = String(value ?? '').trim();
+  return text || undefined;
+};
+
+/**
+ * Normalise a paper weight for print. The profile historically let operators
+ * type "80gsm" into a field that the summary also suffixed with "gsm",
+ * producing "80gmsgsm"; accepting either form here keeps both old and new
+ * contracts readable without rewriting stored data.
+ */
+const formatPaperWeight = (value?: string): string => {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const numeric = text.match(/^([\d.]+)\s*(?:gsm|g\/m2|g\/m²)?$/i);
+  return numeric ? `${numeric[1]}gsm` : text;
+};
+
+const formatPagesPerCopy = (value?: string): string => {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  return /page/i.test(text) ? text : `${text} pages`;
+};
+
+const normalizeColorMode = (value?: string): string => {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (/^(b\s*&\s*w|bw|mono(?:chrome)?|black\s*(?:and|&)\s*white)$/i.test(text)) return 'Black & white';
+  if (/^colou?r$/i.test(text)) return 'Colour';
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
+
+const normalizeSides = (value?: string): string => {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (/^(double|duplex)(?:[-\s]?sided)?$/i.test(text)) return 'double-sided';
+  if (/^(single|simplex)(?:[-\s]?sided)?$/i.test(text)) return 'single-sided';
+  return text;
+};
+
+/** Only a human-facing customer key is printed — never a UUID or raw row id. */
+const normalizeCustomerReference = (value?: unknown): string | undefined => {
+  const text = String(value ?? '').trim();
+  if (!text) return undefined;
+  if (/^CUST[-\s]?\d{3,}$/i.test(text)) return text.toUpperCase().replace(/\s+/g, '-');
+  if (/^[A-Z]{2,5}-\d{3,}$/i.test(text)) return text;
+  return undefined;
+};
+
 /** Deterministic JSON: sorted keys, recursive — the hash input. */
 export const stableStringify = (value: unknown): string => {
   if (value === null || value === undefined) return 'null';
@@ -143,62 +226,278 @@ export const hashContractContent = async (canonicalJson: string): Promise<string
     .join('');
 };
 
+// ─── Contract integrity (record-based canonical digest) ────────────────
+//
+// The printed contract hash is a digest of the STORED CONTRACT RECORD — never
+// of the rendered PDF bytes. That is what lets the public verify endpoint
+// recompute it server-side from `assessment_contracts` alone and detect any
+// edit to a material field.
+//
+// Rule (contract hash v1):
+//   - Material: parties, line items, amounts, terms, contract dates, version,
+//     status and the recorded signature blocks.
+//   - Volatile/excluded: the print/issue date, the verification token, the QR
+//     payload/bytes, `contentHash` and `integrityShortCode` themselves.
+//   - Absent optionals are pruned exactly as JSONB drops them, so the issuer
+//     and the verifier hash the same shape.
+//   - Keys are serialised in sorted order by `stableStringify`.
+//
+// MUST stay byte-identical to `backend/services/documentIntegrity.cjs`
+// (`contractIntegritySnapshot` / `hashContractRecord`). The cross-language
+// fixture `tests/fixtures/contract-integrity-vector.json` locks the two
+// implementations together.
+export const CONTRACT_HASH_VERSION = 1;
+
+const snapshotText = (value: unknown): string => String(value ?? '').trim();
+
+const snapshotFirstText = (...values: unknown[]): string | undefined => {
+  for (const value of values) {
+    const text = snapshotText(value);
+    if (text) return text;
+  }
+  return undefined;
+};
+
+const snapshotNumber = (value: unknown): number | undefined => {
+  if (value === undefined || value === null || value === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+/** Normalised recorded signature block (or null when it is not a signature). */
+const snapshotSignature = (block: unknown): PrintingContractSignatureBlock | null => {
+  const mapped = mapSignatureBlock(block);
+  if (!mapped) return null;
+  const rawSignedAt = snapshotText(mapped.signedAt);
+  return {
+    name: mapped.name,
+    role: mapped.role,
+    mode: mapped.mode,
+    // Calendar date only: two renders of the same signature day agree even if
+    // the recorded instant carries a different time/offset.
+    signedAt: toIsoDateOnly(rawSignedAt) || rawSignedAt,
+    signedBy: mapped.signedBy,
+    signatureDataUrl: mapped.signatureDataUrl as string,
+  };
+};
+
+/**
+ * Canonical, deterministic projection of an `AssessmentContract` record.
+ * Both the browser issuer and the server verifier call the same rule; only
+ * material fields are present, and undefined keys are removed.
+ */
+export const buildContractIntegritySnapshot = (
+  contract: AssessmentContract,
+): Record<string, unknown> => {
+  const record = (contract || {}) as any;
+  const inner = record.data && typeof record.data === 'object' ? record.data : {};
+  const profile = readContractProfile(inner);
+
+  const schoolName = stripCustomerIdSuffix(
+    snapshotFirstText(record.schoolName, record.school_name, inner.school_name),
+  ) || undefined;
+  const customerName = resolveCustomerDisplayName(
+    snapshotFirstText(record.customerName, record.customer_name, inner.customer_name),
+    schoolName,
+  ) || 'Customer';
+
+  const vatValue = snapshotNumber(
+    inner.vat_amount ?? inner.vatAmount ?? record.vat_amount ?? record.vatAmount
+      ?? record.tax_amount ?? record.taxAmount,
+  );
+  const company = snapshotSignature((inner.signatures || {}).company);
+  const customer = snapshotSignature((inner.signatures || {}).customer);
+
+  const snapshot = {
+    hashVersion: CONTRACT_HASH_VERSION,
+    documentType: 'printing_contract',
+    contractNumber: snapshotText(record.contract_number || record.contractNumber),
+    version: Number(record.version) || 1,
+    status: snapshotText(record.status || 'draft'),
+    // Parties
+    customerName,
+    schoolName,
+    customerContact: snapshotFirstText(record.customerContact, record.customer_contact, inner.customer_contact),
+    customerPhone: snapshotFirstText(record.customerPhone, record.customer_phone, inner.customer_phone),
+    customerAddress: snapshotFirstText(
+      record.customerAddress,
+      record.customer_address,
+      record.billing_address,
+      inner.customer_address,
+    ),
+    customerReference: normalizeCustomerReference(
+      snapshotFirstText(record.customerReference, record.customer_reference, record.customer_id, inner.customer_reference),
+    ),
+    schoolZone: snapshotFirstText(record.schoolZone, record.school_zone, inner.school_zone, inner.schoolZone),
+    // Contract window (calendar dates, never instants)
+    periodStart: toIsoDateOnly(record.starts_at ?? record.periodStart ?? record.startsAt) || undefined,
+    periodEnd: toIsoDateOnly(record.ends_at ?? record.periodEnd ?? record.endsAt) || undefined,
+    // Commercial content
+    lines: mapLines(record),
+    prepaidAmount: roundMoney(Number(record.prepaid_amount ?? record.prepaidAmount) || 0),
+    maxAssessments: Math.max(0, Math.floor(Number(record.max_assessments ?? record.maxAssessments) || 0)),
+    assessmentPrice: roundMoney(Number(record.assessment_price ?? record.assessmentPrice) || 0),
+    vatAmount: vatValue !== undefined && vatValue > 0 ? roundMoney(vatValue) : undefined,
+    terms: snapshotText(record.terms) || undefined,
+    notes: snapshotText(record.notes) || undefined,
+    // Agreed specification (the same values printed on the contract)
+    totalCandidature: profile.candidature.totalCandidature,
+    assessmentSpec: snapshotText(profile.candidature.spec) || undefined,
+    chargePerCandidate: profile.pricingRules.chargePerCandidate,
+    assessmentSittings: snapshotText(profile.candidature.sittings) || undefined,
+    printSpecSummary: summarisePrintSpec(profile.printSpec) || undefined,
+    printPaperSummary: [
+      profile.printSpec.paperSize,
+      formatPaperWeight(profile.printSpec.paperWeight),
+      formatPagesPerCopy(profile.printSpec.pagesPerCopy),
+    ].filter((part) => snapshotText(part)).join(', ') || undefined,
+    printColorSummary: [
+      normalizeColorMode(profile.printSpec.colorMode),
+      normalizeSides(profile.printSpec.sides),
+    ].filter((part) => snapshotText(part)).join(', ') || undefined,
+    printTypeSummary: [
+      profile.printSpec.paperType,
+      profile.printSpec.orientation,
+    ].filter((part) => snapshotText(part)).join(' · ') || undefined,
+    printFinishing: snapshotText(profile.printSpec.finishing) || undefined,
+    printPackaging: snapshotText(profile.printSpec.packaging) || undefined,
+    printOrientation: snapshotText(profile.printSpec.orientation) || undefined,
+    pricingRulesSummary: [
+      profile.pricingRules.model ? String(profile.pricingRules.model).replace(/_/g, ' ') : '',
+      profile.pricingRules.chargePerCandidate !== undefined
+        ? `Charge per candidate: ${roundMoney(profile.pricingRules.chargePerCandidate)}`
+        : '',
+      profile.pricingRules.discount ? `Discount: ${profile.pricingRules.discount}` : '',
+      profile.pricingRules.urgentFee ? `Urgent: ${profile.pricingRules.urgentFee}` : '',
+      profile.pricingRules.taxHandling,
+      profile.pricingRules.rulesNotes,
+    ].filter((part) => snapshotText(part)).join(' · ') || undefined,
+    deliveryTermsSummary: [
+      profile.delivery.method,
+      profile.delivery.timeline,
+      profile.delivery.address,
+      profile.delivery.packaging ? `Pack: ${profile.delivery.packaging}` : '',
+      profile.delivery.deliveryNotes,
+    ].filter((part) => snapshotText(part)).join(' · ') || undefined,
+    deliveryMethod: snapshotText(profile.delivery.method) || undefined,
+    deliveryTimeline: snapshotText(profile.delivery.timeline) || undefined,
+    deliveryAddress: snapshotText(profile.delivery.address) || undefined,
+    deliveryNotes: snapshotText(profile.delivery.deliveryNotes) || undefined,
+    // Signatures (images included so a signature swap changes the digest)
+    signatures: { company, customer },
+    fullySigned: Boolean(company && customer),
+    issuedInvoiceId: snapshotFirstText(inner.issued_invoice_id, inner.issuedInvoiceId, record.issuedInvoiceId),
+  };
+  return pruneUndefined(snapshot) as Record<string, unknown>;
+};
+
+/** SHA-256 over the canonical contract snapshot. */
+export const hashContractRecord = async (contract: AssessmentContract): Promise<string> =>
+  hashContractContent(stableStringify(buildContractIntegritySnapshot(contract)));
+
+/**
+ * First 12 hex characters of the digest, grouped 4-4-4 for manual entry.
+ * Empty string when the digest is not a SHA-256 hex value.
+ */
+export const contractShortCode = (contentHash?: string | null): string => {
+  const hex = String(contentHash || '').toLowerCase().trim();
+  if (!/^[0-9a-f]{12,}$/.test(hex)) return '';
+  return `${hex.slice(0, 4)}-${hex.slice(4, 8)}-${hex.slice(8, 12)}`;
+};
+
+/**
+ * Attach/refresh the persisted integrity fields. Called on contract create,
+ * every update (including status transitions) and at print time for legacy
+ * rows, so a changed contract can never keep a stale digest.
+ */
+export const ensureContractIntegrity = async (
+  contract: AssessmentContract,
+): Promise<AssessmentContract> => {
+  const contentHash = await hashContractRecord(contract);
+  return {
+    ...contract,
+    contentHash,
+    integrityShortCode: contractShortCode(contentHash),
+  } as AssessmentContract;
+};
+
 export const buildPrintingContractDoc = async (
   input: BuildPrintingContractDocInput,
 ): Promise<PrintingContractDocData> => {
   const { contract } = input;
   if (!contract) throw new Error('Contract is required to build the document.');
-  const lines = mapLines(contract);
-  const company = mapSignatureBlock((contract.data as any)?.signatures?.company);
-  const customer = mapSignatureBlock((contract.data as any)?.signatures?.customer);
-  const profile = readContractProfile((contract as any)?.data);
-  const printSpecSummary = summarisePrintSpec(profile.printSpec) || undefined;
-  const pricingBits = [
-    profile.pricingRules.model ? String(profile.pricingRules.model).replace(/_/g, ' ') : '',
-    profile.pricingRules.chargePerCandidate !== undefined ? `Charge per candidate: ${roundMoney(profile.pricingRules.chargePerCandidate)}` : '',
-    profile.pricingRules.discount ? `Discount: ${profile.pricingRules.discount}` : '',
-    profile.pricingRules.urgentFee ? `Urgent: ${profile.pricingRules.urgentFee}` : '',
-    profile.pricingRules.taxHandling,
-    profile.pricingRules.rulesNotes,
-  ].filter((s) => String(s || '').trim()).join(' · ') || undefined;
-  const deliveryBits = [
-    profile.delivery.method,
-    profile.delivery.timeline,
-    profile.delivery.address,
-    profile.delivery.packaging ? `Pack: ${profile.delivery.packaging}` : '',
-    profile.delivery.deliveryNotes,
-  ].filter((s) => String(s || '').trim()).join(' · ') || undefined;
+  // The digest is computed from the STORED record, not from this assembled
+  // document: `date`, token and QR are volatile and must never enter it. The
+  // record-only snapshot also means the server can recompute the same digest
+  // from `assessment_contracts` without re-rendering a PDF.
+  const snapshot = buildContractIntegritySnapshot(contract);
+  // Display falls back to caller-supplied party details for legacy rows and
+  // for standalone builder calls. The DIGEST above is always record-based;
+  // the ERP persists these party fields before printing so the server can
+  // recompute exactly what the client block shows.
+  const storedCustomer = String(snapshot.customerName || '').trim();
+  const storedSchool = snapshot.schoolName ? String(snapshot.schoolName) : '';
+  const schoolName = storedSchool || stripCustomerIdSuffix(String(input.schoolName || '')) || undefined;
+  const customerName = resolveCustomerDisplayName(
+    storedCustomer && storedCustomer !== 'Customer' ? storedCustomer : input.customerName,
+    schoolName,
+  ) || 'Customer';
   const doc: Omit<PrintingContractDocData, 'contentHash'> = {
     documentType: 'printing_contract',
     verificationToken: String((contract as any)?.verificationToken || '').trim() || undefined,
-    contractNumber: String(contract.contract_number || '').trim(),
+    contractNumber: String(snapshot.contractNumber || ''),
     date: toDisplayDate(input.issuedAtIso),
-    version: Number(contract.version) || 1,
-    status: String(contract.status || 'draft'),
-    customerName: String(input.customerName || '').trim() || 'Customer',
-    schoolName: String(input.schoolName || '').trim() || undefined,
-    periodStart: contract.starts_at || undefined,
-    periodEnd: contract.ends_at || undefined,
-    lines,
-    prepaidAmount: roundMoney(Number(contract.prepaid_amount) || 0),
-    maxAssessments: Math.max(0, Math.floor(Number(contract.max_assessments) || 0)),
-    assessmentPrice: roundMoney(Number(contract.assessment_price) || 0),
-    terms: String(contract.terms || '').trim() || undefined,
-    notes: String(contract.notes || '').trim() || undefined,
-    totalCandidature: profile.candidature.totalCandidature,
-    assessmentSpec: profile.candidature.spec?.trim() || undefined,
-    chargePerCandidate: profile.pricingRules.chargePerCandidate,
-    assessmentSittings: profile.candidature.sittings?.trim() || undefined,
-    printSpecSummary,
-    pricingRulesSummary: pricingBits,
-    deliveryTermsSummary: deliveryBits,
-    signatures: { company, customer },
-    fullySigned: Boolean(company && customer),
-    issuedInvoiceId: String((contract.data as any)?.issued_invoice_id || '').trim() || undefined,
+    version: Number(snapshot.version) || 1,
+    status: String(snapshot.status || 'draft'),
+    customerName,
+    schoolName,
+    customerContact: snapshot.customerContact
+      ? String(snapshot.customerContact)
+      : textOrUndefined(input.customerContact),
+    customerPhone: snapshot.customerPhone
+      ? String(snapshot.customerPhone)
+      : textOrUndefined(input.customerPhone),
+    customerEmail: textOrUndefined(input.customerEmail),
+    customerAddress: snapshot.customerAddress
+      ? String(snapshot.customerAddress)
+      : textOrUndefined(input.customerAddress),
+    customerReference: snapshot.customerReference
+      ? String(snapshot.customerReference)
+      : normalizeCustomerReference(input.customerReference) || normalizeCustomerReference((contract as any)?.customer_id),
+    schoolZone: snapshot.schoolZone ? String(snapshot.schoolZone) : undefined,
+    periodStart: snapshot.periodStart ? String(snapshot.periodStart) : undefined,
+    periodEnd: snapshot.periodEnd ? String(snapshot.periodEnd) : undefined,
+    lines: snapshot.lines as PrintingContractDocLine[],
+    prepaidAmount: Number(snapshot.prepaidAmount) || 0,
+    maxAssessments: Number(snapshot.maxAssessments) || 0,
+    assessmentPrice: Number(snapshot.assessmentPrice) || 0,
+    terms: snapshot.terms ? String(snapshot.terms) : undefined,
+    notes: snapshot.notes ? String(snapshot.notes) : undefined,
+    totalCandidature: snapshot.totalCandidature !== undefined ? Number(snapshot.totalCandidature) : undefined,
+    assessmentSpec: snapshot.assessmentSpec ? String(snapshot.assessmentSpec) : undefined,
+    chargePerCandidate: snapshot.chargePerCandidate !== undefined ? Number(snapshot.chargePerCandidate) : undefined,
+    assessmentSittings: snapshot.assessmentSittings ? String(snapshot.assessmentSittings) : undefined,
+    printSpecSummary: snapshot.printSpecSummary ? String(snapshot.printSpecSummary) : undefined,
+    printPaperSummary: snapshot.printPaperSummary ? String(snapshot.printPaperSummary) : undefined,
+    printColorSummary: snapshot.printColorSummary ? String(snapshot.printColorSummary) : undefined,
+    printTypeSummary: snapshot.printTypeSummary ? String(snapshot.printTypeSummary) : undefined,
+    printFinishing: snapshot.printFinishing ? String(snapshot.printFinishing) : undefined,
+    printPackaging: snapshot.printPackaging ? String(snapshot.printPackaging) : undefined,
+    printOrientation: snapshot.printOrientation ? String(snapshot.printOrientation) : undefined,
+    pricingRulesSummary: snapshot.pricingRulesSummary ? String(snapshot.pricingRulesSummary) : undefined,
+    deliveryTermsSummary: snapshot.deliveryTermsSummary ? String(snapshot.deliveryTermsSummary) : undefined,
+    deliveryMethod: snapshot.deliveryMethod ? String(snapshot.deliveryMethod) : undefined,
+    deliveryTimeline: snapshot.deliveryTimeline ? String(snapshot.deliveryTimeline) : undefined,
+    deliveryAddress: snapshot.deliveryAddress ? String(snapshot.deliveryAddress) : undefined,
+    deliveryNotes: snapshot.deliveryNotes ? String(snapshot.deliveryNotes) : undefined,
+    vatAmount: Number(snapshot.vatAmount) > 0 ? Number(snapshot.vatAmount) : undefined,
+    signatures: (snapshot.signatures as PrintingContractDocData['signatures']) || { company: null, customer: null },
+    fullySigned: Boolean(snapshot.fullySigned),
+    issuedInvoiceId: snapshot.issuedInvoiceId ? String(snapshot.issuedInvoiceId) : undefined,
   };
   if (!doc.contractNumber) throw new Error('Contract number is required to build the document.');
-  const contentHash = await hashContractContent(stableStringify(doc));
-  return { ...doc, contentHash };
+  const contentHash = await hashContractContent(stableStringify(snapshot));
+  return { ...doc, contentHash, integrityShortCode: contractShortCode(contentHash) };
 };
 
 // ─── Customer document: Contract Schedule (§2) ────────────────────────
@@ -466,7 +765,9 @@ const resolveAcademicYear = (data: Record<string, any>, periodStart?: string): s
   const iso = toIsoDateOnly(periodStart);
   if (!iso) return undefined;
   const year = Number(iso.slice(0, 4));
-  return `${year}/${String((year + 1) % 100).padStart(2, '0')}`;
+  const nextYear = year + 1;
+  const nextYearShort = nextYear % 100 === 0 ? String(nextYear) : String(nextYear % 100).padStart(2, '0');
+  return `${year}/${nextYearShort}`;
 };
 
 /**

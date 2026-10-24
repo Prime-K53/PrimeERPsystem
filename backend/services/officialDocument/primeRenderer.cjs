@@ -230984,6 +230984,12 @@ var PrintingContractSchema = external_exports.object({
   status: external_exports.string(),
   customerName: external_exports.string(),
   schoolName: external_exports.string().optional(),
+  customerContact: external_exports.string().optional(),
+  customerPhone: external_exports.string().optional(),
+  customerEmail: external_exports.string().optional(),
+  customerAddress: external_exports.string().optional(),
+  customerReference: external_exports.string().optional(),
+  schoolZone: external_exports.string().optional(),
   periodStart: external_exports.string().optional(),
   periodEnd: external_exports.string().optional(),
   lines: external_exports.array(external_exports.object({
@@ -231002,8 +231008,19 @@ var PrintingContractSchema = external_exports.object({
   chargePerCandidate: external_exports.number().optional(),
   assessmentSittings: external_exports.string().optional(),
   printSpecSummary: external_exports.string().optional(),
+  printPaperSummary: external_exports.string().optional(),
+  printColorSummary: external_exports.string().optional(),
+  printTypeSummary: external_exports.string().optional(),
+  printFinishing: external_exports.string().optional(),
+  printPackaging: external_exports.string().optional(),
+  printOrientation: external_exports.string().optional(),
   pricingRulesSummary: external_exports.string().optional(),
   deliveryTermsSummary: external_exports.string().optional(),
+  deliveryMethod: external_exports.string().optional(),
+  deliveryTimeline: external_exports.string().optional(),
+  deliveryAddress: external_exports.string().optional(),
+  deliveryNotes: external_exports.string().optional(),
+  vatAmount: external_exports.number().optional(),
   signatures: external_exports.object({
     company: ContractSignatureSchema.nullable().optional(),
     customer: ContractSignatureSchema.nullable().optional()
@@ -233598,6 +233615,7 @@ var resolvePdfLogoSource = (config2, showCompanyLogo = true) => {
   return normalizeImageDataUrl(config2?.logoBase64) || normalizeImageDataUrl(config2?.logo) || "";
 };
 var resolvePdfQrCodeSource = (value2) => normalizeImageDataUrl(value2) || "";
+var resolvePdfSignatureSource = (config2) => normalizeImageDataUrl(config2?.signatureBase64) || normalizeImageDataUrl(config2?.signature) || "";
 
 // utils/isoDate.ts
 var ISO_DATE_PREFIX = /^(\d{4})-(\d{2})-(\d{2})/;
@@ -233927,7 +233945,8 @@ var paginationFurnitureStyles = (mode = "brand") => ({
 function PaginationFurniture({
   identity,
   companyName,
-  colorMode = "brand"
+  colorMode = "brand",
+  pagePrefix
 }) {
   const furnitureStyles = paginationFurnitureStyles(colorMode);
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
@@ -233952,7 +233971,7 @@ function PaginationFurniture({
       {
         fixed: true,
         style: furnitureStyles.pageNumber,
-        render: ({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`
+        render: ({ pageNumber, totalPages }) => `${pagePrefix ? `${pagePrefix} \xB7 ` : ""}Page ${pageNumber} of ${totalPages}`
       }
     )
   ] });
@@ -234377,6 +234396,48 @@ var stripChargePerCandidateSubstring = (summary) => {
   const kept = segments.filter((s4) => !fragmentRe.test(s4.trim()));
   return kept.length > 0 ? kept.join(" \xB7 ") : "";
 };
+var PRINTING_CONTRACT_STANDARD_TERMS = [
+  {
+    title: "Payment and prepayment",
+    body: "The Client shall pay the contract value shown in this contract before printing begins. Prepayment is applied to the agreed assessment entitlement and is non-refundable except where these terms expressly provide otherwise. All amounts are stated in Malawi Kwacha and exclude bank charges."
+  },
+  {
+    title: "Delivery and collection",
+    body: "The Service Provider shall deliver the printed work, or make it available for collection, at the place and time stated in the Agreed Specification. Risk in the work passes to the Client on delivery or collection, and the Client shall inspect it promptly."
+  },
+  {
+    title: "Proof approval and corrections",
+    body: "Where a proof is submitted, the Client shall approve it or return corrections within one working day. The Service Provider is not responsible for errors in a proof the Client has approved. Corrections requested after approval may change the price and delivery date."
+  },
+  {
+    title: "Confidentiality",
+    body: "The Service Provider shall keep all examination and assessment materials confidential, use them only to perform this contract, and restrict access to staff who need them. This obligation continues after the contract ends."
+  },
+  {
+    title: "Quality and reprints",
+    body: "The printed work shall conform to the Agreed Specification. The Client shall report any defect within three working days after delivery or collection. The Service Provider shall, at its option, reprint the affected work or refund its price, and this is the Client's sole remedy for defects."
+  },
+  {
+    title: "Changes to quantity or specification",
+    body: "A change requested after signing is effective only when agreed in writing. The Service Provider may adjust the price and delivery date to reflect the change. Work already produced cannot be reduced or cancelled."
+  },
+  {
+    title: "Cancellation",
+    body: "The Client may cancel this contract by written notice. The Service Provider may retain payment for work already performed and for materials and capacity committed to the contract. Cancellation does not affect rights or obligations that have already accrued."
+  },
+  {
+    title: "Liability limits",
+    body: "The Service Provider's total liability under this contract shall not exceed the contract value. The Service Provider is not liable for indirect or consequential loss, loss of profit, or loss caused by the Client's acts or omissions. Nothing in this clause limits liability that cannot be limited by law."
+  },
+  {
+    title: "Force majeure",
+    body: "Neither party is liable for delay or failure caused by an event beyond its reasonable control, including power failure, equipment failure, civil disturbance or government action. The affected party shall notify the other promptly and use reasonable efforts to resume performance."
+  },
+  {
+    title: "Dispute resolution and governing law",
+    body: "The parties shall first try in good faith to resolve any dispute by negotiation. If the dispute is not resolved within fourteen days, it shall be referred to mediation in Malawi. This contract is governed by the laws of the Republic of Malawi, and the courts of Malawi have exclusive jurisdiction."
+  }
+];
 var buildCompanyAddress = (config2) => {
   return [config2?.addressLine1, config2?.city, config2?.country].map((value2) => String(value2 ?? "").trim()).filter(Boolean).join(", ");
 };
@@ -234656,7 +234717,7 @@ var resolveFooterText = (config2, paymentTermsLabel, showPaymentTerms) => {
   return "This is a computer-generated document. Scan QR Code to Verify. For enquiries contact";
 };
 var buildFooterContactLine = (_config) => {
-  return "Prime Printing Service, Along M5 Road Mtakataka, Dedza, Malawi, Phone +265 992 528 222,";
+  return "Prime Printing Service, Along M5 Road, Mtakataka, Phone +265 992 528 222,";
 };
 var isCancelledStatus = (status, data2) => {
   if (data2?.isCancelled === true || data2?.cancelled === true) return true;
@@ -235744,7 +235805,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
             colorMode: mode,
             data: d3,
             companyName,
-            legalFooterLine1: "This is a computer-generated Sales Exchange Note. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222.",
+            legalFooterLine1: "This is a computer-generated Sales Exchange Note. No signature required. For enquiries contact Prime Printing Service, Along M5 Road, Mtakataka, Phone +265992528222.",
             legalFooterLine2: `All exchanges are subject to ${companyName} Return & Exchange Policy.`,
             fontScale,
             flowing: true
@@ -235921,185 +235982,294 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
   if (type === "PRINTING_CONTRACT") {
     const pc = data2;
     const cancelled = isCancelledStatus(pc.status, pc);
+    const fullySigned = Boolean(pc.fullySigned);
+    const ink = monoText(mode, "#0f172a");
+    const softInk = monoText(mode, "#334155");
+    const muted = monoText(mode, "#64748b");
+    const accent = monoText(mode, "#1e3a8a");
+    const hairline = monoLine(mode, "#e2e8f0");
+    const strongRule = monoLine(mode, "#cbd5e1");
+    const headerFill = monoFill(mode, "#f1f5f9");
+    const softFill = monoFill(mode, "#f8fafc");
+    const pageBackground = "#ffffff";
+    const bodySize = 9.5;
+    const money = (value2) => `${currency} ${formatAmount2(Number(value2) || 0)}`;
+    const readableDate = (value2) => {
+      const raw = String(value2 || "").trim();
+      if (!raw) return "";
+      const dmy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(raw);
+      if (dmy) {
+        const iso = `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+        return formatIsoDate(iso) || raw;
+      }
+      return formatIsoDate(raw) || formatDateOnly(raw);
+    };
+    const dateText = readableDate;
+    const lifecycleStatus = String(pc.status || "").trim().toLowerCase();
+    const statusLabel = lifecycleStatus === "voided" ? "Voided" : lifecycleStatus === "cancelled" || lifecycleStatus === "canceled" ? "Cancelled" : lifecycleStatus === "expired" ? "Expired" : lifecycleStatus === "completed" ? "Completed" : lifecycleStatus === "suspended" ? "Suspended" : fullySigned ? "Active" : "Pending signature";
+    const statusTone = cancelled ? { border: monoLine(mode, "#b91c1c"), text: monoText(mode, "#b91c1c"), fill: monoFill(mode, "#fef2f2") } : fullySigned ? { border: accent, text: accent, fill: monoFill(mode, "#eff6ff") } : { border: strongRule, text: muted, fill: headerFill };
     const renderableSignature = (raw) => {
       const validated = normalizeSignatureDataUrl(String(raw || ""));
       const mime = (validated?.match(/^data:([^;]+);base64,/i)?.[1] || "").toLowerCase();
       return validated && (mime === "image/png" || mime === "image/jpeg" || mime === "image/jpg") ? validated : null;
     };
-    const signatureCell = (label, block) => {
+    const sectionHeading = (label, style) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [{ fontSize: 9.5, fontWeight: "bold", letterSpacing: 0.8, textTransform: "uppercase", color: accent, marginBottom: 5 }, style], children: label });
+    const partyLine = (label, value2) => value2 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", marginTop: 2 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 62, fontSize: 7.5, color: muted, letterSpacing: 0.4, textTransform: "uppercase" }, children: label }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 8.8, color: softInk, lineHeight: 1.3 }, children: value2 })
+    ] }) : null;
+    const termCell = (label, value2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, paddingHorizontal: 8, paddingVertical: 6, borderRightWidth: 0.5, borderColor: hairline }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7.2, letterSpacing: 0.5, textTransform: "uppercase", color: muted }, children: label }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9.2, color: ink, fontWeight: "bold", marginTop: 2 }, children: value2 })
+    ] });
+    const summaryLine = (label, value2, options = {}) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingVertical: options.strong ? 4 : 2.5,
+      marginTop: options.top ? 3 : 0,
+      borderTopWidth: options.top ? 0.8 : 0,
+      borderColor: strongRule
+    }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: options.strong ? 10 : 8.8, fontWeight: options.strong ? "bold" : "normal", color: options.strong ? ink : muted }, children: label }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: options.strong ? 10.5 : 9, fontWeight: options.strong ? "bold" : "normal", color: ink, textAlign: "right" }, children: value2 })
+    ] });
+    const specRow = (label, value2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderTopWidth: 0.5, borderColor: hairline, paddingVertical: 3.2 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 136, fontSize: 8.5, color: muted, paddingRight: 8 }, children: label }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 9.2, color: softInk, lineHeight: 1.3 }, children: value2 })
+    ] }, `${label}:${value2}`);
+    const clause = (index2, title2, body) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", marginTop: 9 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 20, fontSize: bodySize, lineHeight: 1.4, fontWeight: "bold", color: accent }, children: [
+        index2,
+        "."
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: bodySize, lineHeight: 1.4, color: softInk }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold", color: ink }, children: [
+          title2,
+          ". "
+        ] }),
+        body
+      ] })
+    ] }, `${index2}:${title2}`);
+    const signatureCard = (label, block, fallbackRole) => {
       const img = block ? renderableSignature(block.signatureDataUrl) : null;
-      return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: monoText(mode, "#64748b") }, children: label }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 70, borderBottomWidth: 1, borderColor: "#000", justifyContent: "flex-end", alignItems: "center", marginBottom: 5 }, children: img ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: img, style: { width: 120, height: 48, objectFit: "contain", marginBottom: 2 } }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, color: monoText(mode, "#94a3b8"), fontStyle: "italic", marginBottom: 6 }, children: "Not signed" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11, fontWeight: "bold" }, children: block?.name || "____________________" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9, color: monoText(mode, "#475569"), marginTop: 2 }, children: block ? `${block.role || "Signatory"} \xB7 signed ${formatDateOnly(block.signedAt)}` : "Signature + date" })
+      return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, borderWidth: 0.5, borderColor: strongRule, borderRadius: 3, padding: 9, backgroundColor: pageBackground }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7.5, fontWeight: "bold", letterSpacing: 1, textTransform: "uppercase", color: muted }, children: label }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", color: ink, marginTop: 5 }, children: block?.name || "____________________________" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5, color: muted, marginTop: 1 }, children: block?.role || fallbackRole }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 42, justifyContent: "flex-end", alignItems: "center", marginTop: 8, borderBottomWidth: 0.5, borderColor: strongRule }, children: img ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: img, style: { width: 118, height: 34, objectFit: "contain", marginBottom: 2 } }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5, color: muted, fontStyle: "italic", marginBottom: 6 }, children: "Not signed" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7, letterSpacing: 0.4, textTransform: "uppercase", color: muted, marginTop: 2 }, children: "Signature" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", marginTop: 8, alignItems: "flex-end" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8, color: muted }, children: "Date: " }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5, color: ink }, children: block?.signedAt ? readableDate(block.signedAt) : "________________" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", marginTop: 4, alignItems: "flex-end" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8, color: muted }, children: "Witness (optional): " }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5, color: ink }, children: "________________" })
+        ] })
       ] });
     };
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: `Printing Contract - ${pc.contractNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [s4.page, pageStyle], children: [
-      channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
-      cancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-        PaginationFurniture,
-        {
-          colorMode: mode,
-          identity: { title: "Contract", number: String(pc.contractNumber || ""), customer: String(pc.customerName || "") },
-          companyName
-        }
-      ),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.headerSection, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.headerLeft, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.title, titleStyle, { fontFamily: "Helvetica" }], children: "Printing Contract" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.infoText, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Contract # : ",
-              pc.contractNumber
+    const recordedTerms = String(pc.terms || "").trim();
+    const termsAreStub = !recordedTerms || recordedTerms.length <= 48 && /^(?:\d[\d,.\s]*\s*)?(?:learners?|candidates?|pupils?|students?|assessments?)?(?:\s*[\d,.\s]*)?$/i.test(recordedTerms);
+    const clientSchool = pc.schoolName && pc.schoolName.trim().toLowerCase() !== pc.customerName.trim().toLowerCase() ? pc.schoolName.trim() : "";
+    const clientLocation = [pc.customerAddress, pc.schoolZone].filter(Boolean).join(" \xB7 ");
+    const deliveryPlace = [pc.deliveryMethod, pc.deliveryTimeline].filter(Boolean).join(", ");
+    const companySettingsSignature = renderableSignature(resolvePdfSignatureSource(config2));
+    const recordedCompanySignature = pc.signatures?.company;
+    const companySignatureBlock = companySettingsSignature ? {
+      name: recordedCompanySignature?.name || companyName,
+      role: recordedCompanySignature?.role || "Authorised signatory",
+      signatureDataUrl: companySettingsSignature,
+      signedAt: recordedCompanySignature?.signedAt || ""
+    } : recordedCompanySignature;
+    const lineSubtotal = (pc.lines || []).reduce((sum, line2) => sum + (Number(line2.total) || 0), 0);
+    const vatAmount = Math.max(0, Number(pc.vatAmount) || 0);
+    const totalAmount = lineSubtotal > 0 ? lineSubtotal + vatAmount : Math.max(0, Number(pc.prepaidAmount) || 0);
+    const prepaidAmount = Math.max(0, Number(pc.prepaidAmount) || 0);
+    const balanceDue = Math.max(0, totalAmount - prepaidAmount);
+    const specRows = [];
+    const candidature = pc.totalCandidature !== void 0 ? pc.totalCandidature : pc.maxAssessments;
+    if (candidature !== void 0 && Number(candidature) > 0) specRows.push(["Candidates", String(candidature)]);
+    if (pc.printPaperSummary) specRows.push(["Paper / pages", pc.printPaperSummary]);
+    if (pc.printColorSummary) specRows.push(["Print", pc.printColorSummary]);
+    if (pc.printTypeSummary) specRows.push(["Paper type / orientation", pc.printTypeSummary]);
+    if (!pc.printPaperSummary && !pc.printColorSummary && pc.printSpecSummary) {
+      specRows.push(["Printing specification", pc.printSpecSummary]);
+    }
+    const unitPrice = pc.chargePerCandidate !== void 0 ? pc.chargePerCandidate : pc.assessmentPrice;
+    if (Number(unitPrice) > 0) {
+      specRows.push(["Pricing", `${money(Number(unitPrice))} per ${pc.chargePerCandidate !== void 0 ? "candidate" : "assessment"}`]);
+    }
+    if (deliveryPlace) specRows.push(["Delivery", deliveryPlace]);
+    if (pc.deliveryAddress) specRows.push(["Delivery point", pc.deliveryAddress]);
+    if (pc.printFinishing) specRows.push(["Finishing", pc.printFinishing]);
+    if (pc.printPackaging) specRows.push(["Packaging", pc.printPackaging]);
+    if (pc.assessmentSittings) specRows.push(["Sittings", pc.assessmentSittings]);
+    if (pc.assessmentSpec) specRows.push(["Assessment specification", pc.assessmentSpec]);
+    const pricingNotes = stripChargePerCandidateSubstring(String(pc.pricingRulesSummary || ""));
+    const unitLabel = pc.chargePerCandidate !== void 0 ? "candidate" : "assessment";
+    const unitEchoRe = new RegExp(`^per[\\s_-]*${unitLabel}s?$`, "i");
+    const pricingSegments = pricingNotes.split(" \xB7 ").map((part) => part.trim()).filter(Boolean);
+    if (pricingSegments.length > 1 && unitEchoRe.test(pricingSegments[0])) pricingSegments.shift();
+    const informativePricingNotes = pricingSegments.join(" \xB7 ");
+    if (informativePricingNotes && !unitEchoRe.test(informativePricingNotes)) {
+      specRows.push(["Pricing notes", informativePricingNotes]);
+    }
+    if (!deliveryPlace && pc.deliveryTermsSummary) specRows.push(["Delivery", pc.deliveryTermsSummary]);
+    if (pc.deliveryNotes) specRows.push(["Delivery notes", pc.deliveryNotes]);
+    if (pc.notes) specRows.push(["Contract notes", pc.notes]);
+    if (specRows.length === 0) specRows.push(["Specification", "As agreed between the parties."]);
+    const verificationUrl = /^https?:\/\//i.test(String(pc.securityQrPayload || "")) ? String(pc.securityQrPayload) : "";
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: `Printing Contract - ${pc.contractNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+      Page,
+      {
+        size: "A4",
+        style: [s4.page, {
+          paddingTop: 50,
+          paddingHorizontal: 56.7,
+          paddingBottom: 86,
+          fontFamily: templateSettings.fontFamily,
+          fontSize: bodySize,
+          color: ink,
+          backgroundColor: pageBackground
+        }],
+        children: [
+          channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
+          cancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            PaginationFurniture,
+            {
+              colorMode: mode,
+              identity: { title: "Contract", number: String(pc.contractNumber || ""), customer: String(pc.customerName || "") },
+              companyName,
+              pagePrefix: `Contract ${pc.contractNumber}`
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", paddingBottom: 10, borderBottomWidth: 0.8, borderColor: strongRule, marginBottom: 12 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flex: 1, paddingRight: 14 }, children: logo ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: logo, style: { width: Math.min(templateSettings.logoWidth, 120) } }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 13, fontWeight: "bold", color: ink }, children: companyName }) }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, alignItems: "flex-end" }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 19, fontWeight: "bold", letterSpacing: 0.4, color: accent }, children: "PRINTING CONTRACT" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", color: ink, marginTop: 3 }, children: pc.contractNumber }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 8.2, color: muted, marginTop: 2 }, children: [
+                "Issued ",
+                readableDate(pc.date),
+                " \xB7 Version ",
+                pc.version
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.2, color: muted, marginTop: 1 }, children: fullySigned ? "Fully signed" : "Awaiting signatures" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 4, borderWidth: 0.6, borderColor: statusTone.border, backgroundColor: statusTone.fill, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7.2, fontWeight: "bold", letterSpacing: 0.6, textTransform: "uppercase", color: statusTone.text }, children: statusLabel }) })
+            ] })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", gap: 12 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, borderWidth: 0.5, borderColor: hairline, borderRadius: 3, padding: 9, backgroundColor: softFill }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7.2, fontWeight: "bold", letterSpacing: 1, textTransform: "uppercase", color: muted }, children: "Service Provider" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11, fontWeight: "bold", color: ink, marginTop: 4 }, children: companyName }),
+              buildReceiptCompanyAddress(config) ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.6, color: softInk, marginTop: 2, lineHeight: 1.3 }, children: buildReceiptCompanyAddress(config) }) : null,
+              partyLine("Phone", formattedPhone || companyPhone),
+              partyLine("WhatsApp", config?.whatsappNumber),
+              partyLine("Email", companyEmail)
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Date : ",
-              formatDateOnly(pc.date),
-              " \xB7 Version ",
-              pc.version
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, borderWidth: 0.5, borderColor: hairline, borderRadius: 3, padding: 9, backgroundColor: softFill }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7.2, fontWeight: "bold", letterSpacing: 1, textTransform: "uppercase", color: muted }, children: "Client" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11, fontWeight: "bold", color: ink, marginTop: 4 }, children: pc.customerName || "N/A" }),
+              clientSchool ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.8, color: softInk, marginTop: 1 }, children: clientSchool }) : null,
+              partyLine("Contact", pc.customerContact),
+              partyLine("Phone", pc.customerPhone),
+              partyLine("Address", clientLocation),
+              pc.customerReference ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 7.2, color: muted, marginTop: 4, letterSpacing: 0.3 }, children: [
+                "Customer ref: ",
+                pc.customerReference
+              ] }) : null
+            ] })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", marginTop: 10, borderWidth: 0.5, borderColor: hairline, borderRadius: 3 }, children: [
+            termCell("Effective date", dateText(pc.periodStart) || "Not stated"),
+            termCell("Expiry date", pc.periodEnd ? dateText(pc.periodEnd) : "Open-ended"),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, paddingHorizontal: 8, paddingVertical: 6 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7.2, letterSpacing: 0.5, textTransform: "uppercase", color: muted }, children: "Delivery / pickup" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9.2, color: ink, fontWeight: "bold", marginTop: 2 }, children: deliveryPlace || "As agreed" })
+            ] })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 12 }, children: [
+            sectionHeading("Order summary"),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", backgroundColor: headerFill, paddingVertical: 4, paddingHorizontal: 5 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3, fontSize: 7.2, fontWeight: "bold", letterSpacing: 0.5, textTransform: "uppercase", color: accent }, children: "Description" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 42, fontSize: 7.2, fontWeight: "bold", letterSpacing: 0.5, textTransform: "uppercase", color: accent, textAlign: "right" }, children: "Qty" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 88, fontSize: 7.2, fontWeight: "bold", letterSpacing: 0.5, textTransform: "uppercase", color: accent, textAlign: "right" }, children: "Unit price" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 94, fontSize: 7.2, fontWeight: "bold", letterSpacing: 0.5, textTransform: "uppercase", color: accent, textAlign: "right" }, children: "Amount" })
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Status : ",
-              toTitleCase(String(pc.status || "draft")),
-              pc.fullySigned ? " \xB7 Fully signed" : ""
+            (pc.lines || []).map((line2, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderColor: hairline, paddingVertical: 4.5, paddingHorizontal: 5 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3, fontSize: 9.2, color: softInk, lineHeight: 1.3 }, children: line2.desc }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 42, fontSize: 9.2, color: ink, textAlign: "right" }, children: line2.qty }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 88, fontSize: 9.2, color: ink, textAlign: "right" }, children: money(line2.price) }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 94, fontSize: 9.2, color: ink, textAlign: "right" }, children: money(line2.total) })
+            ] }, `${line2.desc}:${i2}`)),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flexDirection: "row", justifyContent: "flex-end", marginTop: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { width: 250 }, children: [
+              summaryLine("Subtotal", money(lineSubtotal)),
+              vatAmount > 0 ? summaryLine("VAT", money(vatAmount)) : null,
+              summaryLine("Total", money(totalAmount), { strong: true, top: true }),
+              summaryLine("Prepaid", money(prepaidAmount)),
+              summaryLine("Balance due", money(balanceDue), { strong: true })
+            ] }) })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 12 }, children: [
+            sectionHeading("Agreed specification"),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", backgroundColor: headerFill, paddingVertical: 3.5, paddingHorizontal: 4 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 136, fontSize: 7.2, fontWeight: "bold", letterSpacing: 0.5, textTransform: "uppercase", color: accent }, children: "Item" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 7.2, fontWeight: "bold", letterSpacing: 0.5, textTransform: "uppercase", color: accent }, children: "Detail" })
+            ] }),
+            specRows.map(([label, value2]) => specRow(label, value2))
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 12 }, children: [
+            sectionHeading("Terms & Conditions"),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.2, color: muted, marginBottom: 1 }, children: "These terms form part of the contract and apply to all work performed under it." }),
+            PRINTING_CONTRACT_STANDARD_TERMS.map((term, index2) => clause(index2 + 1, term.title, term.body)),
+            !termsAreStub ? clause(PRINTING_CONTRACT_STANDARD_TERMS.length + 1, "Additional agreed terms", recordedTerms) : null
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 14 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
+              sectionHeading("Signatures"),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.2, color: muted, marginBottom: 6 }, children: "Signed for and on behalf of the parties. This contract takes effect when both parties have signed." }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", gap: 12 }, children: [
+                signatureCard("Company", companySignatureBlock, "Authorised signatory"),
+                signatureCard("Client", pc.signatures?.customer, "Authorised signatory")
+              ] })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 12, borderTopWidth: 0.5, borderColor: strongRule, paddingTop: 7 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5, fontWeight: "bold", letterSpacing: 0.8, color: accent, textTransform: "uppercase" }, children: "DOCUMENT INTEGRITY" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 4, fontSize: 8.2, color: accent, lineHeight: 1.4 }, children: [
+                "Content hash: ",
+                pc.contentHash
+              ] }),
+              verificationUrl ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 2, fontSize: 8, color: softInk, lineHeight: 1.4 }, children: [
+                "Verification URL: ",
+                verificationUrl
+              ] }) : null,
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 3, fontSize: 8.2, color: muted, lineHeight: 1.4 }, children: [
+                "This hash covers the agreed parties, commercial lines, totals, terms and the recorded signature blocks. Any alteration changes the hash. Quote the contract number and hash to verify with ",
+                companyName,
+                "."
+              ] })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 6 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale: 1 }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                SecurityFooter,
+                {
+                  colorMode: mode,
+                  data: pc,
+                  companyName,
+                  legalFooterLine1: resolveFooterText(config2, "", false),
+                  legalFooterLine2: buildFooterContactLine(config2),
+                  fontScale: 1,
+                  flowing: true
+                }
+              )
             ] })
           ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.headerRight, children: renderBrandMark("right") })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.billingSection, { marginTop: 0, marginBottom: 12 }], children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: monoText(mode, "#64748b") }, children: "Company" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.recipientInfoText, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientName, children: companyName }),
-            companyAddress ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientDetail, children: companyAddress }) : null,
-            companyContact ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientPhone, children: companyContact }) : null
-          ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: monoText(mode, "#64748b") }, children: "Client" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.recipientInfoText, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientName, children: pc.customerName || "N/A" }),
-            pc.schoolName ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientDetail, children: pc.schoolName }) : null,
-            pc.periodStart || pc.periodEnd ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: s4.recipientDetail, children: [
-              formatDateOnly(pc.periodStart),
-              " \u2192 ",
-              pc.periodEnd ? formatDateOnly(pc.periodEnd) : "open"
-            ] }) : null
-          ] })
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 8 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.tableHeader, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3 }, children: "Description" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Qty" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Unit Price" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Amount" })
-        ] }),
-        (pc.lines || []).map((line2, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.row, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3 }, children: line2.desc }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: line2.qty }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, textAlign: "right" }, children: [
-            currency,
-            " ",
-            formatAmount2(line2.price)
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, textAlign: "right" }, children: [
-            currency,
-            " ",
-            formatAmount2(line2.total)
-          ] })
-        ] }, i2))
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: [s4.summaryContainer, { justifyContent: "flex-end" }], children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { width: 280 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontWeight: "bold" }, children: "Prepaid Amount" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold", textAlign: "right" }, children: [
-            currency,
-            " ",
-            formatAmount2(pc.prepaidAmount)
-          ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.totalRow], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1 }, children: "Entitlement" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
-            pc.maxAssessments,
-            " assessments \xB7 ",
-            currency,
-            " ",
-            formatAmount2(pc.assessmentPrice),
-            " each"
-          ] })
-        ] })
-      ] }) }),
-      pc.totalCandidature !== void 0 || pc.assessmentSpec || pc.chargePerCandidate !== void 0 || pc.assessmentSittings || pc.printSpecSummary || pc.pricingRulesSummary || pc.deliveryTermsSummary ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 8, padding: 10, backgroundColor: monoFill(mode, "#f8fafc"), borderRadius: 8 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 4, fontSize: 10, textTransform: "uppercase", color: monoText(mode, "#64748b") }, children: "Agreed specification" }),
-        pc.totalCandidature !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, color: monoText(mode, "#334155") }, children: [
-          "Candidature: ",
-          pc.totalCandidature,
-          pc.assessmentSittings ? ` \xB7 ${pc.assessmentSittings}` : "",
-          pc.assessmentSpec ? ` \xB7 ${pc.assessmentSpec}` : ""
-        ] }) : null,
-        pc.totalCandidature === void 0 && (pc.assessmentSittings || pc.assessmentSpec) ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, color: monoText(mode, "#334155") }, children: [
-          "Candidature: ",
-          [pc.assessmentSittings, pc.assessmentSpec].filter(Boolean).join(" \xB7 ")
-        ] }) : null,
-        pc.printSpecSummary ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, color: monoText(mode, "#334155") }, children: [
-          "Printing: ",
-          pc.printSpecSummary
-        ] }) : null,
-        pc.chargePerCandidate !== void 0 || pc.pricingRulesSummary ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, color: monoText(mode, "#334155") }, children: [
-          "Pricing: ",
-          pc.chargePerCandidate !== void 0 ? `Charge per candidate: ${currency} ${formatAmount2(pc.chargePerCandidate)}` : "",
-          pc.chargePerCandidate !== void 0 && pc.pricingRulesSummary ? ` \xB7 ${stripChargePerCandidateSubstring(pc.pricingRulesSummary)}` : pc.pricingRulesSummary || ""
-        ] }) : null,
-        pc.deliveryTermsSummary ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, color: monoText(mode, "#334155") }, children: [
-          "Delivery: ",
-          pc.deliveryTermsSummary
-        ] }) : null
-      ] }) : null,
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 8, padding: 10, backgroundColor: monoFill(mode, "#f8fafc"), borderRadius: 8 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 4, fontSize: 10, textTransform: "uppercase", color: monoText(mode, "#64748b") }, children: "Terms & Conditions" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11, lineHeight: 1.6, color: monoText(mode, "#334155") }, children: pc.terms || "No specific terms recorded on this contract." }),
-        pc.notes ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11, lineHeight: 1.6, color: monoText(mode, "#334155"), marginTop: 6 }, children: [
-          "Notes: ",
-          pc.notes
-        ] }) : null
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.signatureBlock, { marginTop: 24, alignItems: "flex-start", gap: 24 }], children: [
-        signatureCell("Company", pc.signatures?.company),
-        signatureCell("Customer", pc.signatures?.customer)
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 16, borderTopWidth: 0.5, borderColor: monoLine(mode, "#e2e8f0"), paddingTop: 8 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flexDirection: "row", alignItems: "center", gap: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10.5, fontWeight: "bold", color: monoText(mode, "#1e3a8a"), letterSpacing: 0.4 }, children: "DOCUMENT INTEGRITY" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 6, fontSize: 9, color: monoText(mode, "#1e3a8a"), lineHeight: 1.45 }, children: [
-          "Content hash: ",
-          pc.contentHash
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 4, fontSize: 9, color: monoText(mode, "#475569"), lineHeight: 1.45 }, children: [
-          "This hash covers the agreed parties, commercial lines, totals, terms and both signatures. Any alteration changes the hash. Quote the contract number and hash to verify with ",
-          companyName,
-          "."
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-          SecurityFooter,
-          {
-            colorMode: mode,
-            data: pc,
-            companyName,
-            legalFooterLine1: resolveFooterText(config2, "", false),
-            legalFooterLine2: buildFooterContactLine(config2),
-            fontScale,
-            flowing: true
-          }
-        )
-      ] })
-    ] }) });
+        ]
+      }
+    ) });
   }
   if (type === "CONTRACT_SCHEDULE") {
     const cs2 = data2;
@@ -236713,7 +236883,7 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
             colorMode: mode,
             data: sp,
             companyName,
-            legalFooterLine1: "This is a computer-generated payment voucher. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222.",
+            legalFooterLine1: "This is a computer-generated payment voucher. For enquiries contact Prime Printing Service, Along M5 Road, Mtakataka, Phone +265992528222.",
             legalFooterLine2: `Issued securely by ${companyName}.`,
             fontScale,
             flowing: true

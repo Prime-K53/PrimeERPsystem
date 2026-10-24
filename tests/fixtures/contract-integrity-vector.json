@@ -1,0 +1,105 @@
+{
+  "description": "Canonical printing-contract integrity vector (hash v1). Shared by frontend Vitest and backend node:test; both implementations must produce expectedHash from contract.",
+  "hashVersion": 1,
+  "contract": {
+    "id": "c-pc726",
+    "company_id": "co-prime",
+    "customer_id": "CUST-0033",
+    "school_id": "sch-mtakataka",
+    "contract_number": "PC-P726/023",
+    "title": "Term 2 examination printing",
+    "status": "active",
+    "customerName": "Mtakataka CCAP School",
+    "prepaid_amount": 79800,
+    "max_assessments": 42,
+    "assessment_price": 1900,
+    "starts_at": "2026-10-19T00:00:00.000Z",
+    "ends_at": "2027-04-30T00:00:00.000Z",
+    "terms": "Payment within 30 days of invoice. Reprints billed separately.",
+    "notes": "Deliver to the school office.",
+    "version": 2,
+    "verificationToken": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "created_at": "2026-10-18T08:00:00.000Z",
+    "updated_at": "2026-10-20T09:30:00.000Z",
+    "data": {
+      "lines": [
+        {
+          "assessment_name": "End of term examinations",
+          "assessment_grade": "Form 4",
+          "quantity": 40,
+          "unit_price": 1900
+        },
+        {
+          "assessment_name": "Mid-term tests",
+          "quantity": 2,
+          "unit_price": 1900
+        }
+      ],
+      "contract_profile": {
+        "print_spec": {
+          "paper_size": "A4",
+          "paper_type": "Bond",
+          "paper_weight": "80gsm",
+          "color_mode": "Black & white",
+          "sides": "Double-sided",
+          "pages_per_copy": "8",
+          "copies": "1",
+          "orientation": "Portrait",
+          "finishing": "Staple",
+          "packaging": "Boxed"
+        },
+        "pricing_rules": {
+          "model": "per_candidate",
+          "charge_per_candidate": 1900,
+          "discount": "10% for full prepayment",
+          "urgent_fee": "K 5,000",
+          "tax_handling": "VAT exclusive",
+          "notes": "Prices hold for the contract period."
+        },
+        "delivery_terms": {
+          "method": "Pickup",
+          "timeline": "1 day before",
+          "address": "School office",
+          "packaging": "Boxed",
+          "notes": "Call on arrival."
+        },
+        "candidature": {
+          "total_candidature": 42,
+          "sittings": "2",
+          "spec": "End of term examination papers"
+        }
+      },
+      "school_zone": "Dedza",
+      "school_name": "Mtakataka CCAP School",
+      "customer_contact": "Mr Banda",
+      "customer_phone": "+265 992 000 000",
+      "customer_address": "P.O. Box 12, Mtakataka, Dedza",
+      "signatures": {
+        "company": {
+          "name": "Jane Banda",
+          "role": "Sales Manager",
+          "signatureDataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+          "mode": "Draw",
+          "signedAt": "2026-10-20T08:15:00.000Z",
+          "signedBy": "u-1"
+        },
+        "customer": {
+          "name": "Peter Phiri",
+          "role": "Head Teacher",
+          "signatureDataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+          "mode": "Upload",
+          "signedAt": "2026-10-20T08:45:00.000Z",
+          "signedBy": "u-2"
+        },
+        "history": []
+      },
+      "issued_invoice_id": "INV-2026-0912",
+      "vat_amount": 0
+    },
+    "contentHash": "4849ad3f40b8cab0473d8e75a1e560a0d61d4d8537aae2542e0dbac307c20711",
+    "integrityShortCode": "4849-ad3f-40b8"
+  },
+  "expectedCanonicalJson": "{\"assessmentPrice\":1900,\"assessmentSittings\":\"2\",\"assessmentSpec\":\"End of term examination papers\",\"chargePerCandidate\":1900,\"contractNumber\":\"PC-P726/023\",\"customerAddress\":\"P.O. Box 12, Mtakataka, Dedza\",\"customerContact\":\"Mr Banda\",\"customerName\":\"Mtakataka CCAP School\",\"customerPhone\":\"+265 992 000 000\",\"customerReference\":\"CUST-0033\",\"deliveryAddress\":\"School office\",\"deliveryMethod\":\"Pickup\",\"deliveryNotes\":\"Call on arrival.\",\"deliveryTermsSummary\":\"Pickup · 1 day before · School office · Pack: Boxed · Call on arrival.\",\"deliveryTimeline\":\"1 day before\",\"documentType\":\"printing_contract\",\"fullySigned\":true,\"hashVersion\":1,\"issuedInvoiceId\":\"INV-2026-0912\",\"lines\":[{\"desc\":\"End of term examinations (Form 4)\",\"price\":1900,\"qty\":40,\"total\":76000},{\"desc\":\"Mid-term tests\",\"price\":1900,\"qty\":2,\"total\":3800}],\"maxAssessments\":42,\"notes\":\"Deliver to the school office.\",\"periodEnd\":\"2027-04-30\",\"periodStart\":\"2026-10-19\",\"prepaidAmount\":79800,\"pricingRulesSummary\":\"per candidate · Charge per candidate: 1900 · Discount: 10% for full prepayment · Urgent: K 5,000 · VAT exclusive · Prices hold for the contract period.\",\"printColorSummary\":\"Black & white, double-sided\",\"printFinishing\":\"Staple\",\"printOrientation\":\"Portrait\",\"printPackaging\":\"Boxed\",\"printPaperSummary\":\"A4, 80gsm, 8 pages\",\"printSpecSummary\":\"A4 · Bond · 80gsm · Black & white · Double-sided · 8pp · ×1 · Portrait — Staple · Boxed\",\"printTypeSummary\":\"Bond · Portrait\",\"schoolName\":\"Mtakataka CCAP School\",\"schoolZone\":\"Dedza\",\"signatures\":{\"company\":{\"mode\":\"Draw\",\"name\":\"Jane Banda\",\"role\":\"Sales Manager\",\"signatureDataUrl\":\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==\",\"signedAt\":\"2026-10-20\",\"signedBy\":\"u-1\"},\"customer\":{\"mode\":\"Upload\",\"name\":\"Peter Phiri\",\"role\":\"Head Teacher\",\"signatureDataUrl\":\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==\",\"signedAt\":\"2026-10-20\",\"signedBy\":\"u-2\"}},\"status\":\"active\",\"terms\":\"Payment within 30 days of invoice. Reprints billed separately.\",\"totalCandidature\":42,\"version\":2}",
+  "expectedHash": "4849ad3f40b8cab0473d8e75a1e560a0d61d4d8537aae2542e0dbac307c20711",
+  "expectedShortCode": "4849-ad3f-40b8"
+}

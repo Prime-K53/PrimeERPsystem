@@ -66,6 +66,49 @@ describe('buildPrintingContractDoc', () => {
     expect(doc.contentHash.length).toBeGreaterThan(16);
   });
 
+  it('carries client party details and structured specification rows', async () => {
+    const doc = await buildPrintingContractDoc({
+      contract: {
+        ...baseContract,
+        customer_id: 'CUST-0033',
+        data: {
+          ...baseContract.data,
+          school_zone: 'Dedza',
+          contract_profile: {
+            print_spec: {
+              paper_size: 'A4',
+              paper_weight: '80gsm',
+              color_mode: 'Black & white',
+              sides: 'Double-sided',
+              pages_per_copy: '8',
+            },
+            pricing_rules: { model: 'per_candidate', charge_per_candidate: 1900 },
+            delivery_terms: { method: 'Pickup', timeline: '1 day before' },
+            candidature: { total_candidature: 42 },
+          },
+        },
+      },
+      // The denormalised stored name can still be the bare customer key.
+      customerName: 'CUST-0033\nMtakataka CCAP School',
+      schoolName: 'Mtakataka CCAP School',
+      customerContact: 'Mr Banda',
+      customerPhone: '+265 992 000 000',
+      customerAddress: 'P.O. Box 12, Mtakataka, Dedza',
+      customerReference: 'CUST-0033',
+    });
+    expect(doc.customerName).toBe('Mtakataka CCAP School');
+    expect(doc.customerReference).toBe('CUST-0033');
+    expect(doc.customerContact).toBe('Mr Banda');
+    expect(doc.customerPhone).toBe('+265 992 000 000');
+    expect(doc.customerAddress).toContain('Mtakataka');
+    expect(doc.schoolZone).toBe('Dedza');
+    expect(doc.printPaperSummary).toBe('A4, 80gsm, 8 pages');
+    expect(doc.printColorSummary).toBe('Black & white, double-sided');
+    expect(doc.deliveryMethod).toBe('Pickup');
+    expect(doc.deliveryTimeline).toBe('1 day before');
+    expect(doc.totalCandidature).toBe(42);
+  });
+
   it('synthesizes a fallback line when no billable lines exist', async () => {
     const doc = await buildPrintingContractDoc({
       contract: { ...baseContract, data: {} },

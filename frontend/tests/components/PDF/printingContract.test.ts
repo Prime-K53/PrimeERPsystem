@@ -94,7 +94,7 @@ describe('printing contract schema + validation', () => {
 describe('rendered contract content', () => {
   it('unsigned document shows parties, terms, totals and Not-signed blocks with QR footer', async () => {
     const secured: any = await securedDoc(baseContract, 'Acme School', 'Acme Primary');
-    expect(secured.securityQrPayload).toContain('/#/verify/printing-contract/PC-0007');
+    expect(secured.securityQrPayload).toContain('/verify?c=PC-0007&h=');
     const { pages, qrObj } = await renderBoth(secured);
     expect(pages.length).toBeLessThanOrEqual(2);
     const text = pages.map((p) => p.text).join(' ');
@@ -107,9 +107,7 @@ describe('rendered contract content', () => {
     expect(text).toContain(norm('Not signed'));
     expect(text).toContain(norm('DOCUMENT INTEGRITY'));
     expect(text).not.toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
-    expect(text).not.toContain(norm('SCAN TO VERIFY'));
     expect(text).toContain(norm('Digitally generated'));
-    expect(text).toContain(norm('Verification available online'));
     // QR is drawn on the final page only.
     pages.forEach((p, i) => {
       if (i < pages.length - 1) expect(p.drawnImages).not.toContain(qrObj);
@@ -180,7 +178,6 @@ describe('contract pagination honesty', () => {
     const final = pages[total - 1];
     expect(final.drawnImages).toContain(qrObj);
     expect(final.text).not.toContain(norm('DOCUMENT AUTHENTICATION & VERIFICATION'));
-    expect(final.text).not.toContain(norm('SCAN TO VERIFY'));
     expect(final.text).toContain(norm('Digitally generated'));
     expect(final.text).toContain(norm('DOCUMENT INTEGRITY'));
   }, 120000);

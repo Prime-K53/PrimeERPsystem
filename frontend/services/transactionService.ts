@@ -28,7 +28,7 @@ import {
 } from './receiptCalculationService';
 import { logger } from './logger';
 import { salesOrderService } from './salesOrderService';
-import { produceVoidReversalSafely } from './transportBudgetVoidReversal';
+import { ensureContractIntegrity } from './printingContractService';import { produceVoidReversalSafely } from './transportBudgetVoidReversal';
 import {
     assertSameAccountOwnership,
     validateAccountScope,
@@ -8671,13 +8671,14 @@ export const transactionService = {
                 // ── Reservation bucket (allocation, never a payment) ──
                 const storedReserved = toMoney(Number(contract.reserved_amount || 0));
                 const newReserved = toMoney(storedReserved + price);
-                await contractStore.put({
+                const reservedUpdate = await ensureContractIntegrity({
                     ...contract,
                     reserved_amount: newReserved,
                     assessment_count: Number(contract.assessment_count || 0) + 1,
                     updated_at: nowIso,
                     version: Number(contract.version || 0) + 1,
                 });
+                await contractStore.put(reservedUpdate);
 
                 return {
                     success: true,
@@ -8751,7 +8752,8 @@ export const transactionService = {
                         updated_at: nowIso,
                         version: Number(contract.version || 0) || 1,
                     };
-                    await contractStore.put(record);
+                    const persistedContract = await ensureContractIntegrity(record);
+                    await contractStore.put(persistedContract);
                     for (const it of items) {
                         const price = toMoney(Number((it as any)?.item_price || 0));
                         await itemStore.put({
@@ -8855,7 +8857,7 @@ export const transactionService = {
                         }
                     }
                 }
-                await contractStore.put({
+                const amendedContract = await ensureContractIntegrity({
                     ...contract,
                     prepaid_amount: newPrepaid,
                     max_assessments: newMax,
@@ -8867,6 +8869,7 @@ export const transactionService = {
                         lastAmendment: { amendmentId, prepaidDelta, countDelta, fundingReference: args?.fundingReference || null, funded: Boolean(fundedIncrease), appliedAt: nowIso, by: args?.performedBy || 'system' },
                     },
                 });
+                await contractStore.put(amendedContract);
                 return { success: true, contractId, amendmentId, newPrepaid, newMax, funded: Boolean(fundedIncrease) };
             },
         );
@@ -8933,7 +8936,7 @@ export const transactionService = {
                         releasedValue = toMoney(releasedValue + toMoney(Number(it?.item_price || 0)));
                         await itemStore.put({ ...it, status: 'released', released_at: nowIso, updated_at: nowIso, version: Number(it?.version || 0) + 1 });
                     }
-                    await contractStore.put({
+                    const closedContract = await ensureContractIntegrity({
                         ...contract,
                         status: targetStatus,
                         reserved_amount: 0,
@@ -8952,6 +8955,7 @@ export const transactionService = {
                             },
                         },
                     });
+                    await contractStore.put(closedContract);
                     return { success: true, contractId, status: targetStatus, releasedValue, already: false };
                 },
             );
@@ -9257,7 +9261,7 @@ export const transactionService = {
                     const prepaidAmountBefore = toMoney(Number(contract.prepaid_amount || 0));
                     const consumedAmountBefore = toMoney(Number(contract.consumed_amount || 0));
                     const reservedAmountBefore = toMoney(Number(contract.reserved_amount || 0));
-                    await contractStore.put({
+                    const voidedContract = await ensureContractIntegrity({
                         ...contract,
                         status: 'voided',
                         prepaid_amount: 0,
@@ -9286,6 +9290,7 @@ export const transactionService = {
                             },
                         },
                     });
+                    await contractStore.put(voidedContract);
 
                     return {
                         success: true,
@@ -9651,13 +9656,14 @@ export const transactionService = {
                     consumed_at: nowIso,
                     version: Number(item.version || 0) + 1,
                 });
-                await contractStore.put({
+                const consumedContract = await ensureContractIntegrity({
                     ...contract,
                     reserved_amount: newReserved,
                     consumed_amount: newConsumed,
                     updated_at: nowIso,
                     version: Number(contract.version || 0) + 1,
                 });
+                await contractStore.put(consumedContract);
 
                 return {
                     success: true,

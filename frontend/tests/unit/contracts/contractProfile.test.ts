@@ -50,4 +50,17 @@ describe('contractProfile', () => {
     // Print spec untouched on legacy rows.
     expect(summarisePrintSpec(back.printSpec)).toBe('');
   });
+
+  it('never doubles the paper-weight unit ("80gsm", not "80gmsgsm")', () => {
+    const profile = emptyContractProfile();
+    profile.printSpec.paperSize = 'A4';
+    profile.printSpec.paperWeight = '80gsm';
+    profile.printSpec.pagesPerCopy = '8';
+    const summary = summarisePrintSpec(profile.printSpec);
+    expect(summary).toContain('80gsm');
+    expect(summary).not.toContain('80gmsgsm');
+    // A bare weight still gets the unit.
+    profile.printSpec.paperWeight = '80';
+    expect(summarisePrintSpec(profile.printSpec)).toContain('80gsm');
+  });
 });

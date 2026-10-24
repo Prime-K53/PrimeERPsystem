@@ -79,9 +79,16 @@ function ensureFontPaths() {
  */
 function ensureRendererEnv() {
   const fromEnv = String(process.env.VITE_PUBLIC_PORTAL_URL || '').trim();
+  // Contract QR codes use their own verification page (`/verify?c=&h=`) and
+  // therefore need the public app origin. Both variables are passed through;
+  // the bundle resolves VITE_CONTRACT_VERIFY_BASE_URL first, then the app URL.
+  const appUrl = String(process.env.VITE_PUBLIC_APP_URL || '').trim();
+  const contractVerifyUrl = String(process.env.VITE_CONTRACT_VERIFY_BASE_URL || '').trim();
   const existing = globalThis.__PRIME_DOC_VITE_ENV__;
   if (existing && typeof existing === 'object') {
     if (fromEnv) existing.VITE_PUBLIC_PORTAL_URL = fromEnv;
+    if (appUrl) existing.VITE_PUBLIC_APP_URL = appUrl;
+    if (contractVerifyUrl) existing.VITE_CONTRACT_VERIFY_BASE_URL = contractVerifyUrl;
     return existing;
   }
   globalThis.__PRIME_DOC_VITE_ENV__ = {
@@ -89,6 +96,8 @@ function ensureRendererEnv() {
     PROD: true,
     MODE: 'production',
     ...(fromEnv ? { VITE_PUBLIC_PORTAL_URL: fromEnv } : {}),
+    ...(appUrl ? { VITE_PUBLIC_APP_URL: appUrl } : {}),
+    ...(contractVerifyUrl ? { VITE_CONTRACT_VERIFY_BASE_URL: contractVerifyUrl } : {}),
   };
   return globalThis.__PRIME_DOC_VITE_ENV__;
 }
@@ -287,7 +296,7 @@ function summarisePrintSpec(p) {
   const bits = [
     p.paperSize,
     p.paperType,
-    p.paperWeight ? `${p.paperWeight}gsm` : '',
+    p.paperWeight ? (/gsm/i.test(p.paperWeight) ? p.paperWeight : `${p.paperWeight}gsm`) : '',
     p.colorMode,
     p.sides,
     p.pagesPerCopy ? `${p.pagesPerCopy}pp` : '',
@@ -299,6 +308,66 @@ function summarisePrintSpec(p) {
   if (head && tail) return `${head} — ${tail}`;
   return head || tail || '';
 }
+
+/** Mirrors frontend/services/printingContractService.ts display helpers. */
+function formatPaperWeight(value) {
+  const weight = text(value).trim();
+  if (!weight) return '';
+  const numeric = weight.match(/^([\d.]+)\s*(?:gsm|g\/m2|g\/m²)?$/i);
+  return numeric ? `${numeric[1]}gsm` : weight;
+}
+
+function formatPagesPerCopy(value) {
+  const pages = text(value).trim();
+  if (!pages) return '';
+  return /page/i.test(pages) ? pages : `${pages} pages`;
+}
+
+function normalizeColorMode(value) {
+  const mode = text(value).trim();
+  if (!mode) return '';
+  if (/^(b\s*&\s*w|bw|mono(?:chrome)?|black\s*(?:and|&)\s*white)$/i.test(mode)) return 'Black & white';
+  if (/^colou?r$/i.test(mode)) return 'Colour';
+  return mode.charAt(0).toUpperCase() + mode.slice(1);
+}
+
+function normalizeSides(value) {
+  const sides = text(value).trim();
+  if (!sides) return '';
+  if (/^(double|duplex)(?:[-\s]?sided)?$/i.test(sides)) return 'double-sided';
+  if (/^(single|simplex)(?:[-\s]?sided)?$/i.test(sides)) return 'single-sided';
+  return sides;
+}
+
+function stripCustomerIdSuffix(name) {
+  let out = text(name).trim();
+  if (!out) return '';
+  out = out.replace(/\s*\((?=[A-Z0-9-]*\d)[A-Z0-9-]{2,}\)\s*$/i, '').trim();
+  out = out.replace(/^CUST-\d{3,}\s*(?:[\r\n]+|[-–—:|]\s*|\s+)/i, '').trim();
+  out = out.replace(/(?:[\r\n]+|[-–—:|]\s*|\s+)CUST-\d{3,}\s*$/i, '').trim();
+  if (/^CUST-\d{3,}$/i.test(out)) return '';
+  return out.replace(/\s*\r?\n\s*/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function resolveCustomerDisplayName(customerName, schoolName) {
+  return stripCustomerIdSuffix(customerName) || stripCustomerIdSuffix(schoolName);
+}
+
+function normalizeCustomerReference(value) {
+  const reference = text(value).trim();
+  if (!reference) return undefined;
+  if (/^CUST[-\s]?\d{3,}$/i.test(reference)) return reference.toUpperCase().replace(/\s+/g, '-');
+  if (/^[A-Z]{2,5}-\d{3,}$/i.test(reference)) return reference;
+  return undefined;
+}
+
+const firstText = (...values) => {
+  for (const value of values) {
+    const normalized = text(value).trim();
+    if (normalized) return normalized;
+  }
+  return undefined;
+};
 
 const mapContractLines = (snapshot) => {
   const inner = (snapshot.data && typeof snapshot.data === 'object') ? snapshot.data : {};
@@ -370,6 +439,23 @@ function normalizePrintingContractRecord(record) {
     profile.delivery.packaging ? `Pack: ${profile.delivery.packaging}` : '',
     profile.delivery.deliveryNotes,
   ].filter((s) => text(s).trim()).join(' · ') || undefined;
+  const printPaperSummary = [
+    profile.printSpec.paperSize,
+    formatPaperWeight(profile.printSpec.paperWeight),
+    formatPagesPerCopy(profile.printSpec.pagesPerCopy),
+  ].filter((s) => text(s).trim()).join(', ') || undefined;
+  const printColorSummary = [
+    normalizeColorMode(profile.printSpec.colorMode),
+    normalizeSides(profile.printSpec.sides),
+  ].filter((s) => text(s).trim()).join(', ') || undefined;
+  const printTypeSummary = [
+    profile.printSpec.paperType,
+    profile.printSpec.orientation,
+  ].filter((s) => text(s).trim()).join(' · ') || undefined;
+  const vatValue = numberOrUndefined(
+    inner.vat_amount ?? inner.vatAmount ?? snapshot.vat_amount ?? snapshot.vatAmount ?? snapshot.tax_amount ?? snapshot.taxAmount,
+  );
+  const resolvedSchoolName = stripCustomerIdSuffix(text(snapshot.schoolName || snapshot.school_name).trim()) || undefined;
   const doc = {
     documentType: 'printing_contract',
     verificationToken: text(snapshot.verificationToken).trim() || undefined,
@@ -380,8 +466,16 @@ function normalizePrintingContractRecord(record) {
     date: displayDate(snapshot.created_at || snapshot.activated_at || snapshot.starts_at || snapshot.serverUpdatedAt),
     version: Number(snapshot.version) || 1,
     status: text(snapshot.status || 'draft'),
-    customerName: text(snapshot.customerName || snapshot.customer_name).trim() || 'Customer',
-    schoolName: text(snapshot.schoolName || snapshot.school_name).trim() || undefined,
+    customerName: resolveCustomerDisplayName(snapshot.customerName || snapshot.customer_name, resolvedSchoolName) || 'Customer',
+    schoolName: resolvedSchoolName,
+    customerContact: firstText(snapshot.customerContact, snapshot.customer_contact, inner.customer_contact),
+    customerPhone: firstText(snapshot.customerPhone, snapshot.customer_phone, inner.customer_phone),
+    customerEmail: firstText(snapshot.customerEmail, snapshot.customer_email, inner.customer_email),
+    customerAddress: firstText(snapshot.customerAddress, snapshot.customer_address, snapshot.billing_address, inner.customer_address),
+    customerReference: normalizeCustomerReference(
+      firstText(snapshot.customerReference, snapshot.customer_reference, snapshot.customer_id, snapshot.customerId),
+    ),
+    schoolZone: firstText(snapshot.schoolZone, snapshot.school_zone, inner.school_zone, inner.schoolZone),
     periodStart: snapshot.starts_at || undefined,
     periodEnd: snapshot.ends_at || undefined,
     lines: mapContractLines(snapshot),
@@ -395,14 +489,30 @@ function normalizePrintingContractRecord(record) {
     chargePerCandidate: profile.pricingRules.chargePerCandidate,
     assessmentSittings: profile.candidature.sittings.trim() || undefined,
     printSpecSummary: summarisePrintSpec(profile.printSpec) || undefined,
+    printPaperSummary,
+    printColorSummary,
+    printTypeSummary,
+    printFinishing: text(profile.printSpec.finishing).trim() || undefined,
+    printPackaging: text(profile.printSpec.packaging).trim() || undefined,
+    printOrientation: text(profile.printSpec.orientation).trim() || undefined,
     pricingRulesSummary: pricingBits,
     deliveryTermsSummary: deliveryBits,
+    deliveryMethod: text(profile.delivery.method).trim() || undefined,
+    deliveryTimeline: text(profile.delivery.timeline).trim() || undefined,
+    deliveryAddress: text(profile.delivery.address).trim() || undefined,
+    deliveryNotes: text(profile.delivery.deliveryNotes).trim() || undefined,
+    vatAmount: vatValue !== undefined && vatValue > 0 ? roundMoney(vatValue) : undefined,
     signatures: { company, customer },
     fullySigned: Boolean(company && customer),
     issuedInvoiceId: text(inner.issued_invoice_id).trim() || undefined,
   };
   if (!doc.contractNumber) return record;
-  doc.contentHash = integrity.sha256(integrity.stableStringify(doc));
+  // Canonical, RECORD-based digest (contract hash v1). Not the assembled
+  // document: `date`, token and QR are volatile and excluded, and the public
+  // verifier recomputes exactly this digest from `assessment_contracts`.
+  const integrityFields = integrity.ensureContractIntegrity(record);
+  doc.contentHash = integrityFields.contentHash;
+  doc.integrityShortCode = integrityFields.integrityShortCode;
   return doc;
 }
 

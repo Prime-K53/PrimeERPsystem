@@ -252,6 +252,55 @@ export function resolveVerificationBaseUrl(documentType?: VerifiableDocumentType
   });
 }
 
+/**
+ * Base URL for the CONTRACT verification page (`/verify?c=&h=`).
+ *
+ * A printing contract is verified by its canonical content hash, not by the
+ * generic token route, so it has its own page. Its public origin is resolved
+ * exactly like document verification (Portal when it serves the type, otherwise
+ * the app that serves the route), so the hash verification link tracks the
+ * document verification link. `''` means fail-closed: no public URL is emitted.
+ */
+export function resolveContractVerifyBaseUrl(): string {
+  // The printing-contract content-hash verification page is served from the
+  // same public surface as document verification (the Portal for the types it
+  // serves, otherwise the app that serves the route). Reuse that resolution so
+  // the hash verification link tracks the document verification link. The stored
+  // document-verification system itself is left untouched.
+  return resolveVerificationBaseUrl('printing_contract');
+}
+
+/**
+ * URL-safe form of an official contract number for the `c` query parameter.
+ * `PC-P726/023` → `PC-P726-023`. The verifier reverses the LAST hyphen when
+ * the exact form does not resolve, so a genuine hyphen elsewhere survives.
+ */
+export function contractNumberForUrl(contractNumber: string): string {
+  return String(contractNumber || '').trim().replace(/\//g, '-');
+}
+
+/**
+ * Contract verification URL carried by the printed QR:
+ *   {base}/verify?c=<url-safe-number>&h=<full-sha256>
+ *
+ * The full hash is what the server compares constant-time after recomputing
+ * it from the stored record. The short code is for manual entry only and never
+ * appears in the QR.
+ */
+export function buildContractVerificationUrl(
+  contractNumber: string,
+  contentHash: string,
+  baseUrl?: string,
+): string | null {
+  const number = String(contractNumber || '').trim();
+  const hash = String(contentHash || '').trim().toLowerCase();
+  if (!number || !/^[0-9a-f]{64}$/.test(hash)) return null;
+  const base = String(baseUrl ?? resolveContractVerifyBaseUrl()).replace(/\/+$/, '');
+  if (!base) return null;
+  return `${base}/verify?c=${encodeURIComponent(contractNumberForUrl(number))}&h=${hash}`;
+}
+
+
 export interface VerifiableDocumentRef {
   documentType?: unknown;
   documentNumber?: unknown;

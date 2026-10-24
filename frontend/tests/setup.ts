@@ -1,6 +1,35 @@
 import '@testing-library/jest-dom';
 import { vi, beforeEach, afterEach } from 'vitest';
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+
+// @react-pdf/renderer (fontkit) resolves web-relative font srcs such as
+// "/fonts/foo.ttf" through fs in the Node test runtime (vitest/jsdom). A rooted
+// path resolves against the drive root and does not exist. Mirror the server-side
+// redirect (backend/services/officialDocumentService.cjs) so PDF render tests
+// can embed real font files from frontend/public/fonts.
+const FONT_DIR = path.resolve(process.cwd(), 'public', 'fonts');
+const FONT_PATH_PATTERN = /^\/fonts\/[^\/]+\.(ttf|otf)$/i;
+
+function redirectFontPath(filename: string) {
+  const m = filename.match(FONT_PATH_PATTERN);
+  if (!m) return filename;
+  return path.join(FONT_DIR, filename.replace(/^\/fonts\//i, ''));
+}
+
+const originalFsPromisesReadFile = fs.promises.readFile;
+const originalFsReadFileSync = fs.readFileSync;
+
+fs.promises.readFile = function (filename: any, ...args: any[]) {
+  const redirected = typeof filename === 'string' ? redirectFontPath(filename) : filename;
+  return originalFsPromisesReadFile.call(this, redirected, ...(args as []));
+} as any;
+
+fs.readFileSync = function (filename: any, ...args: any[]) {
+  const redirected = typeof filename === 'string' ? redirectFontPath(filename) : filename;
+  return originalFsReadFileSync.call(this, redirected, ...(args as []));
+} as any;
 
 // Mock IndexedDB
 vi.mock('idb', () => ({
@@ -102,9 +131,13 @@ global.URL.revokeObjectURL = vi.fn();
 // jsdom lacks a working crypto.subtle (the non-enumerable property is dropped by the
 // the earlier spread), and utils/uuid.ts stringToUuid5 needs it for deterministic offline ids.
 const cryptoSubtleMock = {
-  digest: async (_algorithm: unknown, data: BufferSource) => {
+  digest: async (algorithm: unknown, data: BufferSource) => {
     const view = data instanceof Uint8Array ? data : new Uint8Array(data);
-    return createHash('sha1').update(Buffer.from(view)).digest();
+    const requested = typeof algorithm === 'string'
+      ? algorithm
+      : String((algorithm as { name?: string } | null)?.name || 'SHA-1');
+    const nodeAlgorithm = requested.toLowerCase().replace(/-/g, '');
+    return createHash(nodeAlgorithm).update(Buffer.from(view)).digest();
   },
 };
 Object.defineProperty(global, 'crypto', {

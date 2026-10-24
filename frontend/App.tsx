@@ -51,6 +51,7 @@ import CustomerLogin from "./views/portal/CustomerLogin";
 import CustomerActivate from "./views/portal/CustomerActivate";
 import InvoiceVerify from "./views/portal/InvoiceVerify";
 import DocumentVerify from "./views/portal/DocumentVerify";
+import ContractVerify from "./views/portal/ContractVerify";
 import CustomerForgotPassword from "./views/portal/CustomerForgotPassword";
 import CustomerResetPassword from "./views/portal/CustomerResetPassword";
 import { ToastProvider } from "./views/portal/components/Toast";
@@ -2452,6 +2453,7 @@ const AppLayout: React.FC = () => {
 const PortalRoutes = (
   <React.Fragment>
     <Route path="/portal/login" element={<CustomerLogin />} />
+    <Route path="/verify" element={<ContractVerify />} />
     <Route path="/verify/invoice/:invoiceNumber" element={<InvoiceVerify />} />
     <Route
       path="/verify/:documentType/:documentNumber"

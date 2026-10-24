@@ -30,7 +30,7 @@ import { adminLifecycle } from '../services/adminPortalClient';
 
 import { useDashboardStore } from '../stores/dashboardStore';
 import { dbService } from '../services/db';
-import { formatNumber, parseFormattedNumber } from '../utils/helpers';
+import { parseFormattedNumber } from '../utils/helpers';
 import { currencyService } from '../services/currencyService';
 import {
   sumTodayCollectionFromPayments,
@@ -1100,14 +1100,6 @@ const DashboardContent: React.FC = () => {
 
   const overdueCount = invoices.filter((inv: any) => inv.status === 'Overdue').length;
 
-  // 4. Active Jobs
-  const activeJobs = (() => {
-    const activeJobOrders = jobOrders.filter((j: any) => !['Completed', 'Cancelled', 'Closed', 'Delivered'].includes(String(j.status || ''))).length;
-    const activeWorkOrders = workOrders.filter((w: any) => !['Completed', 'Cancelled', 'Closed'].includes(String(w.status || ''))).length;
-    const activeQuotations = quotations.filter((q: any) => q.status === 'Approved').length;
-    return activeJobOrders + activeWorkOrders + activeQuotations;
-  })();
-
   // Real counts used by the Unpaid KPI
   const unpaidInvoices = useMemo(() => invoices.filter((i: any) => {
     const s = String(i.status || '').toLowerCase();
@@ -1146,15 +1138,7 @@ const DashboardContent: React.FC = () => {
     return unpaid[0] || null;
   })();
 
-  const lastActiveJob = (() => {
-    const active = [...jobOrders]
-      .filter(j => !['Completed', 'Cancelled', 'Closed', 'Delivered'].includes(String(j.status || '')))
-      .sort((a, b) => new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime());
-    return active[0] || null;
-  })();
-
   const pendingJobsCount = jobOrders.filter(j => String(j.status || '').toLowerCase() === 'pending').length;
-  const activeJobOrdersList = jobOrders.filter((j: any) => !['Completed', 'Cancelled', 'Closed', 'Delivered'].includes(String(j.status || '')));
 
   // Real sparkline data — last 7 days of daily revenue from invoices/sales
   const dailyRevenueSpark = useMemo(() => {
@@ -1213,34 +1197,16 @@ const DashboardContent: React.FC = () => {
     return days;
   }, [invoices]);
 
-  const activeJobsSpark = useMemo(() => {
-    const days: { v: number }[] = [];
-    const today = new Date();
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      const dayStr = d.toISOString().split('T')[0];
-      const cnt = jobOrders
-        .filter((j: any) => !['Completed', 'Cancelled', 'Closed', 'Delivered'].includes(String(j.status || '')))
-        .filter((j: any) => String(j.date || j.createdAt || '').startsWith(dayStr)).length;
-      days.push({ v: cnt });
-    }
-    return days;
-  }, [jobOrders]);
-
   // Stable fallback for sparklines when there's no data yet (keeps the chart looking intentional)
   const revenue7d = dailyRevenueSpark.length === 7 && dailyRevenueSpark.some(d => d.v > 0) ? dailyRevenueSpark : [{ v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }];
   const collection7d = dailyCollectionSpark.length === 7 && dailyCollectionSpark.some(d => d.v > 0) ? dailyCollectionSpark : [{ v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }];
   const receivables7d = receivablesSpark.length === 7 && receivablesSpark.some(d => d.v > 0) ? receivablesSpark : [{ v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }];
-  const activeJobs7d = activeJobsSpark.length === 7 && activeJobsSpark.some(d => d.v > 0) ? activeJobsSpark : [{ v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }, { v: 0 }];
 
   const activeSubscriptionsCount = useMemo(() => {
     // subscriptions from useFinance (recurringInvoices)
     // For this example, we will assume expenses are used in the dashboard; adjust as needed.
     return 0;
   }, []);
-
-  const activeJobsCount = jobOrders.filter(j => !['Completed', 'Cancelled', 'Closed', 'Delivered'].includes(String(j.status || ''))).length;
 
   // Active printing contracts (same definition as the Sales Flow badge)
   const contractStats = (() => {
@@ -1299,57 +1265,6 @@ const DashboardContent: React.FC = () => {
       }
     },
     {
-      label: 'Active Jobs', color: '#a855f7', icon: <Briefcase size={20} />,
-      render: (compact: boolean) => (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, height: '100%' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: '0.05em', textTransform: 'uppercase' }}>ACTIVE JOBS</div>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: '#f3e8ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a855f7', flexShrink: 0 }}><Briefcase size={16} /></div>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: 28, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{activeJobsCount || '0'}</div>
-            <div style={{ fontSize: 11, color: '#64748b', fontWeight: 500, marginTop: 4 }}>Production in progress</div>
-          </div>
-          <SplitBar segments={[
-            { value: activeJobsCount, color: '#a855f7' },
-            { value: Math.max(0, (jobOrders?.length || 0) - activeJobsCount), color: '#e9d5ff' },
-          ]} />
-          <div style={{ height: '1px', backgroundColor: 'rgba(0,0,0,0.06)', width: '100%', margin: '2px 0' }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#1e293b' }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#a855f7' }} />
-              {lastActiveJob ? (
-                <TransactionRefLink
-                  type="job-order"
-                  id={lastActiveJob.id}
-                  number={lastActiveJob.jobNo || lastActiveJob.jobOrderNumber || lastActiveJob.orderNo}
-                  label={`${lastActiveJob.jobNo || lastActiveJob.orderNo || 'Job Order'}`}
-                  className="text-[11px]"
-                />
-              ) : 'No active jobs'}
-            </div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#7c3aed', backgroundColor: '#f5f3ff', padding: '1px 8px', borderRadius: 6 }}>{lastActiveJob ? (lastActiveJob.status || 'Active') : 'Stable'}</div>
-          </div>
-          {activeJobOrdersList.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 2 }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>In Production</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {activeJobOrdersList.slice(0, 3).map((job: any, idx: number) => (
-                  <div key={idx} style={{ fontSize: 10.5, color: '#334155', lineHeight: 1.3, display: 'flex', gap: 4 }}>
-                    <span style={{ color: '#a855f7', flexShrink: 0 }}>·</span>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{job.jobTitle || job.jobDescription || job.notes || job.productName || `${job.jobNo || job.orderNo || ''}`}</span>
-                  </div>
-                ))}
-                {activeJobOrdersList.length > 3 && (
-                  <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 500 }}>+{activeJobOrdersList.length - 3} more</div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )
-    },
-    {
       label: 'Portal Requests', color: '#0ea5e9', icon: <Inbox size={20} />,
       render: (compact: boolean) => {
         const r = requestAnalytics || {};
@@ -1395,7 +1310,6 @@ const DashboardContent: React.FC = () => {
     { label: 'Revenue (This Month)', value: formatShortCurrency(currency, revenueThisMonth), rawValue: revenueThisMonth, trend: revenueTrend, trendLabel: 'vs last month', icon: <DollarSign size={22} color="#fff" />, gradient: ['#0d7c71', '#129a8e'], sparkData: revenue7d },
     { label: "Today's Collection", value: formatShortCurrency(currency, todaysCollection), rawValue: todaysCollection, trend: collectionTrend, trendLabel: 'vs yesterday', icon: <Clock size={22} color="#fff" />, gradient: ['#5ebd69', '#45a750'], sparkData: collection7d },
     { label: 'Receivables', value: formatShortCurrency(currency, receivables), rawValue: receivables, trend: null, trendLabel: overdueCount > 0 ? `${overdueCount} overdue invoice${overdueCount > 1 ? 's' : ''}` : 'Outstanding balance', icon: <Users size={22} color="#fff" />, gradient: ['#d9663b', '#e67a4d'], sparkData: receivables7d },
-    { label: 'Active Jobs', value: formatNumber(activeJobs), rawValue: activeJobs, trend: null, trendLabel: 'In progress', icon: <Briefcase size={22} color="#fff" />, gradient: ['#177db8', '#2094d0'], sparkData: activeJobs7d },
   ];
 
   // ── chart data load ───────────────────────────────────────────────────────

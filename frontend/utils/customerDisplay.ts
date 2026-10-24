@@ -69,6 +69,13 @@ export const resolveCustomerDisplay = (
  * Falls back to the customer id (never blank) when no business identity
  * exists, so dropdowns cannot render empty options.
  */
+/**
+ * Label for customer <option> / search-dropdown rows.
+ *
+ * NON-NEGOTIABLE: always the Business Name, never the contact name.
+ * Falls back to the customer id (never blank) when no business identity
+ * exists, so dropdowns cannot render empty options.
+ */
 export const getCustomerOptionLabel = (
   customer: {
     id?: string | null;
@@ -87,4 +94,23 @@ export const getCustomerOptionLabel = (
     String(customer.id || '').trim() ||
     'Unknown customer'
   );
+};
+
+/**
+ * Shared customer display-name resolver used by printing contracts and
+ * reconciliation views. Looks up a customer by id in the provided list and
+ * returns the business/legacy name, falling back to the id or '—'.
+ */
+export const customerNameOf = (
+  id?: string,
+  customers?: Array<{ id?: string | null; name?: string | null; businessName?: string | null; companyName?: string | null } | null>,
+): string => {
+  const customer = (customers || []).find((c) => String(c?.id) === String(id));
+  if (!customer) return id || '—';
+  const displayName = getCustomerDisplayName({
+    businessName: customer.businessName ?? null,
+    companyName: customer.companyName ?? null,
+    legacyCustomerName: customer.name ?? null,
+  });
+  return displayName || id || '—';
 };

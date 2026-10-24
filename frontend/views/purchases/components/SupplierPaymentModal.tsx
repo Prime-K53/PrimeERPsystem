@@ -53,6 +53,11 @@ export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({ purc
             alert("Please enter a valid positive amount.");
             return;
         }
+        if (paymentAmount > remainingBalance) {
+            if (!confirm(`Payment amount (${currency}${paymentAmount.toLocaleString()}) exceeds the remaining balance (${currency}${remainingBalance.toLocaleString()}). Proceed?`)) {
+                return;
+            }
+        }
         const selectedAccount = DEFAULT_ACCOUNTS.find(a => a.id === selectedAccountId);
         const liveAccount = liveAccountByCode[selectedAccountId];
         const paymentMethod = liveAccount?.subtype === 'CASH' ? 'Cash' :

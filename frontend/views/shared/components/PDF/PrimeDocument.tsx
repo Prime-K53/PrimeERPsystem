@@ -616,7 +616,7 @@ const resolveFooterText = (
 };
 
 const buildFooterContactLine = (_config?: CompanyConfig | null) => {
-  return "Prime Printing Service, Along M5 Road Mtakataka, Dedza, Malawi, Phone +265 992 528 222,";
+  return "Prime Printing Service, Along M5 Road, Mtakataka, Phone +265 992 528 222,";
 };
 
 const isCancelledStatus = (status?: string | boolean, data?: any): boolean => {
@@ -4510,7 +4510,7 @@ export const PrimeDocument = ({
               colorMode={mode}
               data={d}
               companyName={companyName}
-              legalFooterLine1="This is a computer-generated Sales Exchange Note. No signature required. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222."
+              legalFooterLine1="This is a computer-generated Sales Exchange Note. No signature required. For enquiries contact Prime Printing Service, Along M5 Road, Mtakataka, Phone +265992528222."
               legalFooterLine2={`All exchanges are subject to ${companyName} Return & Exchange Policy.`}
               fontScale={fontScale}
               flowing
@@ -5376,7 +5376,7 @@ export const PrimeDocument = ({
     const clause = (index: number, title: string, body: string) => (
       <View
         key={`${index}:${title}`}
-        style={{ flexDirection: "row", marginTop: 4.5 }}
+        style={{ flexDirection: "row", marginTop: 9 }}
       >
         <Text
           style={{
@@ -5416,6 +5416,7 @@ export const PrimeDocument = ({
         | undefined,
       fallbackRole: string,
       fallbackSignedAt?: string,
+      fallbackName?: string,
     ) => {
       const img = block ? renderableSignature(block.signatureDataUrl) : null;
       // The date is auto-filled: the recorded signature instant when one
@@ -5453,7 +5454,7 @@ export const PrimeDocument = ({
               marginTop: 5,
             }}
           >
-            {block?.name || "____________________________"}
+            {block?.name || fallbackName || "____________________________"}
           </Text>
           <Text style={{ fontSize: 8.5, color: muted, marginTop: 1 }}>
             {block?.role || fallbackRole}
@@ -5839,7 +5840,7 @@ export const PrimeDocument = ({
               >
                 {companyName}
               </Text>
-              {companyAddress ? (
+               {buildReceiptCompanyAddress(config) ? (
                 <Text
                   style={{
                     fontSize: 8.6,
@@ -5848,10 +5849,11 @@ export const PrimeDocument = ({
                     lineHeight: 1.3,
                   }}
                 >
-                  {companyAddress}
+                  {buildReceiptCompanyAddress(config)}
                 </Text>
               ) : null}
               {partyLine("Phone", formattedPhone || companyPhone)}
+              {partyLine("WhatsApp", (config as any)?.whatsappNumber)}
               {partyLine("Email", companyEmail)}
             </View>
             <View
@@ -6161,12 +6163,13 @@ export const PrimeDocument = ({
                   "Authorised signatory",
                   pc.date,
                 )}
-                {signatureCard(
-                  "Client",
-                  pc.signatures?.customer,
-                  "Authorised signatory",
-                  pc.date,
-                )}
+                 {signatureCard(
+                   "Client",
+                   pc.signatures?.customer,
+                   "Authorised signatory",
+                   pc.date,
+                   pc.customerName || pc.schoolName || undefined,
+                 )}
               </View>
             </View>
 
@@ -8207,7 +8210,7 @@ export const PrimeDocument = ({
             <View style={{ alignItems: "center", width: "100%" }}>
               <Text
                 style={{
-                  fontSize: 14 * fontScale,
+                  fontSize: contractPreambleNameFontSize,
                   fontWeight: "bold",
                   color: monoText(mode, "#000"),
                   textAlign: "center",
@@ -8218,7 +8221,7 @@ export const PrimeDocument = ({
               {!!companyAddress && (
                 <Text
                   style={{
-                    fontSize: 10 * fontScale,
+                    fontSize: 12,
                     color: monoText(mode, "#334155"),
                     textAlign: "center",
                     marginTop: 2,
@@ -8230,7 +8233,7 @@ export const PrimeDocument = ({
               {!!companyContact && (
                 <Text
                   style={{
-                    fontSize: 10 * fontScale,
+                    fontSize: 12,
                     color: monoText(mode, "#334155"),
                     textAlign: "center",
                     marginTop: 2,
@@ -8244,7 +8247,7 @@ export const PrimeDocument = ({
 
           <Text
             style={{
-              fontSize: 20 * fontScale,
+              fontSize: contractPreambleTitleFontSize,
               fontWeight: "bold",
               color: monoText(mode, "#000"),
               textAlign: "center",
@@ -8282,6 +8285,7 @@ export const PrimeDocument = ({
                 color: monoText(mode, "#111111"),
               }}
             >
+              <Text style={{ fontWeight: "bold" }}>Customer Name: </Text>
               {sp.supplierName}
             </Text>
           </View>
@@ -8500,27 +8504,6 @@ export const PrimeDocument = ({
                 {companyName}
               </Text>
             </Text>
-            <View style={s.footerLine} />
-            <Text style={[s.companyName, { fontSize: scaledFont(12) }]}>
-              {companyName}
-            </Text>
-            <Text style={[s.footerDetail, { fontSize: scaledFont(12) }]}>
-              {companyAddress}
-            </Text>
-            <Text style={[s.footerDetail, { fontSize: scaledFont(12) }]}>
-              {companyContact}
-            </Text>
-          </View>
-
-          <View style={s.signatureBlock}>
-            <View>
-              <View style={s.sigLine} />
-              <Text>Authorized Signatory</Text>
-            </View>
-            <View>
-              <View style={s.sigLine} />
-              <Text>Received By</Text>
-            </View>
           </View>
 
           <View wrap={false} style={{ marginTop: 10 }}>
@@ -8529,7 +8512,7 @@ export const PrimeDocument = ({
               colorMode={mode}
               data={sp}
               companyName={companyName}
-              legalFooterLine1="This is a computer-generated payment voucher. For enquiries contact Prime Printing Service, Along M5 Road Mtakataka, Dedza, Phone +265992528222."
+              legalFooterLine1="This is a computer-generated payment voucher. For enquiries contact Prime Printing Service, Along M5 Road, Mtakataka, Phone +265992528222."
               legalFooterLine2={`Issued securely by ${companyName}.`}
               fontScale={fontScale}
               flowing

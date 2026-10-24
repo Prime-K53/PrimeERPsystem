@@ -62,7 +62,10 @@ vi.mock('../../context/AuthContext', () => ({
 }));
 
 vi.mock('../../stores/financeStore', () => ({
-  useFinanceStore: (sel: (s: Record<string, any>) => unknown) => sel(financeState),
+  useFinanceStore: Object.assign(
+    (sel: (s: Record<string, any>) => unknown) => sel(financeState),
+    { getState: () => financeState }
+  ),
 }));
 
 vi.mock('../../stores/salesStore', () => ({

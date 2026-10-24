@@ -51,6 +51,33 @@ export const resetFontRegistrationState = () => {
   fontsInitialized = false;
 };
 
+/**
+ * Embedded monospace face for the contract integrity digest.
+ *
+ * Registered at module load as well as from `initializePrimePdfFonts`, because
+ * the digest must render on EVERY path (browser preview, portal download,
+ * server bundle) and a missing registration makes @react-pdf/renderer throw.
+ * `/fonts/*.ttf` is resolved from `frontend/public/fonts` in the browser and
+ * redirected by `officialDocumentService` in Node.
+ */
+export const PRIME_MONO_FONT_FAMILY = 'PrimeMono';
+let primeMonoRegistered = false;
+export const registerPrimeMonoFont = () => {
+  if (primeMonoRegistered) return;
+  primeMonoRegistered = true;
+  try {
+    Font.register({
+      family: PRIME_MONO_FONT_FAMILY,
+      fonts: [{ src: '/fonts/JetBrainsMono-Regular.ttf' }],
+    });
+  } catch (error) {
+    if (pdfDebugLoggingEnabled) {
+      logger.error('[PDF Fonts] Failed to register JetBrains Mono', error);
+    }
+  }
+};
+registerPrimeMonoFont();
+
 export const initializePrimePdfFonts = async () => {
   if (fontsInitialized) return;
   fontsInitialized = true;
@@ -67,8 +94,11 @@ export const initializePrimePdfFonts = async () => {
         { src: '/fonts/comicz.ttf', fontWeight: 'bold', fontStyle: 'italic' },
       ],
     });
+    // The integrity digest uses its own embedded mono face; register it on
+    // every initialisation path (idempotent).
+    registerPrimeMonoFont();
     if (pdfDebugLoggingEnabled) {
-      console.log('[PDF Fonts] Custom fonts (Comic Sans MS) registered successfully');
+      console.log('[PDF Fonts] Custom fonts (Comic Sans MS, JetBrains Mono) registered successfully');
     }
   } catch (error) {
     if (pdfDebugLoggingEnabled) {

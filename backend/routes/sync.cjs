@@ -31,6 +31,7 @@ const examinationSyncGuards = require('../services/examinationSyncGuards.cjs');
 const { validateContractDocumentOp } = require('../services/contractDocumentGuard.cjs');
 const examinationPostingService = require('../services/examinationPostingService.cjs');
 const portalLifecycleService = require('../services/portalLifecycleService.cjs');
+const documentIntegrity = require('../services/documentIntegrity.cjs');
 const { isAdmin: roleIsAdmin, isPortalCustomer: roleIsPortalCustomer, resolveRole: resolveAuthRole, normalize: normalizeRole } = require('../middleware/roles.cjs');
 
 const router = express.Router();
@@ -367,10 +368,42 @@ async function validateContractFinancialOp(op) {
  * failure so the client dead-letters the op and the user renumbers, instead
  * of retrying a deterministic 409 forever.
  */
+// Contract IDs deliberately hard-deleted during the authorized 2026-10-24
+// production cleanup. These tombstones are server-side/authoritative: a stale
+// queued offline upsert carrying one of these IDs cannot resurrect the row,
+// because the sync gateway rejects it before it reaches Supabase.
+const DELETED_PRINTING_CONTRACT_IDS = new Set([
+  'muw72uei-a4m5xlb',
+  'muydi86a-p0ntpr6',
+  'muyjt81k-ulskisr',
+  'mv9chbeg-9h5i09n',
+]);
+
+// Contract-item IDs that belonged exclusively to the hard-deleted contracts
+// above. They are equally tombstoned to prevent stale item upserts from
+// recreating child records under an already-deleted parent.
+const DELETED_PRINTING_CONTRACT_ITEM_IDS = new Set([
+  'muw72uek-pvx8fej','muw72uei-e72nhot','muw72uek-cpgqt1k','muw72uek-pvgobpb','muw72uek-2ox0mm3',
+  'muydi86a-3addgna','muydi86a-7b7clkz','muydi86a-a0lup1m','muydi86a-qykfg3p','muydi86a-6t153s3',
+  'muyjt81l-tadpdw5','muyjt81m-6gku1kf','muyjt81m-jwhkv7l','muyjt81m-uld4clb','muyjt81m-yth2m4i',
+  'mv9chbeh-alhz8sx','mv9chbeh-k05sh9u','mv9chbeh-mz0nfm4','mv9chbeh-yds8bol',
+]);
+
 async function validateAssessmentContractOp(op) {
   if (op.operation === 'delete') return null;
   const payload = op.payload;
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+
+  // Authoritative tombstone guard: a hard-deleted contract must never be
+  // recreated by a stale queued upsert. Reject non-retryably so the client
+  // dead-letters the operation instead of looping.
+  const payloadId = String(payload.id || '').trim();
+  const opRecordId = String(op.recordId || '').trim();
+  if ((payloadId && DELETED_PRINTING_CONTRACT_IDS.has(payloadId)) ||
+      (opRecordId && DELETED_PRINTING_CONTRACT_IDS.has(opRecordId))) {
+    return 'printing contract is permanently deleted and cannot be resurrected';
+  }
+
   const contractNumber = String(payload.contract_number || '').trim();
   if (!contractNumber) return null;
   try {
@@ -387,6 +420,27 @@ async function validateAssessmentContractOp(op) {
     // The unique index still enforces uniqueness atomically; a failed probe
     // must never block the business write.
     console.warn('[sync] assessment_contracts contract_number uniqueness probe failed:', err?.message || err);
+  }
+  return null;
+}
+
+async function validateAssessmentContractItemOp(op) {
+  if (op.operation === 'delete') return null;
+  const payload = op.payload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const nested = (payload.data && typeof payload.data === 'object' && !Array.isArray(payload.data))
+    ? payload.data : {};
+  const payloadId = String(payload.id || nested.id || '').trim();
+  const opRecordId = String(op.recordId || '').trim();
+  const contractId = String(payload.contract_id || nested.contract_id || payload.contractId || nested.contractId || '').trim();
+  if (payloadId && DELETED_PRINTING_CONTRACT_ITEM_IDS.has(payloadId)) {
+    return 'printing contract assessment item is permanently deleted and cannot be resurrected';
+  }
+  if (opRecordId && DELETED_PRINTING_CONTRACT_ITEM_IDS.has(opRecordId)) {
+    return 'printing contract assessment item is permanently deleted and cannot be resurrected';
+  }
+  if (contractId && DELETED_PRINTING_CONTRACT_IDS.has(contractId)) {
+    return 'printing contract assessment item belongs to a permanently deleted contract';
   }
   return null;
 }
@@ -569,6 +623,17 @@ router.post('/ops', async (req, res) => {
 
       // Printing-contract numbering guard (see validateAssessmentContractOp).
       if (table === 'assessment_contracts') {
+        // Canonical content digest — injected at the cloud boundary so rows
+        // written by an older client (or by a path that predates the hash)
+        // still carry the digest the printed QR and public verifier expect.
+        // The client and this service compute the same record-based snapshot.
+        if (op?.operation === 'upsert' && op.payload && typeof op.payload === 'object') {
+          try {
+            op.payload = documentIntegrity.ensureContractIntegrity(op.payload);
+          } catch (err) {
+            console.error('[sync] contract integrity injection failed:', err?.message || err);
+          }
+        }
         let contractError = null;
         try {
           contractError = await validateAssessmentContractOp(op);
@@ -583,7 +648,31 @@ router.post('/ops', async (req, res) => {
         }
       }
 
-      // Contract-document identity / supersede guard (see
+      // Tombstoned printing-contract item guard (see validateAssessmentContractItemOp).
+  // A stale queued upsert for a permanently deleted contract item, or for an
+  // item child of a permanently deleted contract, is refused non-retryably so
+  // the durable queue dead-letters it instead of reintroducing the row.
+  if (table === 'assessment_contract_items') {
+    let itemError = null;
+    try {
+      itemError = await validateAssessmentContractItemOp(op);
+    } catch (err) {
+      console.error('[sync] assessment_contract_items tombstone validation error:', err?.message || err);
+      itemError = null;
+    }
+    if (itemError) {
+      console.warn('[sync] assessment_contract_items tombstone guard rejected ' + (op?.operationId || ''), {
+        error: itemError,
+      });
+      results.push({
+        operationId: op?.operationId, ok: false, id: op?.recordId || null,
+        error: itemError, retryable: false, businessRule: true,
+      });
+      continue;
+    }
+  }
+
+// Contract-document identity / supersede guard (see
       // validateContractDocumentOp). Deterministic rejections are surfaced as
       // non-retryable so the client dead-letters them instead of looping.
       if (table === 'contract_documents') {

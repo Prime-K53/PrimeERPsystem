@@ -182,17 +182,84 @@ const ReportOptionsModal: React.FC<ReportOptionsModalProps> = ({ isOpen, onClose
 
             reportData.sections = [{ title: 'Budget vs Actual Performance', rows: items }];
         }
+        else if (reportType === 'EquityStatement') {
+            const equity = getAccountRows(['Equity']);
+            const revenue = getAccountRows(['Revenue']);
+            const expenses = getAccountRows(['Expense']);
+            const netIncome = revenue.reduce((s, a) => s + a.amount, 0) - expenses.reduce((s, a) => s + a.amount, 0);
+            const prevNetIncome = revenue.reduce((s, a) => s + (a.prevAmount || 0), 0) - expenses.reduce((s, a) => s + (a.prevAmount || 0), 0);
+
+            const openingEquity = equity.reduce((s, a) => s + (a.prevAmount || 0), 0);
+            const closingEquity = equity.reduce((s, a) => s + a.amount, 0);
+
+            reportData.sections = [
+                {
+                    title: 'Equity Reconciliation',
+                    rows: [
+                        { label: 'Opening Equity (prior period)', amount: openingEquity, prevAmount: 0 },
+                        { label: 'Net Profit / (Loss) for Period', amount: netIncome, prevAmount: prevNetIncome },
+                        { label: 'Contributions / (Withdrawals)', amount: closingEquity - openingEquity - netIncome, prevAmount: 0 },
+                        { label: 'Closing Equity', amount: closingEquity, prevAmount: 0, isTotal: true }
+                    ]
+                }
+            ];
+            reportData.netPerformance = { label: 'Closing Equity', amount: closingEquity, prevAmount: openingEquity };
+        }
         else if (reportType === 'CashFlow') {
             const revenue = getAccountRows(['Revenue']);
             const expenses = getAccountRows(['Expense']);
-            const totalRev = revenue.reduce((s, a) => s + a.amount, 0);
-            const totalExp = expenses.reduce((s, a) => s + a.amount, 0);
+            const assets = getAccountRows(['Asset']);
+            const liabilities = getAccountRows(['Liability']);
+
+            const netIncome = revenue.reduce((s, a) => s + a.amount, 0) - expenses.reduce((s, a) => s + a.amount, 0);
+            const prevNetIncome = revenue.reduce((s, a) => s + (a.prevAmount || 0), 0) - expenses.reduce((s, a) => s + (a.prevAmount || 0), 0);
+
+            // Depreciation / amortisation add-back (expense accounts whose name
+            // indicates a non-cash charge).
+            const depreciation = expenses
+                .filter(e => /depreciat|amortis/i.test(e.label))
+                .reduce((s, a) => s + a.amount, 0);
+
+            // Working capital changes (current assets / current liabilities).
+            const arChange = -(assets.filter(a => /receivable/i.test(a.label)).reduce((s, a) => s + a.amount, 0)
+                - assets.filter(a => /receivable/i.test(a.label)).reduce((s, a) => s + (a.prevAmount || 0), 0));
+            const invChange = -(assets.filter(a => /inventor/i.test(a.label)).reduce((s, a) => s + a.amount, 0)
+                - assets.filter(a => /inventor/i.test(a.label)).reduce((s, a) => s + (a.prevAmount || 0), 0));
+            const apChange = liabilities.filter(a => /payable/i.test(a.label)).reduce((s, a) => s + a.amount, 0)
+                - liabilities.filter(a => /payable/i.test(a.label)).reduce((s, a) => s + (a.prevAmount || 0), 0);
+
+            const operatingCash = netIncome + depreciation + arChange + invChange + apChange;
+
+            // Investing: fixed asset movements.
+            const investingCash = -assets
+                .filter(a => /fixed|equipment|property|plant/i.test(a.label))
+                .reduce((s, a) => s + (a.amount - (a.prevAmount || 0)), 0);
+
+            // Financing: equity/liability movements (loans, capital).
+            const financingCash = liabilities
+                .filter(a => /loan|borrow|capital/i.test(a.label))
+                .reduce((s, a) => s + (a.amount - (a.prevAmount || 0)), 0)
+                + assets.filter(a => false).reduce((s, a) => s + 0, 0);
 
             reportData.sections = [
-                { title: 'Operating Activities (Inflow)', rows: revenue },
-                { title: 'Operating Activities (Outflow)', rows: expenses.map(e => ({ ...e, amount: -e.amount })) }
+                { title: 'Operating Activities (Indirect Method)', rows: [
+                    { label: 'Net Profit / (Loss)', amount: netIncome, prevAmount: prevNetIncome },
+                    { label: 'Add: Depreciation & Amortisation', amount: depreciation, prevAmount: 0 },
+                    { label: 'Change in Receivables', amount: arChange, prevAmount: 0 },
+                    { label: 'Change in Inventory', amount: invChange, prevAmount: 0 },
+                    { label: 'Change in Payables', amount: apChange, prevAmount: 0 },
+                    { label: 'Net Cash from Operations', amount: operatingCash, prevAmount: 0, isTotal: true }
+                ]},
+                { title: 'Investing Activities', rows: [
+                    { label: 'Purchase / (Sale) of Fixed Assets', amount: investingCash, prevAmount: 0 },
+                    { label: 'Net Cash from Investing', amount: investingCash, prevAmount: 0, isTotal: true }
+                ]},
+                { title: 'Financing Activities', rows: [
+                    { label: 'Proceeds / (Repayment) of Loans & Capital', amount: financingCash, prevAmount: 0 },
+                    { label: 'Net Cash from Financing', amount: financingCash, prevAmount: 0, isTotal: true }
+                ]}
             ];
-            reportData.netPerformance = { label: 'Net Cash Flow from Operations', amount: totalRev - totalExp };
+            reportData.netPerformance = { label: 'Net Change in Cash', amount: operatingCash + investingCash + financingCash, prevAmount: 0 };
         }
 
         const result = safeOpenPreview('FISCAL_REPORT', reportData);

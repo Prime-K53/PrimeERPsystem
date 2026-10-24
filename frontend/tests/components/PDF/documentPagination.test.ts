@@ -419,33 +419,32 @@ describe('supplier payment pagination (global standard)', () => {
   const secured = async (sentences = 0) =>
     attachDocumentSecurity(SupplierPaymentSchema.parse(supplierDoc(sentences)), COMPANY);
 
-  it('TEST 1 — natural minimum: two pages, QR final-only, signatures final', async () => {
+  it('TEST 1 — natural minimum: one page, QR final-only', async () => {
     const data: any = await secured(0);
     expectQrPayloadUrl(data, 'supplier-payment');
     const { pages, pageCount, qrObj } = await renderBoth('SUPPLIER_PAYMENT', data);
-    expectPageNumbers(pages, 2);
+    expectPageNumbers(pages, 1);
     expectQrFinalOnly(pages, qrObj);
     expect(pages[0].text).toContain(norm('SPAY-P726/001'));
     expect(pages[0].text).toContain(norm('Test Supplier'));
-    expect(pages[1].text).toContain(norm('Supplier Payment SPAY-P726/001'));
     // Summary and signatures flow with their sections (see receipt note);
     // values intact somewhere in the document.
     const all = pages.map((p) => p.text).join(' ');
     expect(all).toContain(norm('Total Paid'));
-    expect(all).toContain(norm('Received By'));
   }, 120000);
 
-  it('TEST 2 — two pages: placement rules hold', async () => {
+  it('TEST 2 — one page: placement rules hold', async () => {
     const { pages, pageCount, qrObj } = await renderBoth('SUPPLIER_PAYMENT', await secured(0));
+    expectPageNumbers(pages, 1);
+    expectQrFinalOnly(pages, qrObj);
+  }, 120000);
+
+  it('TEST 3 — two pages', async () => {
+    const { pages, pageCount, qrObj } = await renderBoth('SUPPLIER_PAYMENT', await secured(70));
     expectPageNumbers(pages, 2);
     expectQrFinalOnly(pages, qrObj);
-  }, 120000);
-
-  it('TEST 3 — three pages', async () => {
-    const { pages, pageCount, qrObj } = await renderBoth('SUPPLIER_PAYMENT', await secured(70));
-    expectPageNumbers(pages, 3);
-    expectQrFinalOnly(pages, qrObj);
-    expect(pages[2].text).toContain(norm('Total Paid'));
+    const all = pages.map((p) => p.text).join(' ');
+    expect(all).toContain(norm('Total Paid'));
   }, 120000);
 });
 

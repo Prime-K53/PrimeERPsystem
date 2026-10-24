@@ -218,18 +218,20 @@ export const usePrintingStore = create<PrintingState>((set, get) => ({
   refreshMetrics: () => {
     const jobs = get().productionJobs;
     const today = new Date().toISOString().split('T')[0];
-    set({
-      metrics: {
-        todayJobs: jobs.filter(j => j.createdAt.startsWith(today)).length,
-        urgentJobs: jobs.filter(j => j.spec.priority === 'Urgent' || j.spec.priority === 'Express').length,
-        pendingArtwork: jobs.filter(j => j.spec.artwork.status === 'Pending').length,
-        awaitingApproval: jobs.filter(j => j.status === 'Artwork Review').length,
-        readyToPrint: jobs.filter(j => j.status === 'Ready for Production').length,
-        printing: jobs.filter(j => j.status === 'Printing').length,
-        finishing: jobs.filter(j => j.status === 'Finishing').length,
-        readyForCollection: jobs.filter(j => j.status === 'Ready for Collection').length,
-        completedToday: jobs.filter(j => j.status === 'Completed' && j.completedAt?.startsWith(today)).length,
-      },
-    });
+    const initial = { todayJobs: 0, urgentJobs: 0, pendingArtwork: 0, awaitingApproval: 0, readyToPrint: 0, printing: 0, finishing: 0, readyForCollection: 0, completedToday: 0 };
+    const metrics = jobs.reduce((acc, j) => {
+      const isToday = j.createdAt.startsWith(today);
+      if (isToday) acc.todayJobs++;
+      if (j.spec.priority === 'Urgent' || j.spec.priority === 'Express') acc.urgentJobs++;
+      if (j.spec.artwork.status === 'Pending') acc.pendingArtwork++;
+      if (j.status === 'Artwork Review') acc.awaitingApproval++;
+      if (j.status === 'Ready for Production') acc.readyToPrint++;
+      if (j.status === 'Printing') acc.printing++;
+      if (j.status === 'Finishing') acc.finishing++;
+      if (j.status === 'Ready for Collection') acc.readyForCollection++;
+      if (j.status === 'Completed' && j.completedAt?.startsWith(today)) acc.completedToday++;
+      return acc;
+    }, initial);
+    set({ metrics });
   },
 }));

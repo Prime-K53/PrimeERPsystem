@@ -355,7 +355,7 @@ function stubModel(data: VerificationData, slug: string): StubModel {
 }
 
 /* Redesign stylesheet — scoped to .ppv- so the ERP theme never leaks in. */
-const REDESIGN_CSS = `
+export const REDESIGN_CSS = `
 .ppv-page{
   --paper:#F2EEE3; --paper-deep:#EAE4D2; --ink:#20261E; --ink-soft:#5B6156;
   --teal:#145C54; --teal-deep:#0E413B; --stamp:#B23A2E; --gold:#A9822F;
@@ -427,7 +427,7 @@ const REDESIGN_CSS = `
 @media print{ .ppv-page{ background:#fff; padding:0; display:block; } .ppv-page::before{ display:none; } .ppv-card{ box-shadow:none; } }
 `;
 
-function Seal({ tone, glyph }: { tone: 'teal' | 'red' | 'amber'; glyph: 'check' | 'ban' | 'warn' | 'dots' }) {
+export function Seal({ tone, glyph }: { tone: 'teal' | 'red' | 'amber'; glyph: 'check' | 'ban' | 'warn' | 'dots' }) {
   const main = tone === 'teal' ? '#145C54' : tone === 'amber' ? '#A9822F' : '#B23A2E';
   const inner = glyph === 'check'
     ? <path d="M35 51 L45.5 61.5 L67 38" fill="none" stroke="#FCFAF3" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" />

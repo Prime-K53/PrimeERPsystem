@@ -1,5 +1,6 @@
 import QRCode from 'qrcode';
 import {
+  buildContractVerificationUrl,
   buildDocumentVerificationUrl,
   detectVerifiableDocumentType,
   resolveVerifiableDocumentNumber,
@@ -73,6 +74,20 @@ export const buildSecurityQrPayload = (data: any, companyName?: string) => {
   // legacy human-readable payload — including documents that predate tokens.
   // Invoice output is byte-identical to the original invoice implementation.
   const docType = detectVerifiableDocumentType(data);
+  // A printing contract with a persisted canonical hash uses the DEDICATED
+  // content-hash verification page (`/verify?c=&h=`). The full hash in the QR
+  // is what the server recomputes and compares; the short code is never
+  // encoded. Contracts without a hash (legacy rows) keep the token route.
+  if (docType === 'printing_contract') {
+    const hash = String((data as any)?.contentHash || '').trim();
+    if (/^[0-9a-f]{64}$/i.test(hash)) {
+      const contractUrl = buildContractVerificationUrl(
+        resolveVerifiableDocumentNumber(data, docType),
+        hash,
+      );
+      if (contractUrl) return contractUrl;
+    }
+  }
   const verificationUrl = docType
     ? buildDocumentVerificationUrl({
       documentType: docType,

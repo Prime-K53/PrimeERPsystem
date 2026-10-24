@@ -68,18 +68,10 @@ export const SignatureCapture: React.FC<SignatureCaptureProps> = ({
     if (mode !== 'Draw') return;
     const canvas = canvasRef.current;
     if (!canvas) return;
-    if (canvas.hasPointerCapture?.(e.pointerId)) {
-      try {
-        canvas.setPointerCapture(e.pointerId);
-      } catch {
-        /* pointer capture is best-effort */
-      }
-    } else {
-      try {
-        canvas.setPointerCapture?.(e.pointerId);
-      } catch {
-        /* pointer capture is best-effort */
-      }
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch {
+      /* pointer capture is best-effort */
     }
     const point = getCanvasPoint(e);
     if (!point) return;
@@ -147,6 +139,7 @@ export const SignatureCapture: React.FC<SignatureCaptureProps> = ({
       }
       setUploadedDataUrl(normalized);
       setError('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
     };
     reader.readAsDataURL(file);
   };
@@ -245,6 +238,9 @@ export const SignatureCapture: React.FC<SignatureCaptureProps> = ({
             ref={canvasRef}
             width={CANVAS_WIDTH}
             height={CANVAS_HEIGHT}
+            role="img"
+            aria-label="Signature pad canvas"
+            tabIndex={0}
             onPointerDown={startDrawing}
             onPointerMove={draw}
             onPointerUp={stopDrawing}

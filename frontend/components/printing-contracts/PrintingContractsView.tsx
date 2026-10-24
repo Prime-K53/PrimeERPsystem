@@ -11,6 +11,7 @@ import type {
 import { useFinanceStore } from '../../stores/financeStore';
 import { useSalesStore } from '../../stores/salesStore';
 import { useAuth } from '../../context/AuthContext';
+import { resolvePdfSignatureSource } from '../../utils/companyAssetUtils';
 import { useFinance } from '../../context/FinanceContext';
 import {
   emptyContractLine, contractLineAmount, contractLinesTotal, contractLinesQuantity,
@@ -41,6 +42,7 @@ import {
   buildPrintingContractDoc,
   buildContractScheduleDoc,
   buildAssessmentCompletionReceiptDoc,
+  ensureContractIntegrity,
 } from '../../services/printingContractService';
 import {
   PrintingContractSchema,
@@ -56,8 +58,11 @@ import { attachDocumentSecurity } from '../../utils/documentSecurity';
 import { generateVerificationToken } from '../../utils/documentVerification';
 import { dbService } from '../../services/db';
 import { generateNextId } from '../../utils/helpers';
-import { getCustomerOptionLabel, getCustomerDisplayName } from '../../utils/customerDisplay';
+import { getCustomerOptionLabel, customerNameOf } from '../../utils/customerDisplay';
 import { currencyService } from '../../services/currencyService';
+import { formatMoney } from '../../utils/posMoney';
+import { ErrorBoundary } from '../ErrorBoundary';
+import type { User } from '../../types';
 import { ConfirmDialog, ConfirmDialogType } from '../ConfirmDialog';
 import {
   ContractModalShell, ContractSectionLabel, ContractGhostButton, ContractPrimaryButton,
@@ -209,10 +214,9 @@ const emptyItemDraft = () => ({
   notes: '',
 });
 
-const PrintingContractsView: React.FC = () => {
-  const { companyConfig, notify, user, checkPermission } = useAuth() as ReturnType<typeof useAuth> & {
-    checkPermission?: (permissionId: string) => boolean;
-  };
+const PrintingContractsViewInner: React.FC = () => {
+  const { companyConfig, notify, user, checkPermission } = useAuth();
+  const authUser = (user ?? null) as (User & { companyId?: string }) | null;
   const { addInvoice } = useFinance();
   const currency = companyConfig?.currencySymbol
     || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol
@@ -324,9 +328,9 @@ const PrintingContractsView: React.FC = () => {
   // Unknown/missing role fails OPEN exactly like the API (checkAuth allows
   // when it cannot resolve a role) — a UI gate must never be stricter than
   // its enforcement layer, or it manufactures lockouts the API would allow.
-  const userRole = String((user as any)?.role || '').toLowerCase();
-  const isSuperUser = Boolean((user as any)?.isSuperAdmin) || userRole === 'admin';
-  const roleKnown = Boolean(user) && (Boolean(userRole) || Boolean((user as any)?.isSuperAdmin));
+  const userRole = String(authUser?.role || '').toLowerCase();
+  const isSuperUser = Boolean(authUser?.isSuperAdmin) || userRole === 'admin';
+  const roleKnown = Boolean(authUser) && (Boolean(userRole) || Boolean(authUser?.isSuperAdmin));
   const hasPerm = (id: string) => {
     try {
       return typeof checkPermission === 'function' ? !!checkPermission(id) : false;
@@ -339,6 +343,8 @@ const PrintingContractsView: React.FC = () => {
     || hasPerm('printing_contracts.activate') || hasPerm('printing_contracts.amend')
     || hasPerm('printing_contracts.manage_assessments') || hasPerm('printing_contracts.create_job');
   const canDeleteContracts = !roleKnown || isSuperUser;
+
+  const actorId = authUser?.id || authUser?.username || 'system';
 
   // Behavioral gates: buttons are also hidden/disabled, but the handlers
   // enforce roles themselves so no caller can bypass the UI.
@@ -364,20 +370,9 @@ const PrintingContractsView: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const customerNameOf = (id?: string) => {
-    const customer = customers.find((c: Customer) => String(c.id) === String(id));
-    if (!customer) return id || '—';
-    const displayName = getCustomerDisplayName({
-      businessName: customer.businessName ?? null,
-      companyName: customer.companyName ?? null,
-      legacyCustomerName: customer.name ?? null,
-    });
-    if (!displayName) return id || '—';
-    return displayName;
-  };
   const schoolNameOf = (id?: string) =>
     schools.find(s => String(s.id) === String(id))?.name
-    || customers.find((c: Customer) => String(c.id) === String(id))?.name
+    || customerNameOf(id, customers)
     || id || '—';
   /**
    * Branches (sub-accounts) of the selected customer. Customers carry them as
@@ -552,6 +547,21 @@ const PrintingContractsView: React.FC = () => {
     setIsSaving(true);
     try {
       const now = new Date().toISOString();
+      // Persist the client PARTY SNAPSHOT with the contract. The printed client
+      // block has always come from the customer/school records; storing those
+      // values on the contract is what lets the content hash cover the parties
+      // and lets the server verify them without a second lookup. Existing rows
+      // are enriched on their next save.
+      const partySnapshot = (customerId: string, schoolId: string) => {
+        const partyCustomer = (customers || []).find(c => String(c.id) === String(customerId));
+        const partySchool = schools.find(s => String(s.id) === String(schoolId));
+        return {
+          school_name: schoolNameOf(schoolId) || undefined,
+          customer_contact: partyCustomer?.contactName || partySchool?.contactPerson || undefined,
+          customer_phone: partyCustomer?.phone || partySchool?.phone || undefined,
+          customer_address: partyCustomer?.billingAddress || partyCustomer?.address || partySchool?.address || undefined,
+        };
+      };
       if (editingContract) {
         if (isContractVoided(editingContract.status)) {
           notify('Voided contracts are terminal and cannot be edited.', 'error');
@@ -562,6 +572,7 @@ const PrintingContractsView: React.FC = () => {
           return;
         }
         const profileData = buildContractProfileData(formDraft.profile);
+        const party = partySnapshot(formDraft.customer_id, formDraft.school_id);
         await updateAssessmentContract({
           ...editingContract,
           title: formDraft.title.trim(),
@@ -584,8 +595,9 @@ const PrintingContractsView: React.FC = () => {
           data: {
             ...(editingContract.data || {}),
             ...profileData,
+            ...party,
             school_zone: formDraft.school_zone || undefined,
-            customer_phone: formDraft.customer_phone || undefined,
+            customer_phone: formDraft.customer_phone || party.customer_phone || undefined,
             sub_account_name: formDraft.sub_account_name || undefined,
             academic_year: formDraft.academic_year || undefined,
           },
@@ -603,8 +615,8 @@ const PrintingContractsView: React.FC = () => {
         // Sequence is drawn from contract_number (record ids are random
         // uids) with a uniqueness guard against legacy duplicates.
         const contractNumber = generateNextContractNumber(assessmentContracts || [], companyConfig);
-        const companyId = (companyConfig as any)?.id || (user as any)?.companyId || 'default';
-        const createdBy = (user as any)?.id || (user as any)?.username || 'system';
+        const companyId = (companyConfig as unknown as { id?: string })?.id || authUser?.companyId || 'default';
+        const createdBy = authUser?.id || authUser?.username || 'system';
         const recordId = uid();
         // Materialise the entitlement first so assessment_count is exact on
         // day one instead of drifting from zero.
@@ -619,6 +631,7 @@ const PrintingContractsView: React.FC = () => {
           },
           validLines,
         );
+        const creationParty = partySnapshot(formDraft.customer_id, formDraft.school_id);
         const record: AssessmentContract = {
           id: recordId,
           company_id: companyId,
@@ -658,19 +671,23 @@ const PrintingContractsView: React.FC = () => {
           data: {
             lines: validLines,
             ...buildContractProfileData(formDraft.profile),
+            ...creationParty,
             school_zone: formDraft.school_zone || undefined,
-            customer_phone: formDraft.customer_phone || undefined,
+            customer_phone: formDraft.customer_phone || creationParty.customer_phone || undefined,
             sub_account_name: formDraft.sub_account_name || undefined,
             academic_year: formDraft.academic_year || undefined,
           },
         };
+        // Persist the canonical digest with the record: the printed QR and the
+        // public verifier both resolve this exact contract.
+        const signedRecord = await ensureContractIntegrity(record);
         // Phase 1 §2.1: atomic creation — contract + all reserved items + bucket
         // in ONE operation. Validations run before the first write, so a failure
         // leaves no half-reserved draft. Falls back to legacy two-step only if
         // the atomic path is unavailable (still reports drift via reconciler).
         try {
           await transactionService.createPrintingContractWithItems({
-            contract: record,
+            contract: signedRecord,
             items: contractItems.map((it) => ({
               id: String(it.id),
               assessment_name: it.assessment_name,
@@ -812,7 +829,7 @@ const PrintingContractsView: React.FC = () => {
       return;
     }
     const target = voidTarget.contract;
-    const actor = (user as any)?.id || (user as any)?.username || 'system';
+    const actor = actorId;
     setVoidTarget(null);
     try {
       const res: any = await voidPrintingContract({
@@ -845,7 +862,7 @@ const PrintingContractsView: React.FC = () => {
       return;
     }
     const now = new Date().toISOString();
-    const actor = (user as any)?.id || (user as any)?.username || 'system';
+    const actor = actorId;
 
     // Activation honesty: this button promises "Verify & activate", so a
     // verified stamp and wallet deposit require payment evidence. Without
@@ -1076,9 +1093,9 @@ const PrintingContractsView: React.FC = () => {
             assessment_date: itemDraft.assessment_date ? new Date(itemDraft.assessment_date).toISOString() : undefined,
             item_price: num(itemDraft.item_price),
             notes: itemDraft.notes || undefined,
-            created_by: (user as any)?.id || 'system',
+            created_by: authUser?.id || 'system',
           },
-          performedBy: (user as any)?.id || 'system',
+          performedBy: authUser?.id || 'system',
         });
         notify('Assessment scheduled (funds reserved)', 'success');
       }
@@ -1143,7 +1160,7 @@ const PrintingContractsView: React.FC = () => {
               ledgerEntryId: String(result?.ledgerEntryId || `LG-WTX-${a.id}-CONSUMED`),
               customerName: customerNameOf(freshContract.customer_id),
               schoolName: schoolNameOf(freshContract.school_id),
-              issuedBy: (user as any)?.id || 'system',
+              issuedBy: authUser?.id || 'system',
               consumedAtIso: (consumedItem as any).consumed_at,
             });
           }
@@ -1284,7 +1301,7 @@ const PrintingContractsView: React.FC = () => {
         prepaid_amount_adjustment: num(amendDraft.prepaid_amount_adjustment),
         assessment_count_adjustment: Math.floor(num(amendDraft.assessment_count_adjustment)),
         assessment_price_adjustment: num(amendDraft.assessment_price_adjustment),
-        requested_by: (user as any)?.id || 'system',
+             requested_by: authUser?.id || 'system',
         status: 'pending', notes: undefined,
         created_at: now, updated_at: now, version: 1, data: {},
       } as ContractAmendment);
@@ -1302,7 +1319,7 @@ const PrintingContractsView: React.FC = () => {
       return;
     }
     const now = new Date().toISOString();
-    const actor = (user as any)?.id || (user as any)?.username || 'system';
+    const actor = actorId;
     try {
       await updateContractAmendment({
         ...am, status: approve ? 'approved' : 'rejected',
@@ -1408,7 +1425,7 @@ const PrintingContractsView: React.FC = () => {
       return;
     }
     const now = new Date().toISOString();
-    const actor = (user as any)?.id || (user as any)?.username || 'system';
+    const actor = actorId;
     try {
       const data = applyContractSignature({ ...(selected.data || {}) }, party, {
         name: captured.name,
@@ -1451,10 +1468,40 @@ const PrintingContractsView: React.FC = () => {
         } as AssessmentContract);
         source = { ...selected, verificationToken: token };
       }
+      const partyCustomer = (customers || []).find(c => String(c.id) === String(source.customer_id));
+      const partySchool = schools.find(s => String(s.id) === String(source.school_id));
+      // Legacy rows (and rows last saved before the party snapshot existed)
+      // are enriched and re-hashed at print time. The printed document, the
+      // persisted record and the public verifier then agree on one digest.
+      if (!source.contentHash || !source.data?.school_name) {
+        const enriched = await ensureContractIntegrity({
+          ...source,
+          data: {
+            ...(source.data || {}),
+            school_name: source.data?.school_name || schoolNameOf(source.school_id) || undefined,
+            customer_contact: source.data?.customer_contact
+              || partyCustomer?.contactName || partySchool?.contactPerson || undefined,
+            customer_phone: source.data?.customer_phone
+              || partyCustomer?.phone || partySchool?.phone || undefined,
+            customer_address: source.data?.customer_address
+              || partyCustomer?.billingAddress || partyCustomer?.address || partySchool?.address || undefined,
+          },
+        });
+        await updateAssessmentContract(enriched);
+        source = enriched;
+      }
       const doc = await buildPrintingContractDoc({
         contract: source,
         customerName: customerNameOf(source.customer_id),
         schoolName: schoolNameOf(source.school_id),
+        // Party details come from the customer/school records, never from the
+        // contract's denormalised display name. The CUST key is passed only as
+        // the small secondary reference printed under the legal name.
+        customerContact: partyCustomer?.contactName || partySchool?.contactPerson,
+        customerPhone: partyCustomer?.phone || partySchool?.phone,
+        customerEmail: partyCustomer?.email || partySchool?.email,
+        customerAddress: partyCustomer?.billingAddress || partyCustomer?.address || partySchool?.address,
+        customerReference: String(source.customer_id || ''),
       });
       const parsed = PrintingContractSchema.parse(doc);
       const secured = await attachDocumentSecurity(parsed, companyConfig?.companyName);
@@ -1553,13 +1600,13 @@ const PrintingContractsView: React.FC = () => {
     }
   };
 
-   const money = (v: number) => `${currency}${num(v).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-   const metricCards = [
+   const money = (v: number) => formatMoney(num(v), currency);
+  const metricCards = useMemo(() => [
     { key: 'Active', label: 'Active Contracts', value: String(stats.active), icon: <CheckCircle size={20} />, accent: contractTeal[500], tileBg: contractTeal[50], tileColor: contractTeal[600] },
     { key: 'Pending', label: 'Draft / Pending Payment', value: String(stats.pending), icon: <ClipboardList size={20} />, accent: contractAmber[500], tileBg: contractAmber[100], tileColor: contractAmber[600] },
     { key: 'Funds', label: 'Available Funds', value: money(stats.available), icon: <Wallet size={20} />, accent: contractTeal[700], tileBg: contractTeal[100], tileColor: contractTeal[700] },
     { key: 'All', label: 'Consumed / Assessments Reserved', value: `${stats.itemsConsumed} / ${stats.itemsReserved}`, icon: <Printer size={20} />, accent: contractAmber[300], tileBg: contractAmber[100], tileColor: contractAmber[600] },
-  ] as const;
+  ] as const, [stats, money]);
 
   return (
     <div className="p-4 md:p-6 max-w-[1600px] mx-auto h-[calc(100vh-4rem)] flex flex-col relative w-full text-sm font-normal"
@@ -1611,7 +1658,7 @@ const PrintingContractsView: React.FC = () => {
           const isActive = metricFilter === card.key;
           return (
             <div key={card.key}
-              onClick={() => setMetricFilter(metricFilter === card.key ? 'All' : (card.key as typeof metricFilter))}
+              onClick={() => setMetricFilter(f => f === card.key ? 'All' : (card.key as typeof metricFilter))}
               style={{
                 cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 16,
                 padding: 16, borderRadius: 12, background: isActive ? contractTeal[50] : contractPaper,
@@ -1809,10 +1856,8 @@ const PrintingContractsView: React.FC = () => {
               <input
                 value={customerDisplay}
                 onChange={(e) => {
-                  const val = e.target.value;
-                  setCustomerDisplay(val);
-                  setFormDraft({ ...formDraft, customer_id: val });
-                  setCustomerSuggestOpen(true);
+                  setCustomerDisplay(e.target.value);
+                  setCustomerSuggestOpen(e.target.value.trim().length > 0);
                 }}
                 onFocus={() => setCustomerSuggestOpen(true)}
                 placeholder="Enter customer name"
@@ -2375,7 +2420,7 @@ const PrintingContractsView: React.FC = () => {
               compensating reversal, not an ordinary status edge. */}
           {canManageContracts && !isContractVoided(selected.status) && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
-              {CONTRACT_TRANSITIONS[selected.status].map(next => (
+              {(CONTRACT_TRANSITIONS[selected.status] || []).map(next => (
                 <ContractGhostButton key={next} onClick={() => transitionContract(selected, next)}>
                   {next === 'active' ? <Play size={13} /> : next === 'suspended' ? <Pause size={13} /> : next === 'cancelled' ? <Ban size={13} /> : <CheckCircle size={13} />}
                   {next === 'pending_payment' ? 'Submit for payment' : next === 'active' ? 'Verify & activate' : next === 'suspended' ? 'Suspend' : CONTRACT_STATUS_LABEL[next]}
@@ -2491,7 +2536,11 @@ const PrintingContractsView: React.FC = () => {
                                 <p style={{ fontSize: 11, color: contractInkSoft, margin: '2px 0 0' }}>{block.role} · signed {block.signedAt ? new Date(block.signedAt).toLocaleDateString() : ''}</p>
                               </div>
                             ) : (
-                              <p style={{ fontSize: 12, color: contractInkSoft, fontStyle: 'italic', margin: 0 }}>Not signed</p>
+                              <p style={{ fontSize: 12, color: contractInkSoft, fontStyle: 'italic', margin: 0 }}>
+                                {party === 'company' && resolvePdfSignatureSource(companyConfig)
+                                  ? 'Not signed — will use company signature from Settings'
+                                  : 'Not signed'}
+                              </p>
                             )}
                             {canSign && (
                               <button
@@ -3000,7 +3049,7 @@ const PrintingContractsView: React.FC = () => {
           <SignatureCapture
             signerLabel={signingParty === 'company' ? 'Company representative' : 'Customer representative'}
             initialName={signingParty === 'company'
-              ? String((user as any)?.name || (user as any)?.username || '')
+               ? String(authUser?.name || authUser?.username || '')
               : customerNameOf(selected.customer_id)}
             submitLabel={signingParty === 'company' ? 'Sign as Company' : 'Sign as Customer'}
             onConfirm={(captured) => { void handleConfirmSignature(signingParty, captured); }}
@@ -3059,5 +3108,11 @@ const PrintingContractsView: React.FC = () => {
     </div>
   );
 };
+
+const PrintingContractsView: React.FC = () => (
+  <ErrorBoundary name="Printing Contracts">
+    <PrintingContractsViewInner />
+  </ErrorBoundary>
+);
 
 export default PrintingContractsView;

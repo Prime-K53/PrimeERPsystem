@@ -162,6 +162,18 @@ export const resolvePdfQrCodeSource = (value?: string | null): string =>
   normalizeImageDataUrl(value) || '';
 
 /**
+ * The company's standing signature, as configured in Settings → Company
+ * Profile. Prefers the PDF-ready `signatureBase64` copy written at upload
+ * time and falls back to a legacy `signature` data URL. Only synchronous
+ * data URLs are usable by the PDF renderer; stored-file identifiers need
+ * `hydrateCompanyPdfAssets` first, exactly like the logo.
+ */
+export const resolvePdfSignatureSource = (config?: CompanyConfig | null): string =>
+  normalizeImageDataUrl((config as CompanyConfig & { signatureBase64?: string })?.signatureBase64)
+  || normalizeImageDataUrl(config?.signature)
+  || '';
+
+/**
  * Convert a PNG/JPEG data URL to its grayscale (luminance) equivalent.
  * Used for black-and-white printing so the company logo prints in B/W
  * instead of color. Browser-only (requires canvas); returns null when

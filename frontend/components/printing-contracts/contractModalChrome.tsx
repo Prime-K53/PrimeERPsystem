@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { X, ChevronRight } from 'lucide-react';
 
 /**
@@ -105,58 +105,60 @@ export const contractFilterSelectStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
-export const ContractCloseButton: React.FC<{ onClose: () => void; label?: string }> = ({ onClose, label = 'Close' }) => (
-  <button onClick={onClose} aria-label={label} style={{
-    width: 32, height: 32, borderRadius: 8,
-    border: `1px solid ${contractHairline}`, background: contractPaper, color: contractInkSoft,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    cursor: 'pointer', transition: 'all .15s ease', fontSize: 16, flexShrink: 0,
-  }}
-    onMouseEnter={e => { e.currentTarget.style.background = contractTeal[50]; e.currentTarget.style.color = contractTeal[700]; e.currentTarget.style.borderColor = contractTeal[200]; }}
-    onMouseLeave={e => { e.currentTarget.style.background = contractPaper; e.currentTarget.style.color = contractInkSoft; e.currentTarget.style.borderColor = contractHairline; }}
-  >
-    <X size={15} />
-  </button>
-);
+export const ContractCloseButton: React.FC<{ onClose: () => void; label?: string }> = ({ onClose, label = 'Close' }) => {
+  const [hover, setHover] = useState(false);
+  return (
+    <button onClick={onClose} aria-label={label} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} style={{
+      width: 32, height: 32, borderRadius: 8,
+      border: `1px solid ${hover ? contractTeal[200] : contractHairline}`, background: hover ? contractTeal[50] : contractPaper, color: hover ? contractTeal[700] : contractInkSoft,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      cursor: 'pointer', transition: 'all .15s ease', fontSize: 16, flexShrink: 0,
+    }}>
+      <X size={15} />
+    </button>
+  );
+};
 
 export const ContractGhostButton: React.FC<{
   onClick: () => void; children: React.ReactNode; type?: 'button' | 'submit';
   compact?: boolean;
-}> = ({ onClick, children, type = 'button', compact }) => (
-  <button type={type} onClick={onClick} style={{
-    fontFamily: "'Inter', sans-serif", fontSize: compact ? 12 : 13, fontWeight: 600,
-    padding: compact ? '7px 14px' : '9px 18px', borderRadius: 9, cursor: 'pointer',
-    background: contractPaper, border: `1.4px solid ${contractHairline}`, color: contractInkSoft,
-    display: 'flex', alignItems: 'center', gap: 7, transition: 'all .15s ease',
-    whiteSpace: 'nowrap',
-  }}
-    onMouseEnter={e => { e.currentTarget.style.background = contractTeal[50]; e.currentTarget.style.color = contractTeal[800]; e.currentTarget.style.borderColor = contractTeal[200]; }}
-    onMouseLeave={e => { e.currentTarget.style.background = contractPaper; e.currentTarget.style.color = contractInkSoft; e.currentTarget.style.borderColor = contractHairline; }}
-  >
-    {children}
-  </button>
-);
+}> = ({ onClick, children, type = 'button', compact }) => {
+  const [hover, setHover] = useState(false);
+  return (
+    <button type={type} onClick={onClick} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} style={{
+      fontFamily: "'Inter', sans-serif", fontSize: compact ? 12 : 13, fontWeight: 600,
+      padding: compact ? '7px 14px' : '9px 18px', borderRadius: 9, cursor: 'pointer',
+      border: `1.4px solid ${hover ? contractTeal[200] : contractHairline}`,
+      background: hover ? contractTeal[50] : contractPaper, color: hover ? contractTeal[800] : contractInkSoft,
+      display: 'flex', alignItems: 'center', gap: 7, transition: 'all .15s ease',
+      whiteSpace: 'nowrap',
+    }}>
+      {children}
+    </button>
+  );
+};
 
 export const ContractPrimaryButton: React.FC<{
   onClick?: () => void; children: React.ReactNode; disabled?: boolean; type?: 'button' | 'submit';
   compact?: boolean; chevron?: boolean;
-}> = ({ onClick, children, disabled, type = 'button', compact, chevron = true }) => (
-  <button type={type} onClick={onClick} disabled={disabled} style={{
-    fontFamily: "'Inter', sans-serif", fontSize: compact ? 12 : 13, fontWeight: 600,
-    padding: compact ? '7px 14px' : '9px 18px', borderRadius: 9, cursor: disabled ? 'not-allowed' : 'pointer',
-    border: '1.4px solid transparent', opacity: disabled ? 0.6 : 1,
-    background: `linear-gradient(155deg, ${contractTeal[500]}, ${contractTeal[700]})`,
-    color: '#fff', display: 'flex', alignItems: 'center', gap: 7,
-    boxShadow: '0 6px 16px -6px rgba(15,84,76,.55)',
-    transition: 'all .15s ease', whiteSpace: 'nowrap',
-  }}
-    onMouseEnter={e => { if (!disabled) { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 8px 20px -6px rgba(15,84,76,.65)'; } }}
-    onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 6px 16px -6px rgba(15,84,76,.55)'; }}
-  >
-    {children}
-    {chevron && <ChevronRight size={14} />}
-  </button>
-);
+}> = ({ onClick, children, disabled, type = 'button', compact, chevron = true }) => {
+  const [hover, setHover] = useState(false);
+  return (
+    <button type={type} onClick={onClick} disabled={disabled} onMouseEnter={() => !disabled && setHover(true)} onMouseLeave={() => setHover(false)} style={{
+      fontFamily: "'Inter', sans-serif", fontSize: compact ? 12 : 13, fontWeight: 600,
+      padding: compact ? '7px 14px' : '9px 18px', borderRadius: 9, cursor: disabled ? 'not-allowed' : 'pointer',
+      border: '1.4px solid transparent', opacity: disabled ? 0.6 : 1,
+      transform: hover ? 'translateY(-1px)' : 'translateY(0)',
+      background: `linear-gradient(155deg, ${contractTeal[500]}, ${contractTeal[700]})`,
+      boxShadow: hover && !disabled ? '0 8px 20px -6px rgba(15,84,76,.65)' : '0 6px 16px -6px rgba(15,84,76,.55)',
+      color: '#fff', display: 'flex', alignItems: 'center', gap: 7,
+      transition: 'all .15s ease', whiteSpace: 'nowrap',
+    }}>
+      {children}
+      {chevron && <ChevronRight size={14} />}
+    </button>
+  );
+};
 
 interface ContractModalShellProps {
   width?: number;
