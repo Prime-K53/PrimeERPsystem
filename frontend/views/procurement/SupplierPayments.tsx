@@ -826,7 +826,19 @@ const SupplierPayments: React.FC<SupplierPaymentsProps> = ({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              handlePreview("SUPPLIER_PAYMENT", payment);
+                              const supplier = suppliers.find(
+                                (s) => s.id === getSupplierId(payment),
+                              );
+                              const supplierName =
+                                getSupplierNameFromPayment(
+                                  payment,
+                                  suppliers,
+                                ) || "Unknown";
+                              const doc = buildSupplierPaymentDoc(
+                                payment,
+                                supplierName,
+                              );
+                              handlePreview("SUPPLIER_PAYMENT", doc);
                             }}
                             className="p-1 md:p-1.5 text-slate-500 hover:text-blue-600 bg-slate-50 hover:bg-white border border-transparent hover:border-slate-200 rounded transition-all hidden sm:flex"
                             title="Preview Payment"
