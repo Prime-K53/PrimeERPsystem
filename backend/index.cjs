@@ -373,6 +373,18 @@ const publicDocumentDownloadRoutes = require('./routes/publicDocumentDownload.cj
 app.use('/api/public/documents', documentVerificationLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 120 }), publicDocumentDownloadRoutes);
 
 // Apply JWT verification to all /api routes (auth routes are skipped by verifyToken internally)
+// Public read-only Examination capability probe, registered BEFORE the global
+// `verifyToken` gate because it exposes no user data and the browser POST
+// path needs to know the server boundary even on a fresh session.
+app.get('/api/examination/posting/capability', (req, res) => {
+  const postingService = require('./services/examinationPostingService.cjs');
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    enabled: postingService.isPostingEnabled(),
+    boundary: 'examination',
+  });
+});
+
 app.use('/api', verifyToken);
 // Inject currency into requests
 const CurrencyService = require('./services/currencyService.cjs');
