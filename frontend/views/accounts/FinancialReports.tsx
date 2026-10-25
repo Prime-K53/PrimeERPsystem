@@ -644,21 +644,17 @@ const FinancialReports: React.FC = () => {
 
              const arId = gl?.accountsReceivable || '11310';
              const apId = gl?.accountsPayable || '21110';
-             const invId = gl?.defaultInventoryAccount || '11400';
 
-            const isOperating = isIncomeAccount(acc) || isExpenseAccount(acc) ||
-                acc.id === arId || acc.code === arId ||
-                acc.id === apId || acc.code === apId;
+             const group = String(acc.account_group || '').toUpperCase();
+             const codeStr = String(acc.code || acc.account_number || '');
+             const isFixedAssetLike = group.includes('FIXED') || codeStr.startsWith('12');
 
-            const isInvesting = acc.id === invId || acc.code === invId;
-
-            if (isOperating) {
-                activities.operating.push({ label: name, amount });
-            } else if (isInvesting) {
+             if (isFixedAssetLike) {
                 activities.investing.push({ label: name, amount });
-            } else if (isEquityAccount(acc) || isLiabilityAccount(acc)) {
+            } else if (isEquityAccount(acc) || (isLiabilityAccount(acc) && Number(codeStr) >= 220)) {
                 activities.financing.push({ label: name, amount });
             } else {
+                // Operating by default: income, expense, inventory, AR, AP, working capital.
                 activities.operating.push({ label: name, amount });
             }
         });

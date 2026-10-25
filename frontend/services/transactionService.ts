@@ -431,6 +431,121 @@ async function reverseContractPrepaidFunding(
     return amount;
 }
 
+// entries for a payment. Never trust caller-supplied amounts or rebuilt
+// payment fields. Preserves audit history (no deletions/rewrites).
+async function reversePaymentLedgerEntries(
+    tx: any,
+    paymentId: string,
+    payment: any,
+    descriptionPrefix: string,
+    resolveAcct: (ref: string | undefined) => string,
+    ledgerStore: any,
+): Promise<{ posted: boolean; count: number; total: number }> {
+    const allLedger = await ledgerStore.getAll();
+    const isReversalEntry = (e: any) => {
+        const desc = String(e?.description || '');
+        return !!e?.reversesEntryId ||
+            /^VOID: Payment #/.test(desc) ||
+            /^REVERSAL:.*Payment/i.test(desc);
+    };
+    const candidateRefs = new Set<string>();
+    const pushRef = (v: unknown) => { const s = String(v ?? '').trim(); if (s) candidateRefs.add(s); };
+    pushRef(paymentId);
+    pushRef(payment?.id);
+    const originals = (allLedger || []).filter((e: any) =>
+        candidateRefs.has(String(e?.referenceId ?? '').trim()) &&
+        isPostedLedgerEntry(e) &&
+        !isReversalEntry(e)
+    );
+    const existingReversals = (allLedger || []).filter((e: any) =>
+        candidateRefs.has(String(e?.referenceId ?? '').trim()) &&
+        isPostedLedgerEntry(e) &&
+        isReversalEntry(e)
+    );
+
+    const originalNonzero = originals.filter((e: any) => {
+        if (toMoney(e?.amount) === 0) return false;
+        // Wash entries (same account both sides) have no financial effect.
+        const d = resolveAcct(e?.debitAccountId);
+        const c = resolveAcct(e?.creditAccountId);
+        if (d && c && d === c) return false;
+        return true;
+    });
+    const originalTotal = originalNonzero.reduce((s: number, e: any) => s + toMoney(e?.amount), 0);
+    const existingTotal = existingReversals.reduce((s: number, e: any) => s + toMoney(e?.amount), 0);
+
+    // Idempotent: if reversals already fully cover the originals, do nothing.
+    const fullyReversed =
+        originalNonzero.length > 0 &&
+        existingReversals.length > 0 &&
+        Math.abs(existingTotal - originalTotal) < 0.005;
+    if (existingReversals.length > 0 && !fullyReversed) {
+        throw new Error(`Payment ${paymentId} already has incomplete reversal entries.`);
+    }
+
+    if (fullyReversed) {
+        return { posted: false, count: 0, total: existingTotal };
+    }
+
+    // No original posted entries: if the payment claims a nonzero financial
+    // effect, voiding cannot be considered safe.
+    if (originalNonzero.length === 0) {
+        const claimed = toMoney(
+            payment?.amountRetained ??
+            payment?.receiptSnapshot?.amountRetained ??
+            payment?.amount ??
+            0
+        );
+        if (claimed > 0) {
+            throw new Error(`Original posted journal is missing for payment ${paymentId}.`);
+        }
+        return { posted: false, count: 0, total: 0 };
+    }
+
+    // Reject zero-effect completion when originals are nonzero (already handled
+    // by originalNonzero). Post one swapped reversal per original line.
+    let postedTotal = 0;
+    let postedCount = 0;
+    for (const original of originalNonzero) {
+        const amount = toMoney(original.amount);
+        const debitAccountId = resolveAcct(original.creditAccountId);
+        const creditAccountId = resolveAcct(original.debitAccountId);
+        if (!debitAccountId || !creditAccountId) {
+            throw new UnresolvedAccountError('payment reversal account');
+        }
+        if (debitAccountId === creditAccountId) {
+            // No financial effect on a single account; skip explicitly.
+            continue;
+        }
+        const reversal: LedgerEntry = {
+            id: generateId('LG-REV'),
+            date: new Date().toISOString(),
+            description: `${descriptionPrefix}${paymentId} - reversal of ${original.id}`,
+            debitAccountId,
+            creditAccountId,
+            amount,
+            referenceId: paymentId,
+            reconciled: false,
+            customerId: payment?.customerId,
+            customerName: payment?.customerName,
+            reversesEntryId: original.id,
+        };
+
+
+
+        await ledgerStore.put(reversal);
+        postedTotal = toMoney(postedTotal + amount);
+        postedCount += 1;
+    }
+
+    if (Math.abs(postedTotal - originalTotal) > 0.005) {
+        throw new Error(`Payment ${paymentId} reversal does not balance.`);
+    }
+
+    return { posted: true, count: postedCount, total: postedTotal };
+
+}
+
 export const transactionService = {
     /**
      * Internal helper to handle structured inventory deduction with audit trail
@@ -3849,22 +3964,16 @@ export const transactionService = {
                     }
                 }
 
-                // 4. Create Reversal Ledger Entry (accounts pre-resolved above)
-                const reversal: LedgerEntry = {
-                    id: generateId('LG-REV'),
-                    date: new Date().toISOString(),
-                    description: `VOID: Payment #${paymentId} - ${reason}`,
-                    debitAccountId: resolvedReversalDebit,
-                    creditAccountId: resolvedReversalCredit,
-                    amount: retainedAmount,
-                    referenceId: paymentId,
-                    reconciled: false,
-                    customerId: payment.customerId,
-                    customerName: payment.customerName
-                };
-                await ledgerStore.put(reversal);
-
-                // 5. Update Payment Status
+                // 4. Reverse the original posted journal (swapped entries).
+                await reversePaymentLedgerEntries(
+                    tx,
+                    payment.id,
+                    payment,
+                    'VOID: Payment #',
+                    resolveAcct,
+                    ledgerStore,
+                );
+// 5. Update Payment Status
                 payment.status = 'Voided';
                 payment.voidReason = reason;
                 await paymentStore.put(payment);
