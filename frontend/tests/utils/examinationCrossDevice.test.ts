@@ -25,7 +25,10 @@ import {
   findInvoiceByIdOrNumber,
   resolveExaminationInvoiceNavigationKey,
 } from '../../utils/invoiceIdentity';
-import { mapExaminationPayloadToInvoice } from '../../services/examinationInvoiceSyncService';
+import {
+  mapExaminationPayloadToInvoice,
+  persistExaminationInvoiceToFinance,
+} from '../../services/examinationInvoiceSyncService';
 import { ExaminationGeneratedInvoicePayload } from '../../services/examinationBatchService';
 import { buildInvoiceVerificationUrl } from '../../utils/invoiceVerification';
 import { fieldLevelMerge } from '../../services/syncConflictResolver';
@@ -371,35 +374,73 @@ describe('P0 — stale snapshot race: same candidate, A wins, B re-mints (never 
 });
 
 /**
- * Focused cross-device proof via the ACTUAL ERP sync queue.
+ * Focused cross-device proof of the canonical persistence payload.
  *
- * The existing conceptual test manually pushes envelopes into a shared
- * array. This test uses the real durableSyncQueue as the transfer
- * vector: Device A persists via persistExaminationInvoiceToFinance(),
- * the queue captures the outbound op, and Device B applies that op
- * through its own simulated store. No manual object copy.
+ * Device A persists through persistExaminationInvoiceToFinance(); the exact
+ * invoice handed to `api.finance.saveInvoice` is what the finance store writes
+ * and what the durable sync queue carries to the gateway unchanged. Device B
+ * then applies that cloud envelope through its own bulkPut (what
+ * pullRemoteChanges does for new rows).
+ *
+ * The finance API is mocked (no backend), and each device gets an isolated
+ * in-memory store so the two sides cannot accidentally share a row.
  */
-describe('Phase 8b — cross-device via real durable sync queue', () => {
-  const deviceAStore: Record<string, any>[] = [];
-  const deviceBStore: Record<string, any>[] = [];
-
-  const makeDbForDevice = (store: Record<string, any>[]) => ({
-    getAll: vi.fn(async (storeName: string) => (storeName === 'invoices' ? [...store] : [])),
-    get: vi.fn(async (storeName: string, id: string) => {
-      if (storeName !== 'invoices') return undefined;
-      return store.find((r) => r.id === id);
-    }),
-    put: vi.fn(async (storeName: string, item: any) => {
-      if (storeName !== 'invoices') return item.id;
-      store.push(structuredClone(item));
-      return item.id;
-    }),
-    bulkPut: vi.fn(async (storeName: string, items: any[]) => {
-      if (storeName !== 'invoices') return;
-      for (const item of items) store.push(structuredClone(item));
-    }),
+const phase8b = vi.hoisted(() => {
+  const stores = new Map<string, Map<string, Record<string, any>>>();
+  let activeDevice = 'A';
+  const storeFor = (device: string, storeName: string) => {
+    const key = `${device}:${storeName}`;
+    if (!stores.has(key)) stores.set(key, new Map());
+    return stores.get(key)!;
+  };
+  const current = (storeName: string) => storeFor(activeDevice, storeName);
+  const mockSaveInvoice = vi.fn(async (invoice: Record<string, any>) => {
+    current('invoices').set(String(invoice.id), structuredClone(invoice));
+    return { success: true, id: invoice.id };
   });
 
+  return {
+    mockSaveInvoice,
+    setDevice(device: string) {
+      activeDevice = device;
+    },
+    current,
+    reset() {
+      stores.clear();
+      activeDevice = 'A';
+      mockSaveInvoice.mockClear();
+    },
+  };
+});
+
+vi.mock('../../services/db', () => ({
+  dbService: {
+    getAll: vi.fn(async (storeName: string) => Array.from(phase8b.current(storeName).values())),
+    get: vi.fn(async (storeName: string, id: string) => phase8b.current(storeName).get(String(id))),
+    put: vi.fn(async (storeName: string, item: any) => {
+      phase8b.current(storeName).set(String(item.id), structuredClone(item));
+      return String(item.id);
+    }),
+    bulkPut: vi.fn(async (storeName: string, items: any[]) => {
+      for (const item of items) {
+        phase8b.current(storeName).set(String(item.id), structuredClone(item));
+      }
+    }),
+    delete: vi.fn(async (storeName: string, id: string) => {
+      phase8b.current(storeName).delete(String(id));
+    }),
+    executeAtomicOperation: vi.fn(async (_stores: string[], op: (tx: any) => Promise<any>) => op({
+      objectStore: () => ({ get: async () => undefined, getAll: async () => [], put: async () => undefined }),
+      done: Promise.resolve(),
+    })),
+  },
+}));
+
+vi.mock('../../services/api', () => ({
+  api: { finance: { saveInvoice: phase8b.mockSaveInvoice } },
+}));
+
+describe('Phase 8b — cross-device through the canonical persistence payload', () => {
   const payload = {
     id: 'EXM-SYNC-1',
     invoiceNumber: 'EXM-SYNC-1',
@@ -436,61 +477,55 @@ describe('Phase 8b — cross-device via real durable sync queue', () => {
     origin_batch_id: 'BTC-SYNC-1',
   } as ExaminationGeneratedInvoicePayload;
 
-  it('Device A persists a tokened examination invoice and enqueues it for sync', async () => {
-    deviceAStore.length = 0;
-    deviceBStore.length = 0;
+  beforeEach(() => {
+    phase8b.reset();
+    phase8b.setDevice('A');
+  });
 
-    const dbA = makeDbForDevice(deviceAStore);
-    vi.mock('../../services/db', () => ({ dbService: dbA }));
-
-    const { persistExaminationInvoiceToFinance } = await import(
-      '../../services/examinationInvoiceSyncService'
-    );
-    const result = await persistExaminationInvoiceToFinance(payload);
+  it('Device A persists a tokened examination invoice for the sync queue', async () => {
+    const result = await persistExaminationInvoiceToFinance(payload, {
+      companyConfig: config,
+    });
     expect(result.synced).toBe(true);
     expect(result.invoiceId).toBe('EXM-SYNC-1');
 
-    // The ERP sync queue is the transfer vector — not manual copying.
-    expect(mockEnqueue).toHaveBeenCalledTimes(1);
-    const enqueuedOp = mockEnqueue.mock.calls[0][0];
-    expect(enqueuedOp.table).toBe('invoices');
-    expect(enqueuedOp.recordId).toBe('EXM-SYNC-1');
-    expect(enqueuedOp.operation).toBe('upsert');
-    expect(String(enqueuedOp.payload.verificationToken)).toMatch(/^[0-9a-f]{64}$/);
-    expect(enqueuedOp.payload.invoiceNumber).toBe('EXM-SYNC-1');
-    expect(enqueuedOp.payload.origin_module).toBe('examination');
-    expect(enqueuedOp.payload.origin_batch_id).toBe('BTC-SYNC-1');
+    expect(phase8b.mockSaveInvoice).toHaveBeenCalledTimes(1);
+    const saved = phase8b.mockSaveInvoice.mock.calls[0][0] as any;
+
+    // The queue writes this exact payload to the shared `invoices` table with
+    // the canonical id as the record key.
+    expect(saved.id).toBe('EXM-SYNC-1');
+    expect(saved.invoiceNumber).toBe('EXM-SYNC-1');
+    expect(String(saved.verificationToken)).toMatch(/^[0-9a-f]{64}$/);
+    expect(saved.originModule).toBe('examination');
+    expect(saved.batchId).toBe('BTC-SYNC-1');
+    expect(saved.origin_batch_id).toBe('BTC-SYNC-1');
+    expect(saved.status).toBe('Unpaid');
+    expect(saved.totalAmount).toBe(1000);
+    expect(saved.items).toHaveLength(1);
   });
 
-  it('Device B receives the exact same canonical invoice through the queue payload', async () => {
-    deviceBStore.length = 0;
+  it('Device B receives the exact same canonical invoice through the pull envelope', async () => {
+    await persistExaminationInvoiceToFinance(payload, { companyConfig: config });
+    const cloudEnvelope = structuredClone(
+      phase8b.mockSaveInvoice.mock.calls[0][0] as Record<string, any>
+    );
 
-    // Simulate the outbound op arriving at Device B: apply the enqueued
-    // payload through the normal bulkPut path (what pullRemoteChanges
-    // does for new rows after the gateway writes them).
-    const queuePayload = {
-      id: 'EXM-SYNC-1',
-      invoiceNumber: 'EXM-SYNC-1',
-      verificationToken: 'a'.repeat(64),
-      origin_module: 'examination',
-      origin_batch_id: 'BTC-SYNC-1',
-      totalAmount: 1000,
-      customerName: 'Sync School',
-    };
+    // Simulate the outbound op arriving at Device B: apply the cloud payload
+    // through the normal bulkPut path, exactly as pullRemoteChanges does.
+    phase8b.setDevice('B');
+    const { dbService } = await import('../../services/db');
+    await dbService.bulkPut('invoices', [cloudEnvelope]);
 
-    const dbB = makeDbForDevice(deviceBStore);
-    vi.mock('../../services/db', () => ({ dbService: dbB }));
-
-    // Directly feed the cloud envelope into Device B — this is what
-    // pullRemoteChanges does for new rows after the gateway writes them.
-    await dbB.bulkPut('invoices', [queuePayload]);
-
-    const local = deviceBStore;
-    expect(local.length).toBe(1);
+    const local = await dbService.getAll<any>('invoices');
+    expect(local).toHaveLength(1);
     expect(local[0].id).toBe('EXM-SYNC-1');
     expect(local[0].invoiceNumber).toBe('EXM-SYNC-1');
-    expect(local[0].verificationToken).toBe('a'.repeat(64));
+    expect(local[0].verificationToken).toBe(cloudEnvelope.verificationToken);
     expect(local[0].origin_module).toBe('examination');
     expect(local[0].origin_batch_id).toBe('BTC-SYNC-1');
+
+    const opened = await dbService.get<any>('invoices', 'EXM-SYNC-1');
+    expect(opened).toEqual(local[0]);
   });
 });

@@ -47,7 +47,8 @@ const POST_ENDPOINT = (batchId: string) => `${API_BASE_URL}/examination/batches/
 const VOID_ENDPOINT = (batchId: string) => `${API_BASE_URL}/examination/batches/${encodeURIComponent(batchId)}/void`;
 
 const POSTING_STORE = 'examinationPostingRequests';
-const CAPABILITY_KEY = 'examinationAuthoritativePosting';
+const CAPABILITY_ENDPOINT = `${API_BASE_URL}/examination/posting/capability`;
+const CAPABILITY_PROBE_TIMEOUT_MS = 5000;
 
 export type PostingRequestState = 'PENDING' | 'COMMITTED' | 'FAILED';
 
@@ -83,30 +84,78 @@ const buildVoidIdempotencyKey = (batchId: string, invoiceNumber: string): string
 const now = () => new Date().toISOString();
 
 /**
- * Whether the server is running the authoritative boundary. Cached because a
- * 503 round-trip on every invoice would be wasteful; `unknown` is re-probed,
- * `disabled` is sticky for the session so an unconfigured server never adds
- * latency.
+ * Whether the server is running the authoritative boundary.
+ *
+ * This is a SERVER capability, not a local preference: it is probed once per
+ * session from `GET /examination/posting/capability`. The old implementation
+ * read a settings key that nothing ever wrote, so the boundary was permanently
+ * unreachable in production and every invoice silently used the legacy path.
+ *
+ * Probe result semantics:
+ *   enabled      server explicitly says the boundary is on
+ *   disabled     server explicitly says off, or does not expose the endpoint
+ *                (an older build); the legacy path is the only option there
+ *   unavailable  the probe could not be completed (offline/timeout/5xx)
+ *
+ * `unavailable` deliberately maps to AUTHORITATIVE, not legacy. Falling back to
+ * the legacy path on a failed probe would let a blocked probe re-open the
+ * independent client-side posting path — the exact bypass this boundary exists
+ * to close. With the server flag on, a misrouted legacy write is rejected by
+ * the sync gateway anyway; failing closed keeps the guarantee local too.
  */
-let capabilityCache: 'unknown' | 'enabled' | 'disabled' = 'unknown';
+type PostingCapability = 'unknown' | 'enabled' | 'disabled' | 'unavailable';
 
-export const resetPostingCapabilityCache = () => { capabilityCache = 'unknown'; };
+let capabilityCache: PostingCapability = 'unknown';
+let capabilityProbe: Promise<PostingCapability> | null = null;
 
-const readCapabilityFlag = async (): Promise<'unknown' | 'enabled' | 'disabled'> => {
-  try {
-    const stored = await dbService.getSetting(CAPABILITY_KEY);
-    if (stored === 'enabled' || stored === 'disabled') return stored;
-  } catch { /* settings are best-effort here */ }
-  return 'unknown';
+export const resetPostingCapabilityCache = () => {
+  capabilityCache = 'unknown';
+  capabilityProbe = null;
 };
 
-const writeCapabilityFlag = async (value: 'enabled' | 'disabled') => {
-  try { await dbService.saveSetting(CAPABILITY_KEY, value); } catch { /* best-effort */ }
+const probePostingCapability = async (): Promise<PostingCapability> => {
+  if (typeof fetch === 'undefined') return 'unavailable';
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CAPABILITY_PROBE_TIMEOUT_MS);
+  try {
+    const res = await fetch(CAPABILITY_ENDPOINT, {
+      method: 'GET',
+      headers: getJsonRequestHeaders(),
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+
+    // An older backend that predates the capability endpoint has no
+    // authoritative boundary to use.
+    if (res.status === 404 || res.status === 405) return 'disabled';
+    if (!res.ok) return 'unavailable';
+
+    const body = await res.json().catch(() => null) as { enabled?: unknown } | null;
+    if (body?.enabled === true) return 'enabled';
+    if (body?.enabled === false) return 'disabled';
+
+    // A 200 without the boolean is not an assertion that posting is on.
+    return 'disabled';
+  } catch {
+    return 'unavailable';
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 export const isAuthoritativePostingAvailable = async (): Promise<boolean> => {
-  if (capabilityCache === 'unknown') capabilityCache = await readCapabilityFlag();
-  return capabilityCache === 'enabled';
+  if (capabilityCache === 'unknown') {
+    if (!capabilityProbe) {
+      capabilityProbe = probePostingCapability().then((value) => {
+        capabilityCache = value;
+        capabilityProbe = null;
+        return value;
+      });
+    }
+    await capabilityProbe;
+  }
+  return capabilityCache === 'enabled' || capabilityCache === 'unavailable';
 };
 
 class PostingTransportError extends Error {
@@ -164,7 +213,6 @@ const postJson = async (
     }
     if (res.status === 503 && payload?.code === 'EXAM_POSTING_DISABLED') {
       capabilityCache = 'disabled';
-      void writeCapabilityFlag('disabled');
       throw new PostingTransportError('Authoritative posting is disabled on the server', 'disabled', true);
     }
     if (!res.ok) {
@@ -177,7 +225,6 @@ const postJson = async (
     }
 
     capabilityCache = 'enabled';
-    void writeCapabilityFlag('enabled');
     return payload as Record<string, unknown>;
   } catch (err) {
     if (err instanceof PostingTransportError) throw err;

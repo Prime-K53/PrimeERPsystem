@@ -144,7 +144,7 @@ const { verifyToken, requireRole, requirePermission } = require('./middleware/au
 const { injectFinancialYear, addFyDateFilter, requireFyNotClosed } = require('./middleware/financialYearMiddleware.cjs');
 const { validateBody, sanitizeInput, inventorySchemas, salesSchemas, userSchemas, financialSchemas, productionSchemas, documentSchemas, exchangeSchemas, orderSchemas, classSchemas, subjectSchemas, notificationSchemas, accountSchemas, expenseSchemas, incomeSchemas, budgetSchemas, transferSchemas } = require('./middleware/validation.cjs');
 const CurrencyMiddleware = require('./middleware/currencyMiddleware.cjs');
-const { createLimiter, authLimiter, sensitiveLimiter, portalAuthLimiter, portalRefreshLimiter } = require('./services/redisRateLimiter.cjs');
+const { createLimiter, authLimiter, sensitiveLimiter, portalAuthLimiter, portalRefreshLimiter, documentVerificationLimiter } = require('./services/redisRateLimiter.cjs');
 const authRoutes = require('./routes/auth.cjs');
 const portalAdminRoutes = require('./routes/portalAdmin.cjs');
 app.use(auditContextMiddleware);
@@ -359,18 +359,18 @@ app.use('/api/portal', verifyPortalToken, portalRoutes);
 // without an account). Strictly read-only GET; failures are generic 404s so
 // invoice numbers cannot be enumerated. Registered before global verifyToken.
 const portalVerifyRoutes = require('./routes/portalVerify.cjs');
-app.use('/api/public/invoices', portalAuthLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 60 }), portalVerifyRoutes);
+app.use('/api/public/invoices', documentVerificationLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 120 }), portalVerifyRoutes);
 
 // Public generic document verification — same guarantees for every
 // supported document type (receipt, quotation, orders, delivery notes).
 const documentVerifyRoutes = require('./routes/documentVerify.cjs');
-app.use('/api/public/documents', portalAuthLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 60 }), documentVerifyRoutes);
+app.use('/api/public/documents', documentVerificationLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 120 }), documentVerifyRoutes);
 
 // Public document download — read-only PDF download with PORTAL COPY
 // watermark. Reuses the same token verification as the verification
 // endpoint. Strictly GET; failures are generic 404s.
 const publicDocumentDownloadRoutes = require('./routes/publicDocumentDownload.cjs');
-app.use('/api/public/documents', portalAuthLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 60 }), publicDocumentDownloadRoutes);
+app.use('/api/public/documents', documentVerificationLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 120 }), publicDocumentDownloadRoutes);
 
 // Apply JWT verification to all /api routes (auth routes are skipped by verifyToken internally)
 app.use('/api', verifyToken);
@@ -2504,30 +2504,10 @@ sq.run('UPDATE invoices SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id 
   // Batch void — voids several payments atomically-ish (skips missing rows,
   // reports per-id outcome). Used by the admin list batch-actions bar.
   app.post('/api/customer-payments/batch-void', requireRole('Admin', 'Accountant', 'Manager'), injectFinancialYear, requireFyNotClosed, async (req, res) => {
-    try {
-      const { ids, reason } = req.body || {};
-      if (!Array.isArray(ids) || ids.length === 0 || ids.length > 100) {
-        return res.status(400).json({ error: 'ids must be a non-empty array (max 100)' });
-      }
-      const results = [];
-      for (const id of ids) {
-        try {
-          await new Promise((resolve, reject) => {
-            sq.run('UPDATE customer_payments SET status = ? WHERE id = ?', ['Voided', String(id)], function (err) {
-              if (err) return reject(err);
-              resolve();
-            });
-          });
-          results.push({ id: String(id), ok: true });
-        } catch (e) {
-          results.push({ id: String(id), ok: false, error: e?.message || 'void failed' });
-        }
-      }
-      res.json({ results, voided: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length, reason: reason || null });
-    } catch (err) {
-      console.error('[CustomerPayments] batch-void error:', err?.message || err);
-      res.status(500).json({ error: err?.message || 'Failed to void payments' });
-    }
+    return res.status(410).json({
+      error: 'Batch void is disabled: it cannot safely reverse general-ledger postings. Void payments individually through the ERP payment workflow.',
+      code: 'BATCH_VOID_DISABLED'
+    });
   });
 
   app.post('/api/customer-payments', requireRole('Admin', 'Accountant', 'Manager'), async (req, res) => {

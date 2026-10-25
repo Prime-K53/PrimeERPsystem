@@ -7,10 +7,11 @@
  * applyGeneralInvoiceScope, so the page the operator landed on never contained
  * the invoice that had just been created.
  *
- * The deliberate exception: explicit "View invoice" deep-links keep targeting
+ * The deliberate exception: batch-detail "View Invoice {id}" keeps targeting
  * `/sales-flow/invoices`, because that is where the canonical invoice detail
- * modal lives. This suite pins both halves of that rule so neither is broken
- * by the other.
+ * modal lives. The Examination Invoices list itself now opens an in-module
+ * detail modal instead of navigating away. This suite pins both halves of that
+ * rule so neither is broken by the other.
  *
  * Source-level contract (same technique as the lazy-route chunk guard in
  * examinationInvoicesTab.test.ts): these two views pull in the full
@@ -71,12 +72,19 @@ describe('Examination invoice generation navigates to the examination invoice li
     expect(batchDetail).toContain('Opened Examination Invoices');
   });
 
-  it('explicit "View invoice" deep-links still open the canonical detail modal', () => {
-    // These are deliberate: the invoice detail modal lives on the general
-    // route, and it resolves against the FULL invoice collection, so scoping
-    // examination invoices out of browsing never makes them unreachable.
-    expect(invoicesTab).toContain(GENERAL_LIST); // Examination Invoices row -> View
-    expect(batchDetail).toContain(GENERAL_LIST); // batch detail "View Invoice {id}" button
+  it('examination list opens its in-module detail modal instead of the general route', () => {
+    // The list owns a detail modal over the same canonical record, so a row
+    // click must stay in the Examination module. A route change to the general
+    // invoice list is the regression this pins.
+    expect(invoicesTab).toContain('setDetailRow(row)');
+    expect(invoicesTab).toContain('<ExaminationInvoiceDetailModal');
+    expect(invoicesTab).not.toContain(GENERAL_LIST);
+  });
+
+  it('batch detail keeps the deliberate canonical-invoice deep-link', () => {
+    // The invoice detail modal lives on the general route and resolves against
+    // the FULL invoice collection, so this explicit deep-link stays.
+    expect(batchDetail).toContain(GENERAL_LIST);
     expect(groupManager).not.toContain(GENERAL_LIST); // group manager had no deep-link
   });
 });

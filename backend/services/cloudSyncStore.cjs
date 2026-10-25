@@ -506,11 +506,15 @@ function classifyGuardRejection(result, existing) {
   if (!existing) {
     return { id: result.id, conflicted: true, conflictType: 'version_conflict', serverVersion, server: null };
   }
-  if (result.guardFailed) {
+  // Only an ACTUAL precondition violation is a business rejection. A guard was
+  // supplied for every examination batch write, so keying off "a guard exists"
+  // misclassified an ordinary version race as non-retryable and the client
+  // stopped retrying a write that had simply moved underneath it.
+  if (result.guardReason) {
     return {
       id: result.id,
       conflicted: true,
-      conflictType: result.guardReason || 'business_rule_conflict',
+      conflictType: result.guardReason,
       serverVersion,
       server: conflictServerPayload(result.id, existing, serverVersion),
       businessRule: true,
@@ -591,11 +595,12 @@ async function upsertRow(table, id, payload, serverNow = new Date().toISOString(
         }
 
         /* SYNC-FORENSIC suppressed: STAGE-13 cloudSyncStore.upsertRow() */
+        const guardReason = resolveGuardRejectionReason(guardParams, existing);
         return classifyGuardRejection(
           {
             id,
-            guardFailed: Object.keys(guardParams).length > 0,
-            guardReason: resolveGuardRejectionReason(guardParams, existing),
+            guardFailed: Boolean(guardReason),
+            guardReason,
           },
           existing
         );

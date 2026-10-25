@@ -257,6 +257,79 @@ describe('examination sync guards — pure rules', () => {
       )).toMatch(/EXAM_POSTING_BOUNDARY/);
     });
   });
+
+  describe('validateLedgerPostingBoundary', () => {
+    const examLedger = (overrides = {}) => ({
+      id: 'LG-INV-EXM-001/001',
+      referenceId: 'EXM-001/001',
+      debitAccountId: 'ACC-11310',
+      creditAccountId: 'ACC-41200',
+      amount: 1000,
+      ...overrides,
+    });
+
+    it('is inert while the posting boundary is disabled', () => {
+      expect(guards.validateLedgerPostingBoundary(
+        { operation: 'upsert', recordId: 'LG-INV-EXM-001/001', payload: examLedger() },
+        { postingEnabled: false }
+      )).toBeNull();
+    });
+
+    it('rejects an EXM ledger write once the server owns posting', () => {
+      const error = guards.validateLedgerPostingBoundary(
+        { operation: 'upsert', recordId: 'LG-INV-EXM-001/001', payload: examLedger() },
+        { postingEnabled: true }
+      );
+      expect(error).toMatch(/EXAM_LEDGER_POSTING_BOUNDARY/);
+    });
+
+    it('detects an Examination ledger row by its origin module', () => {
+      const enabled = { postingEnabled: true };
+      expect(guards.validateLedgerPostingBoundary(
+        { operation: 'upsert', payload: { id: 'LG-1', originModule: 'examination' } }, enabled
+      )).toMatch(/EXAM_LEDGER_POSTING_BOUNDARY/);
+      expect(guards.validateLedgerPostingBoundary(
+        { operation: 'upsert', payload: { id: 'LG-2', origin_module: 'examination_reversal' } }, enabled
+      )).toMatch(/EXAM_LEDGER_POSTING_BOUNDARY/);
+    });
+
+    it('rejects deleting committed Examination ledger history', () => {
+      // Void reversal is the RPC's job; a client delete through the gateway
+      // would silently remove the audit trail.
+      const enabled = { postingEnabled: true };
+      expect(guards.validateLedgerPostingBoundary(
+        { operation: 'delete', payload: { id: 'LG-INV-EXM-001/001' } }, enabled
+      )).toMatch(/EXAM_LEDGER_POSTING_BOUNDARY/);
+      // A delete op can arrive with no payload at all; the recordId must still
+      // identify the row.
+      expect(guards.validateLedgerPostingBoundary(
+        { operation: 'delete', recordId: 'LG-INV-EXM-001/001', payload: null }, enabled
+      )).toMatch(/EXAM_LEDGER_POSTING_BOUNDARY/);
+    });
+
+    it('never touches non-Examination ledger traffic', () => {
+      const enabled = { postingEnabled: true };
+      expect(guards.validateLedgerPostingBoundary(
+        { operation: 'upsert', payload: { id: 'LG-INV-2026/501', referenceId: 'INV-2026/501' } }, enabled
+      )).toBeNull();
+      expect(guards.validateLedgerPostingBoundary(
+        { operation: 'upsert', payload: { id: 'LG-PAY-9', originModule: 'payments' } }, enabled
+      )).toBeNull();
+      expect(guards.validateLedgerPostingBoundary(
+        { operation: 'delete', payload: { id: 'LG-PAY-9' } }, enabled
+      )).toBeNull();
+    });
+
+    it('ignores empty or malformed payloads', () => {
+      const enabled = { postingEnabled: true };
+      expect(guards.validateLedgerPostingBoundary(
+        { operation: 'upsert', payload: null }, enabled
+      )).toBeNull();
+      expect(guards.validateLedgerPostingBoundary(
+        { operation: 'upsert', payload: 'not-an-object' }, enabled
+      )).toBeNull();
+    });
+  });
 });
 
 describe('examination batch writes — atomic status precondition', () => {
@@ -270,7 +343,7 @@ describe('examination batch writes — atomic status precondition', () => {
     const result = await cloudSyncStore.upsertRow(
       'examination_batches',
       'batch-1',
-      { id: 'batch-1', status: 'Calculated', classes: [] },
+      { id: 'batch-1', _version: 4, status: 'Calculated', classes: [] },
       '2026-03-02T00:00:00Z',
       guards.buildBatchUpsertPrecondition({ status: 'Calculated' })
     );
@@ -291,7 +364,7 @@ describe('examination batch writes — atomic status precondition', () => {
     const result = await cloudSyncStore.upsertRow(
       'examination_batches',
       'batch-1',
-      { id: 'batch-1', status: 'Calculated', classes: [{ id: 'c1', live_total_preview: 999999 }] },
+      { id: 'batch-1', _version: 1, status: 'Calculated', classes: [{ id: 'c1', live_total_preview: 999999 }] },
       '2026-03-02T00:00:00Z',
       guards.buildBatchUpsertPrecondition({ status: 'Calculated' })
     );
@@ -317,7 +390,7 @@ describe('examination batch writes — atomic status precondition', () => {
     const result = await cloudSyncStore.upsertRow(
       'examination_batches',
       'batch-1',
-      { id: 'batch-1', status: 'Calculated' },
+      { id: 'batch-1', _version: 8, status: 'Calculated' },
       '2026-03-02T00:00:00Z',
       guards.buildBatchUpsertPrecondition({ status: 'Calculated' })
     );

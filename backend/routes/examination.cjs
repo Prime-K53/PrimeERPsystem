@@ -73,6 +73,25 @@ router.get('/', (req, res) => {
   res.json({ message: 'Examination API working' });
 });
 
+/**
+ * GET /api/examination/posting/capability
+ *
+ * Public, read-only probe for the server-authoritative posting boundary. The
+ * browser needs to know whether `POST /batches/:id/post` is live before it
+ * decides between the server path and the legacy local path. Without this the
+ * client had to guess from a local setting that nothing ever wrote, so the
+ * authoritative path was unreachable in production.
+ *
+ * It exposes only a boolean feature flag — no financial data, no user data.
+ */
+router.get('/posting/capability', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    enabled: isPostingEnabled(),
+    boundary: 'examination',
+  });
+});
+
 // --- Batches ---
 router.get('/meta/adjustments', async (req, res) => {
   try {

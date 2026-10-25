@@ -161,6 +161,49 @@ const validateInvoicePostingBoundary = (op, options = {}) => {
     + 'POST /api/examination/batches/:id/post, not the generic sync gateway';
 };
 
+/**
+ * Examination-ledger posting-boundary rejection.
+ *
+ * Once the authoritative posting boundary is enabled, the post/void RPCs write
+ * the ledger with the service role. The sync gateway is therefore never a
+ * legitimate writer for an EXM ledger entry: any such op is a client posting
+ * AR/revenue independently, or trying to delete/rewrite committed history.
+ *
+ * Non-Examination ledger traffic (sales, purchases, payments, transport) is
+ * untouched, as are tombstones for unrelated references.
+ */
+const readLedgerReference = (payload) => String(
+  payload?.referenceId
+  ?? payload?.reference_id
+  ?? payload?.invoiceNumber
+  ?? payload?.invoice_number
+  ?? payload?.id
+  ?? ''
+).trim();
+
+const isExaminationLedger = (op, payload) => {
+  const reference = readLedgerReference(payload).toUpperCase();
+  // Invoice references are EXM-…; server-written ledger ids are LG-INV-EXM-…
+  if (reference.startsWith('EXM-') || reference.startsWith('LG-INV-EXM-')) return true;
+  if (String(op?.recordId || '').toUpperCase().includes('EXM-')) return true;
+  const module = String(payload?.originModule ?? payload?.origin_module ?? '')
+    .trim()
+    .toLowerCase();
+  return module === 'examination' || module === 'examination_reversal';
+};
+
+const validateLedgerPostingBoundary = (op, options = {}) => {
+  if (!options.postingEnabled) return null;
+  const payload = op && op.payload;
+  const shaped = payload && typeof payload === 'object' ? payload : {};
+  // A delete op may arrive without a payload; its recordId still identifies the
+  // row, so the boundary must not degrade into a payload-only check.
+  if (!isExaminationLedger(op, shaped)) return null;
+
+  return 'EXAM_LEDGER_POSTING_BOUNDARY: Examination ledger entries are written by '
+    + 'POST /api/examination/batches/:id/post or /void, not the generic sync gateway';
+};
+
 module.exports = {
   EXAMINATION_BATCH_TABLE,
   INVOICE_TABLE,
@@ -177,4 +220,5 @@ module.exports = {
   readInvoiceNumber,
   validateInvoicePayloadShape,
   validateInvoicePostingBoundary,
+  validateLedgerPostingBoundary,
 };

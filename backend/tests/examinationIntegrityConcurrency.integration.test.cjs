@@ -657,7 +657,7 @@ describeLive('authoritative Examination posting and void (0051)', () => {
 
   describe('§8.6 void reverses real ledger and recorded inventory only', () => {
     it('mirrors the ledger entry and balances it', async () => {
-      await withClient((client) => { await seedApprovedBatch(client); await post(); });
+      await withClient(async (client) => { await seedApprovedBatch(client); await post(); });
       await withClient((c) => c.query(
         `SELECT public.void_examination_invoice_atomic($1,$2,$3,$4,$5,NULL,$6)`,
         ['p1', 'EXM-001/001', 'v1', 'test', 'tester', '2026-03-02'],
@@ -705,7 +705,7 @@ describeLive('authoritative Examination posting and void (0051)', () => {
     });
 
     it('reverses nothing when no deductions are named', async () => {
-      await withClient((client) => { await seedApprovedBatch(client); await post(); });
+      await withClient(async (client) => { await seedApprovedBatch(client); await post(); });
       const { rows } = await withClient((c) => c.query(
         `SELECT public.void_examination_invoice_atomic($1,$2,$3,$4,$5,NULL,$6) AS result`,
         ['p1', 'EXM-001/001', 'v1', 'test', 'tester', '2026-03-02'],
@@ -714,7 +714,7 @@ describeLive('authoritative Examination posting and void (0051)', () => {
     });
 
     it('keeps the batch closed and retains the original invoice identity', async () => {
-      await withClient((client) => { await seedApprovedBatch(client); await post(); });
+      await withClient(async (client) => { await seedApprovedBatch(client); await post(); });
       await withClient((c) => c.query(
         `SELECT public.void_examination_invoice_atomic($1,$2,$3,$4,$5,NULL,$6)`,
         ['p1', 'EXM-001/001', 'v1', 'test', 'tester', '2026-03-02'],

@@ -291,7 +291,7 @@ describe('invoice enrichment preserves the approved snapshot', () => {
   // snapshot it recomputes from live class rows, which silently reintroduces a
   // repriced amount after the payload builder already froze the right one.
   const frozenClasses = [
-    { id: 'c1', learners: 80, finalFee: 100, liveTotal: 8000, bomCost: 2000, roundingAdjustment: 50 },
+    { classId: 'c1', learners: 80, finalFee: 100, liveTotal: 8000, bomCost: 2000, roundingAdjustment: 50 },
   ];
   const snapshot = {
     result: {
@@ -349,6 +349,8 @@ describe('invoice enrichment preserves the approved snapshot', () => {
 
   it('falls back to live rows when no snapshot is supplied', () => {
     const enriched: any = enrichInvoiceWithBatchPricing(baseInvoice, driftedBatch, null);
-    expect(enriched.totalAmount).toBe(999_999);
+    // Live fallback: 12,499 per learner x 80 learners. Rounding is allocated on
+    // top of that and does not change the revenue total.
+    expect(enriched.totalAmount).toBe(999_920);
   });
 });

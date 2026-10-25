@@ -223,6 +223,25 @@ const portalRefreshLimiter = (options = {}) => createLimiter({
   ...options,
 });
 
+/**
+ * Public document/invoice verification limiter.
+ *
+ * Verification is unauthenticated by design (customers scan a QR without an
+ * account), so it needs its own bucket that counts EVERY attempt.
+ * portalAuthLimiter deliberately skips successful responses, which is correct
+ * for login but wrong here: a stream of successfully-resolved guesses would
+ * never consume the budget. The bucket is also distinct from portal-auth so a
+ * scanner burst cannot lock customers out of the portal, and vice versa.
+ */
+const documentVerificationLimiter = (options = {}) => createLimiter({
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 120,
+  message: 'Too many verification requests, please try again later',
+  skipSuccessfulRequests: false,
+  keyGenerator: (req) => `document-verify:${req.ip || req.connection?.remoteAddress || 'unknown'}`,
+  ...options,
+});
+
 const resetRateLimit = async (key) => {
   if (isRedisAvailable()) {
     try {
@@ -254,6 +273,7 @@ module.exports = {
   uploadLimiter,
   portalAuthLimiter,
   portalRefreshLimiter,
+  documentVerificationLimiter,
   resetRateLimit,
   clearAllRateLimits,
   getRateLimitStatus,

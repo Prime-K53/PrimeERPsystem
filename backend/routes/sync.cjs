@@ -742,6 +742,28 @@ router.post('/ops', async (req, res) => {
         }
       }
 
+      if (table === 'ledger_entries') {
+        // Posting-boundary rejection: once the server owns Examination posting,
+        // the RPC writes ledger rows with the service role. An EXM ledger op
+        // arriving here is a client posting AR/revenue (or deleting history)
+        // independently of that boundary. Inert while posting is disabled.
+        const ledgerBoundaryError = examinationSyncGuards.validateLedgerPostingBoundary(op, {
+          postingEnabled: examinationPostingService.isPostingEnabled(),
+        });
+        if (ledgerBoundaryError) {
+          console.warn(`[sync] ledger_entries posting boundary rejected ${op?.operationId}`, { error: ledgerBoundaryError });
+          results.push({
+            operationId: op?.operationId,
+            ok: false,
+            id: op?.recordId || null,
+            error: ledgerBoundaryError,
+            retryable: false,
+            businessRule: true,
+          });
+          continue;
+        }
+      }
+
       // Phase 2 §3.2: contract financial-date guard (business date + closed FY).
       // Rejected BEFORE applyOp so nothing is half-written.
       if (table === 'assessment_contract_items' || table === 'wallet_transactions' || table === 'ledger_entries') {

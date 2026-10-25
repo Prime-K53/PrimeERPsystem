@@ -82,6 +82,28 @@
 18. `0055_customer_name_correction.sql` — **APPLIED** (data correction).
 19. `0056_printing_contracts_void_status.sql` — **APPLIED** (`voided` added to
     both printing status constraints).
+20. `0057_examination_rpc_acl_hardening.sql` — **APPLIED.** Revokes
+    `PUBLIC`/`anon`/`authenticated` EXECUTE on
+    `post_examination_invoice_atomic`, `void_examination_invoice_atomic` and
+    `assert_examination_invoice_number_unique`; grants `service_role` only and
+    verifies `claim_next_examination_invoice_number` stays closed.
+21. `0058_examination_rls_write_lockdown.sql` — **APPLIED.** Replaces the
+    `allow_all_*` policies on the twelve examination tables plus
+    `ledger_entries` with `SELECT`-only for `authenticated`; fails if any write
+    policy survives.
+22. `0059_examination_integrity_and_token_hardening.sql` — **APPLIED.**
+    Makes the integrity report read ledger `referenceId` with legacy
+    fallbacks, reports orphan/reused/claim/token findings, backfills only
+    missing verification tokens, and adds the unique token index. 6 live
+    invoices backfilled to 64-hex tokens; index `idx_invoices_verification_token_unique` present.
+23. `0060_examination_orphan_reconciliation.sql` — **APPLIED.** Append-only
+    reconciliation decisions plus a read-only orphan view and
+    service-role-only decision RPC. No ledger rows were mutated. Three
+    references await operator decisions:
+    `EXM-P726/021` (0 net), `EXM-P726/022` (750,250 across two customers),
+    `EXM-P726/023` (5,000; claim exists). All three recorded as
+    `RETAIN_AS_HISTORY` (decision IDs 3093c158..., ab46bc01..., d9221c07...). No ledger rows mutated.`
+    Operator report: `supabase/ops/report_examination_orphans.sql` (read-only).
 
 - `database/archive/` holds the previously-applied standalone SQL files for
   provenance (do NOT re-run them — e.g. `supabase-rls-hardening-migration.sql`
