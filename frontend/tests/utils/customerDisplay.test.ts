@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { getCustomerDisplayName, getCustomerContactName, getCustomerOptionLabel, resolveCustomerDisplay } from '../../utils/customerDisplay';
+import {
+  customerNameOf,
+  getCustomerDisplayName,
+  getCustomerContactName,
+  getCustomerOptionLabel,
+  isPlaceholderCustomerName,
+  resolveCustomerDisplay,
+  resolveCustomerNameById,
+} from '../../utils/customerDisplay';
 
 describe('getCustomerDisplayName', () => {
   describe('CASE 1: businessName and contactName both exist', () => {
@@ -248,5 +256,84 @@ describe('getCustomerOptionLabel (dropdown labels: Business Name, never contact)
     // and a record with no identity at all falls back to its id.
     expect(getCustomerOptionLabel({ id: 'C5', name: 'Ada Banda' })).toBe('Ada Banda');
     expect(getCustomerOptionLabel({ id: 'C6', name: '  ' })).toBe('C6');
+  });
+});
+
+describe('isPlaceholderCustomerName (placeholders are missing references, not names)', () => {
+  it('rejects typographic placeholders and empty values', () => {
+    for (const value of ['', '   ', '_', '__', '-', '--', '—', '–', '.', '..', 'n/a', 'N/A', 'none', 'null', 'nil', 'undefined', 'tbd', 'unknown', 'unknown customer', 'Customer']) {
+      expect(isPlaceholderCustomerName(value), `"${value}" must not be a name`).toBe(true);
+    }
+    expect(isPlaceholderCustomerName(null)).toBe(true);
+    expect(isPlaceholderCustomerName(undefined)).toBe(true);
+  });
+
+  it('rejects the internal customer key in every spelling', () => {
+    expect(isPlaceholderCustomerName('CUST-0035')).toBe(true);
+    expect(isPlaceholderCustomerName('cust-0035')).toBe(true);
+    expect(isPlaceholderCustomerName('CUST 0035')).toBe(true);
+    expect(isPlaceholderCustomerName('CUST-0035 School')).toBe(false);
+  });
+
+  it('accepts real business names, including non-Latin and qualified names', () => {
+    for (const value of ['Mphandula CDSS', "St Mary's (Blantyre)", 'ABC Secondary School', 'Zomba CCAP', 'МБОУ Школа №5', '学校']) {
+      expect(isPlaceholderCustomerName(value), `"${value}" must be a name`).toBe(false);
+    }
+  });
+});
+
+describe('getCustomerDisplayName skips placeholder candidates', () => {
+  it('falls through a placeholder businessName to companyName then legacy name', () => {
+    expect(getCustomerDisplayName({ businessName: '_', companyName: 'Prime Company Ltd' })).toBe('Prime Company Ltd');
+    expect(getCustomerDisplayName({ businessName: '—', legacyCustomerName: 'Legacy School' })).toBe('Legacy School');
+    expect(getCustomerDisplayName({ businessName: 'CUST-0035', companyName: '', legacyCustomerName: 'Real Junior School' })).toBe('Real Junior School');
+  });
+
+  it('returns the empty string when every candidate is a placeholder', () => {
+    expect(getCustomerDisplayName({ businessName: '_', companyName: '-', legacyCustomerName: 'n/a' })).toBe('');
+    expect(getCustomerDisplayName({})).toBe('');
+  });
+});
+
+describe('resolveCustomerNameById (identity by stable id, never by display string)', () => {
+  const customers = [
+    { id: 'CUST-0035', name: '_', businessName: 'Mphandula CDSS' },
+    { id: 'CUST-0036', name: 'Legacy Only School' },
+    { id: 'CUST-0037', businessName: '_', companyName: 'Acme Printers' },
+    { id: 'CUST-0038', name: '_' },
+  ];
+
+  it('resolves the business name for a known id', () => {
+    expect(resolveCustomerNameById('CUST-0035', customers)).toBe('Mphandula CDSS');
+  });
+
+  it('falls back to the legacy name when businessName is a placeholder', () => {
+    expect(resolveCustomerNameById('CUST-0037', customers)).toBe('Acme Printers');
+  });
+
+  it('returns empty for an unknown id — never a name guessed from input', () => {
+    expect(resolveCustomerNameById('CUST-9999', customers)).toBe('');
+    expect(resolveCustomerNameById('Mphandula CDSS', customers)).toBe('');
+  });
+
+  it('returns empty when the customer carries no usable name', () => {
+    expect(resolveCustomerNameById('CUST-0038', customers)).toBe('');
+  });
+});
+
+describe('customerNameOf (internal screens only: id is the last resort, never a placeholder)', () => {
+  const customers = [{ id: 'CUST-0035', businessName: 'Mphandula CDSS' }];
+
+  it('returns the resolved name when the id is known', () => {
+    expect(customerNameOf('CUST-0035', customers)).toBe('Mphandula CDSS');
+  });
+
+  it('returns the raw id for an unresolved reference (actionable, not blank)', () => {
+    expect(customerNameOf('CUST-0040', customers)).toBe('CUST-0040');
+  });
+
+  it('returns an em dash only when no reference exists at all', () => {
+    expect(customerNameOf('', customers)).toBe('—');
+    expect(customerNameOf(undefined, customers)).toBe('—');
   });
 });

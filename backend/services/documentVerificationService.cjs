@@ -43,6 +43,7 @@
 const axios = require('axios');
 const crypto = require('crypto');
 const integrity = require('./documentIntegrity.cjs');
+const customerDisplay = require('./customerDisplay.cjs');
 
 const GENERIC_FAILURE = 'Document could not be verified against Prime Printing records.';
 
@@ -172,8 +173,24 @@ function mapCanonicalStatus(raw, cancelledWords, fallback) {
     : s;
 }
 
+/**
+ * Safe display name for a document's customer. A placeholder stored in a name
+ * field (`_`, `—`, a bare `CUST-…` key) is a MISSING reference — candidates are
+ * skipped so a real name behind them is found, and the customer id is never
+ * echoed. `'Customer'` is the last-resort generic label.
+ */
 function customerNameOf(d) {
-  return String(d.businessName || d.business_name || d.customerName || d.customer_name || d.clientName || 'Customer');
+  const record = d && typeof d === 'object' ? d : {};
+  return customerDisplay.resolveCustomerNameForDocument(record.businessName, record.business_name)
+    || customerDisplay.resolveCustomerNameForDocument(record.companyName, record.company_name)
+    || customerDisplay.resolveCustomerNameForDocument(record.customerName, record.customer_name)
+    || customerDisplay.resolveCustomerNameForDocument(record.clientName, record.client_name)
+    || 'Customer';
+}
+
+/** Contract-party resolver: customer/business name with the school falling back in. */
+function contractCustomerNameOf(c) {
+  return customerDisplay.resolveContractPartyName(c) || 'Customer';
 }
 
 /**
@@ -368,7 +385,7 @@ const REGISTRY = {
       statementPeriodStart: String(s.periodStart || s.startDate || ''),
       statementPeriodEnd: String(s.periodEnd || s.endDate || ''),
       companyName: String(s.companyName || company),
-      customerName: String(s.customerName || s.clientName || 'Customer'),
+      customerName: customerDisplay.resolveCustomerNameForDocument(s.customerName, s.clientName) || 'Customer',
       currency: String(s.currency || 'MWK'),
       openingBalance: Number(s.openingBalance ?? 0),
       totalInvoiced: Number(s.totalInvoiced ?? 0),
@@ -427,7 +444,7 @@ const REGISTRY = {
       contractNumber: String(c.contract_number || ''),
       contractDate: String(c.starts_at || c.created_at || ''),
       companyName: String(c.companyName || company),
-      customerName: customerNameOf(c),
+      customerName: contractCustomerNameOf(c),
       currency: String(c.currency || 'MWK'),
       prepaidTotal: Number(c.prepaid_amount ?? 0),
       totalAssessments: Number(c.max_assessments ?? 0),
@@ -483,7 +500,7 @@ const REGISTRY = {
           verificationScope: 'contract',
           contractNumber: String(d.contract_number || ''),
           companyName: String(d.companyName || company),
-          customerName: customerNameOf(d),
+          customerName: contractCustomerNameOf(d),
           status: contractStatus,
         };
       }
@@ -501,7 +518,7 @@ const REGISTRY = {
         scheduleVersion: Number(d.documentVersion || 0),
         issuedAt: String(d.issuedAt || ''),
         companyName: String(d.companyName || company),
-        customerName: String(content.customerName || 'Customer'),
+        customerName: customerDisplay.resolveCustomerNameForDocument(content.customerName, content.schoolName) || 'Customer',
         currency: String(content.currency || 'MWK'),
         periodStart: String(content.periodStart || ''),
         periodEnd: String(content.periodEnd || ''),
@@ -587,7 +604,7 @@ const REGISTRY = {
           contractNumber: String(d.contract_number || ''),
           contractDate: String(d.starts_at || d.created_at || ''),
           companyName: String(d.companyName || company),
-          customerName: customerNameOf(d),
+          customerName: contractCustomerNameOf(d),
           currency: String(d.currency || 'MWK'),
           totalAssessments: Number(d.max_assessments ?? 0),
           ...(progress || {}),
@@ -606,8 +623,9 @@ const REGISTRY = {
         contractNumber: String(content.contractNumber || ''),
         issuedAt: String(d.issuedAt || content.date || ''),
         companyName: String(d.companyName || company),
-        customerName: String(content.customerName || customerNameOf(d)),
-        schoolName: String(content.schoolName || ''),
+        customerName: customerDisplay.resolveCustomerNameForDocument(content.customerName, content.schoolName)
+          || contractCustomerNameOf(d),
+        schoolName: customerDisplay.resolveSchoolNameForDocument(content.schoolName) || '',
         currency: String(content.currency || 'MWK'),
         // What the receipt actually says: the assessment it closed, what was
         // debited, and the fund position it left behind.

@@ -585,6 +585,7 @@ function verifyContractRecord(record, suppliedHash) {
 module.exports = {
   stableStringify,
   sha256,
+  stripCustomerIdSuffix,
   SCHEDULE_VOLATILE_HASH_KEYS,
   stableScheduleHashInput,
   legacyScheduleHashInput,

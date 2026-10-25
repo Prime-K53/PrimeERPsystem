@@ -18,6 +18,7 @@
  */
 const axios = require('axios');
 const integrity = require('./documentIntegrity.cjs');
+const customerDisplay = require('./customerDisplay.cjs');
 
 const GENERIC_NOT_FOUND = 'No contract matches that number, short code or hash.';
 const GENERIC_ALTERED = 'The contract record does not match the supplied digest.';
@@ -71,12 +72,17 @@ function statusLabel(record) {
 
 /** Only safe display fields — never tokens, ids, signatures, addresses. */
 function safeContract(record) {
+  // The stored party label may be a placeholder (`_`, `—`, a bare `CUST-…`
+  // key) — a missing reference, never safe to echo as the client name. Resolve
+  // the real name from the record (customer, then school) and only then fall
+  // back to a generic label; the display must never leak the customer id.
+  const customerName = customerDisplay.resolveContractPartyName(record) || 'Customer';
   return {
     verified: true,
     result: 'verified',
     documentType: 'printing_contract',
     contractNumber: String(record.contract_number || record.contractNumber || '').trim(),
-    customerName: String(record.customerName || record.customer_name || '').trim(),
+    customerName,
     contractDate: String(record.starts_at || record.created_at || record.createdAt || '').slice(0, 10),
     status: statusLabel(record),
     total: Number(record.prepaid_amount ?? record.prepaidAmount ?? 0) || 0,

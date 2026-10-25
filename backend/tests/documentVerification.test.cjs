@@ -70,6 +70,10 @@ const TABLES = {
     { data: { id: 'c-g005', contract_number: 'PC-G005', starts_at: '2026-01-05', customer_id: 'CUST-1', customerName: 'Mixed School', currency: 'MWK', prepaid_amount: 8000, max_assessments: 4, status: 'active', verificationToken: TOK } },
     { data: { id: 'c-g006', contract_number: 'PC-G006', starts_at: '2026-01-05', customer_id: 'CUST-1', customerName: 'Zero School', currency: 'MWK', prepaid_amount: 0, max_assessments: 0, status: 'active', verificationToken: TOK } },
     { data: { id: 'c-g007', contract_number: 'PC-G007', starts_at: '2026-01-05', customer_id: 'CUST-1', customerName: 'Missing Total School', currency: 'MWK', prepaid_amount: 0, status: 'active', verificationToken: TOK } },
+    // PC-P726/024 regression: a stored placeholder name must never be echoed.
+    // The customer reference is the bare id, so the school name is the only
+    // usable party name left.
+    { data: { id: 'c-g008', contract_number: 'PC-G008', starts_at: '2026-01-05', customer_id: 'CUST-0035', customerName: '_', schoolName: 'Placeholder Primary', currency: 'MWK', prepaid_amount: 1000, max_assessments: 4, status: 'active', verificationToken: TOK } },
   ],
   assessment_contract_items: [
     { id: 'i-g001-1', data: { id: 'i-g001-1', contract_id: 'c-g001', status: 'consumed', item_price: 1250 } },
@@ -350,6 +354,18 @@ describe('generic document verification', () => {
     assert.equal(res.body.customerName, 'Contract School');
     assert.equal(res.body.prepaidTotal, 5000);
     assert.equal(res.body.status, 'ACTIVE');
+  });
+
+  it('printing contract never echoes a placeholder customer name or bare id', async () => {
+    const res = await request(app).get(good('printing_contract', 'PC-G008', TOK));
+    assert.equal(res.status, 200);
+    assert.equal(res.body.verified, true);
+    assert.equal(res.body.contractNumber, 'PC-G008');
+    // Contract PC-P726/024 regression: stored "_" must resolve to the school,
+    // never be printed as a placeholder or as the CUST-0035 reference.
+    assert.equal(res.body.customerName, 'Placeholder Primary');
+    assert.notEqual(res.body.customerName, '_');
+    assert.doesNotMatch(String(res.body.customerName), /^CUST-/);
   });
 
   it('hyphenated QR slugs verify (printing-contract, sales-order)', async () => {

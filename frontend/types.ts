@@ -3482,6 +3482,12 @@ export interface AssessmentContract {
    * second lookup. Staleness accepted — same convention as receipts.
    */
   customerName?: string;
+  /**
+   * Stored SHA-256 of the canonical contract snapshot (printed in the QR /
+   * integrity block and recomputed at print time for legacy rows). Absent on
+   * rows that have never been enriched.
+   */
+  contentHash?: string;
   notes?: string;
   terms?: string;
   created_by?: string;

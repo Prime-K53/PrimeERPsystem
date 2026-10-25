@@ -17,6 +17,7 @@ const path = require('path');
 const fs = require('fs');
 const { getCompanyConfig } = require('./companyConfigService.cjs');
 const integrity = require('./documentIntegrity.cjs');
+const customerDisplay = require('./customerDisplay.cjs');
 
 let rendererPromise = null;
 
@@ -339,20 +340,6 @@ function normalizeSides(value) {
   return sides;
 }
 
-function stripCustomerIdSuffix(name) {
-  let out = text(name).trim();
-  if (!out) return '';
-  out = out.replace(/\s*\((?=[A-Z0-9-]*\d)[A-Z0-9-]{2,}\)\s*$/i, '').trim();
-  out = out.replace(/^CUST-\d{3,}\s*(?:[\r\n]+|[-–—:|]\s*|\s+)/i, '').trim();
-  out = out.replace(/(?:[\r\n]+|[-–—:|]\s*|\s+)CUST-\d{3,}\s*$/i, '').trim();
-  if (/^CUST-\d{3,}$/i.test(out)) return '';
-  return out.replace(/\s*\r?\n\s*/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-function resolveCustomerDisplayName(customerName, schoolName) {
-  return stripCustomerIdSuffix(customerName) || stripCustomerIdSuffix(schoolName);
-}
-
 function normalizeCustomerReference(value) {
   const reference = text(value).trim();
   if (!reference) return undefined;
@@ -455,7 +442,8 @@ function normalizePrintingContractRecord(record) {
   const vatValue = numberOrUndefined(
     inner.vat_amount ?? inner.vatAmount ?? snapshot.vat_amount ?? snapshot.vatAmount ?? snapshot.tax_amount ?? snapshot.taxAmount,
   );
-  const resolvedSchoolName = stripCustomerIdSuffix(text(snapshot.schoolName || snapshot.school_name).trim()) || undefined;
+  const resolvedSchoolName = customerDisplay.resolveSchoolNameForDocument(snapshot.schoolName)
+    ?? customerDisplay.resolveSchoolNameForDocument(snapshot.school_name);
   const doc = {
     documentType: 'printing_contract',
     verificationToken: text(snapshot.verificationToken).trim() || undefined,
@@ -466,7 +454,9 @@ function normalizePrintingContractRecord(record) {
     date: displayDate(snapshot.created_at || snapshot.activated_at || snapshot.starts_at || snapshot.serverUpdatedAt),
     version: Number(snapshot.version) || 1,
     status: text(snapshot.status || 'draft'),
-    customerName: resolveCustomerDisplayName(snapshot.customerName || snapshot.customer_name, resolvedSchoolName) || 'Customer',
+    customerName: customerDisplay.resolveCustomerNameForDocument(snapshot.customerName, snapshot.customer_name)
+      || resolvedSchoolName
+      || 'Customer',
     schoolName: resolvedSchoolName,
     customerContact: firstText(snapshot.customerContact, snapshot.customer_contact, inner.customer_contact),
     customerPhone: firstText(snapshot.customerPhone, snapshot.customer_phone, inner.customer_phone),

@@ -41,8 +41,8 @@ import {
   buildReceiptAcknowledgement,
 } from "../../../../services/receiptCalculationService";
 import {
-  resolveCustomerDisplayName,
-  stripCustomerIdSuffix,
+  resolveCustomerNameForDocument,
+  resolveSchoolNameForDocument,
 } from "../../../../services/printingContractService";
 import {
   PaginationFurniture,
@@ -5530,11 +5530,13 @@ export const PrimeDocument = ({
           recordedTerms,
         ));
 
+    // The school/branch line is printed only when it is a real name different
+    // from the client name — never a placeholder ("—", "_") or an internal id.
+    const clientSchoolName = resolveSchoolNameForDocument(pc.schoolName);
     const clientSchool =
-      pc.schoolName &&
-      pc.schoolName.trim().toLowerCase() !==
-        pc.customerName.trim().toLowerCase()
-        ? pc.schoolName.trim()
+      clientSchoolName &&
+      clientSchoolName.toLowerCase() !== String(pc.customerName || "").trim().toLowerCase()
+        ? clientSchoolName
         : "";
     const clientLocation = [pc.customerAddress, pc.schoolZone]
       .filter(Boolean)
@@ -5885,7 +5887,7 @@ export const PrimeDocument = ({
                   marginTop: 4,
                 }}
               >
-                {pc.customerName || "N/A"}
+                {resolveCustomerNameForDocument(pc.customerName, pc.schoolName) || clientSchool || "Customer"}
               </Text>
               {clientSchool ? (
                 <Text style={{ fontSize: 8.8, color: softInk, marginTop: 1 }}>
@@ -6168,7 +6170,7 @@ export const PrimeDocument = ({
                    pc.signatures?.customer,
                    "Authorised signatory",
                    pc.date,
-                   pc.customerName || pc.schoolName || undefined,
+                   resolveCustomerNameForDocument(pc.customerName, pc.schoolName) || undefined,
                  )}
               </View>
             </View>
@@ -6379,7 +6381,7 @@ export const PrimeDocument = ({
     // Resolve against the school name so a stored value that is only the
     // internal id (or an id-prefixed line) still prints the customer.
     const customerNameText =
-      resolveCustomerDisplayName(cs.customerName, cs.schoolName) || "N/A";
+      resolveCustomerNameForDocument(cs.customerName, cs.schoolName) || "Customer";
     const customerNameFontSize = fitFontSize(
       customerNameText,
       Math.max(
@@ -6395,7 +6397,7 @@ export const PrimeDocument = ({
     // repeated values collapse to one.
     const partySeen = new Set([customerNameText.trim().toLowerCase()]);
     const customerSubline = [
-      stripCustomerIdSuffix(String(cs.schoolName || "")),
+      resolveSchoolNameForDocument(cs.schoolName) || "",
       cs.schoolZone,
       cs.customerPhone,
     ]
@@ -7488,7 +7490,7 @@ export const PrimeDocument = ({
     // the registered school name is.
     const crCustomerNameLabel = "Customer Name: ";
     const crCustomerName =
-      resolveCustomerDisplayName(cr.customerName, cr.schoolName) || "Customer";
+      resolveCustomerNameForDocument(cr.customerName, cr.schoolName) || "Customer";
     const crCustomerFontSize = fitFontSize(
       crCustomerName,
       Math.max(
@@ -7502,9 +7504,8 @@ export const PrimeDocument = ({
     // customer name is dropped (the common case: the school IS the customer)
     // so the identity block never states the same thing twice.
     const crCustomerKey = crCustomerName.trim().toLowerCase();
-    const crCustomerSubline = stripCustomerIdSuffix(
-      String(cr.schoolName || ""),
-    );
+    const crCustomerSubline =
+      resolveSchoolNameForDocument(cr.schoolName) || "";
     const crShowSubline =
       !!crCustomerSubline && crCustomerSubline.toLowerCase() !== crCustomerKey;
 

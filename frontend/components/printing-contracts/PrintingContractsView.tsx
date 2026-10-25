@@ -43,6 +43,7 @@ import {
   buildContractScheduleDoc,
   buildAssessmentCompletionReceiptDoc,
   ensureContractIntegrity,
+  stripCustomerIdSuffix,
 } from '../../services/printingContractService';
 import {
   PrintingContractSchema,
@@ -58,7 +59,7 @@ import { attachDocumentSecurity } from '../../utils/documentSecurity';
 import { generateVerificationToken } from '../../utils/documentVerification';
 import { dbService } from '../../services/db';
 import { generateNextId } from '../../utils/helpers';
-import { getCustomerOptionLabel, customerNameOf } from '../../utils/customerDisplay';
+import { getCustomerOptionLabel, isPlaceholderCustomerName, resolveCustomerNameById } from '../../utils/customerDisplay';
 import { currencyService } from '../../services/currencyService';
 import { formatMoney } from '../../utils/posMoney';
 import { ErrorBoundary } from '../ErrorBoundary';
@@ -370,10 +371,47 @@ const PrintingContractsViewInner: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Customer identity resolution ────────────────────────────────
+  // A contract's customer is identified ONLY by the stable `customer_id`.
+  // These helpers resolve the business name from the live customer list and
+  // never return the raw id or a placeholder (`—`, `_`, `n/a`, `CUST-…`): an
+  // unresolved reference must surface as an actionable error instead of being
+  // persisted, displayed or printed as if it were a name.
+  const customerNameOf = (id?: string) => resolveCustomerNameById(id, customers);
+
+  /** Name stored on a record — id-suffixed/placeholder values are not names. */
+  const usableStoredName = (value?: string | null): string => {
+    const stripped = stripCustomerIdSuffix(String(value ?? ''));
+    return stripped && !isPlaceholderCustomerName(stripped) ? stripped : '';
+  };
+
+  // Schools resolve by id as well; a few legacy rows stored the customer id in
+  // `school_id`, so the customer list is the second lookup. Never the raw
+  // value: a missing school must not leak an id or a dash into a record.
   const schoolNameOf = (id?: string) =>
-    schools.find(s => String(s.id) === String(id))?.name
-    || customerNameOf(id, customers)
-    || id || '—';
+    usableStoredName(schools.find(s => String(s.id) === String(id))?.name)
+    || customerNameOf(id)
+    || '';
+
+  /**
+   * Best available customer identity for a contract: live business name →
+   * name already stored on the record (legacy rows) → school. Empty when
+   * nothing usable exists, so callers decide the neutral fallback.
+   */
+  const resolvedContractParty = (c: AssessmentContract): string => {
+    const live = customerNameOf(c.customer_id);
+    if (live) return live;
+    const stored = usableStoredName(c.customerName);
+    if (stored && stored !== String(c.customer_id || '').trim()) return stored;
+    return usableStoredName(schoolNameOf(c.school_id));
+  };
+  const contractCustomerLabel = (c: AssessmentContract): string =>
+    resolvedContractParty(c) || 'Unknown customer';
+  /** School sub-label — shown only when it is a real name of its own. */
+  const contractSchoolLabel = (c: AssessmentContract): string => {
+    const school = usableStoredName(schoolNameOf(c.school_id));
+    return school && school !== resolvedContractParty(c) ? school : '';
+  };
   /**
    * Branches (sub-accounts) of the selected customer. Customers carry them as
    * `{ id, name }` records; the legacy `string[]` shape is tolerated so old
@@ -417,8 +455,8 @@ const PrintingContractsViewInner: React.FC = () => {
       list = list.filter(c =>
         (c.contract_number || '').toLowerCase().includes(q)
         || (c.title || '').toLowerCase().includes(q)
-        || customerNameOf(c.customer_id).toLowerCase().includes(q)
-        || schoolNameOf(c.school_id).toLowerCase().includes(q),
+        || contractCustomerLabel(c).toLowerCase().includes(q)
+        || contractSchoolLabel(c).toLowerCase().includes(q),
       );
     }
     return list;
@@ -490,13 +528,37 @@ const PrintingContractsViewInner: React.FC = () => {
       // the Assessments tab / amendments so consumed history is protected.
       lines: [] as ContractFormLine[],
     });
-    setCustomerDisplay(c.customer_id ? customerNameOf(c.customer_id) : '');
+    // Prefill with the RESOLVED identity (never the raw id or a placeholder):
+    // the field must show a real customer name, and re-saving must not be able
+    // to detach the stable `customer_id` from the record.
+    const prefilled = resolvedContractParty(c);
+    setCustomerDisplay(prefilled);
     setIsFormOpen(true);
   };
 
+  /**
+   * Customer/business name written to the record on save. The live customer
+   * list is authoritative (identity by id); the name already stored on the
+   * record is the legacy fallback so an edit can never erase a valid
+   * reference. Placeholders and ids are never returned — the validation below
+   * blocks the save instead.
+   */
+  const saveCustomerName = (): string =>
+    customerNameOf(formDraft.customer_id)
+    || usableStoredName(editingContract?.customerName)
+    || usableStoredName(schoolNameOf(formDraft.school_id));
+
   const validateContractDraft = (issueInvoice = false) => {
     if (!formDraft.title.trim()) return 'Contract title is required.';
-    if (!formDraft.customer_id.trim()) return 'Enter a customer name for this contract.';
+    if (!formDraft.customer_id.trim()) {
+      return 'Select a customer from the list — every contract must be linked to a customer record.';
+    }
+    if (!saveCustomerName()) {
+      const known = (customers || []).some((c: Customer) => String(c.id) === formDraft.customer_id.trim());
+      return known
+        ? `Customer ${formDraft.customer_id.trim()} has no usable business name on file — correct the customer record before saving.`
+        : `Customer ${formDraft.customer_id.trim()} is not in the loaded customer list — refresh the list and select the customer again.`;
+    }
     if (!editingContract) {
       const validLines = (formDraft.lines || []).filter(isValidContractLine);
       if (validLines.length === 0) return 'Add at least one billable item (name, quantity and unit price).';
@@ -555,8 +617,12 @@ const PrintingContractsViewInner: React.FC = () => {
       const partySnapshot = (customerId: string, schoolId: string) => {
         const partyCustomer = (customers || []).find(c => String(c.id) === String(customerId));
         const partySchool = schools.find(s => String(s.id) === String(schoolId));
+        // `school_name` is written ONLY when a real school/legacy value exists.
+        // The old `schoolNameOf(...) || '—'` wrote a dash for customer-only
+        // contracts and that placeholder became part of the content hash.
+        const schoolName = usableStoredName(schoolNameOf(schoolId));
         return {
-          school_name: schoolNameOf(schoolId) || undefined,
+          ...(schoolName ? { school_name: schoolName } : {}),
           customer_contact: partyCustomer?.contactName || partySchool?.contactPerson || undefined,
           customer_phone: partyCustomer?.phone || partySchool?.phone || undefined,
           customer_address: partyCustomer?.billingAddress || partyCustomer?.address || partySchool?.address || undefined,
@@ -573,12 +639,16 @@ const PrintingContractsViewInner: React.FC = () => {
         }
         const profileData = buildContractProfileData(formDraft.profile);
         const party = partySnapshot(formDraft.customer_id, formDraft.school_id);
+        const partyData: Record<string, any> = { ...(editingContract.data || {}), ...profileData, ...party };
+        // A resave must not keep a stale placeholder school name written by the
+        // old save path — it would otherwise stay covered by the content hash.
+        if (!party.school_name) delete partyData.school_name;
         await updateAssessmentContract({
           ...editingContract,
           title: formDraft.title.trim(),
           customer_id: formDraft.customer_id,
           school_id: formDraft.school_id,
-          customerName: customerNameOf(formDraft.customer_id),
+          customerName: saveCustomerName(),
           assessment_type: formDraft.assessment_type,
           assessment_grade: formDraft.assessment_grade || undefined,
           assessment_subject: formDraft.assessment_subject || undefined,
@@ -593,9 +663,7 @@ const PrintingContractsViewInner: React.FC = () => {
           updated_at: now,
           version: num(editingContract.version) + 1,
           data: {
-            ...(editingContract.data || {}),
-            ...profileData,
-            ...party,
+            ...partyData,
             school_zone: formDraft.school_zone || undefined,
             customer_phone: formDraft.customer_phone || party.customer_phone || undefined,
             sub_account_name: formDraft.sub_account_name || undefined,
@@ -644,8 +712,10 @@ const PrintingContractsViewInner: React.FC = () => {
           // Permanent public-verification token, issued once and never
           // regenerated — the contract QR encodes it.
           verificationToken: generateVerificationToken(),
-          // Denormalized for public verification display.
-          customerName: customerNameOf(formDraft.customer_id),
+          // Denormalized for public verification display — always the resolved
+          // business name, never the id or a placeholder (validation blocks the
+          // save before this point when no real name can be resolved).
+          customerName: saveCustomerName(),
           prepaid_amount: linesTotal,
           consumed_amount: 0,
           reserved_amount: 0,
@@ -924,7 +994,7 @@ const PrintingContractsViewInner: React.FC = () => {
           await contractDocumentService.issueScheduleVersion({
             contract: fresh,
             items: freshItems,
-            customerName: customerNameOf(fresh.customer_id),
+            customerName: resolvedContractParty(fresh),
             schoolName: schoolNameOf(fresh.school_id),
             issuedBy: actor,
           });
@@ -1158,7 +1228,7 @@ const PrintingContractsViewInner: React.FC = () => {
               walletBalanceAfter: num((customer as any)?.walletBalance ?? result?.newBalance ?? 0),
               walletTransactionId: String(result?.walletTransactionId || `WTX-${a.id}-CONSUMED`),
               ledgerEntryId: String(result?.ledgerEntryId || `LG-WTX-${a.id}-CONSUMED`),
-              customerName: customerNameOf(freshContract.customer_id),
+              customerName: resolvedContractParty(freshContract),
               schoolName: schoolNameOf(freshContract.school_id),
               issuedBy: authUser?.id || 'system',
               consumedAtIso: (consumedItem as any).consumed_at,
@@ -1263,7 +1333,7 @@ const PrintingContractsViewInner: React.FC = () => {
       const job: JobOrder = {
         id: generateNextId('JO', jobOrders || [], companyConfig),
         customerId: contract.customer_id,
-        customerName: customerNameOf(contract.customer_id),
+        customerName: resolvedContractParty(contract),
         totalQuantity: 1,
         status: 'Pending',
         date: new Date().toISOString(),
@@ -1397,7 +1467,7 @@ const PrintingContractsViewInner: React.FC = () => {
             await contractDocumentService.issueScheduleVersion({
               contract: amended,
               items: amendedItems,
-              customerName: customerNameOf(amended.customer_id),
+              customerName: resolvedContractParty(amended),
               schoolName: schoolNameOf(amended.school_id),
               issuedBy: actor,
             });
@@ -1482,12 +1552,34 @@ const PrintingContractsViewInner: React.FC = () => {
 
       const partyCustomer = (customers || []).find(c => String(c.id) === String(source.customer_id));
       const partySchool = schools.find(s => String(s.id) === String(source.school_id));
+      // A customer-facing document must name the customer: resolve from the
+      // live list, then the record's own stored party data. When nothing real
+      // resolves, printing is blocked with an actionable error — never a
+      // placeholder or the internal id on an official document.
+      const documentCustomerName = customerNameOf(source.customer_id)
+        || usableStoredName(source.customerName)
+        || usableStoredName(schoolNameOf(source.school_id));
+      if (!documentCustomerName) {
+        notify(
+          `Contract ${source.contract_number || ''} has no resolvable customer — link it to a customer record (customer id ${String(source.customer_id || 'missing')}) before printing.`,
+          'error',
+        );
+        return;
+      }
+
       // Legacy rows (and rows last saved before the party snapshot existed)
       // are enriched and re-hashed at print time. The printed document, the
       // persisted record and the public verifier then agree on one digest.
+      // A stored PLACEHOLDER school name ("—") is repaired here too: it is a
+      // missing value, not a school, and it must not stay covered by the hash.
+      const resolvedSchoolName = usableStoredName(schoolNameOf(source.school_id));
+      const storedSchoolName = usableStoredName(source.data?.school_name);
+      const schoolNameNeedsRepair =
+        !storedSchoolName
+        && (!!String(source.data?.school_name || '').trim() || !!resolvedSchoolName);
       const missingPartySnapshot =
         !source.contentHash ||
-        !source.data?.school_name ||
+        schoolNameNeedsRepair ||
         !source.data?.customer_contact ||
         !source.data?.customer_phone ||
         !source.data?.customer_address;
@@ -1496,7 +1588,7 @@ const PrintingContractsViewInner: React.FC = () => {
           ...source,
           data: {
             ...(source.data || {}),
-            school_name: source.data?.school_name || schoolNameOf(source.school_id) || undefined,
+            school_name: storedSchoolName || resolvedSchoolName || undefined,
             customer_contact: source.data?.customer_contact
               || partyCustomer?.contactName || partySchool?.contactPerson || undefined,
             customer_phone: source.data?.customer_phone
@@ -1521,8 +1613,8 @@ const PrintingContractsViewInner: React.FC = () => {
         .find((c: AssessmentContract) => String(c.id || '') === String(source.id)) || source;
       const doc = await buildPrintingContractDoc({
         contract: source,
-        customerName: customerNameOf(source.customer_id),
-        schoolName: schoolNameOf(source.school_id),
+        customerName: documentCustomerName,
+        schoolName: resolvedSchoolName || undefined,
         // Party details come from the customer/school records, never from the
         // contract's denormalised display name. The CUST key is passed only as
         // the small secondary reference printed under the legal name.
@@ -1542,6 +1634,14 @@ const PrintingContractsViewInner: React.FC = () => {
 
   const handleGenerateScheduleDocument = async () => {
     if (!selected) return;
+    // A schedule is a customer-facing document: block the issue/preview with
+    // an actionable error when no real customer name resolves — never print a
+    // placeholder or the internal id.
+    const scheduleCustomerName = resolvedContractParty(selected);
+    if (!scheduleCustomerName) {
+      notify(`Contract ${selected.contract_number || ''} has no resolvable customer — fix the customer link before issuing its schedule.`, 'error');
+      return;
+    }
     try {
       // An ACTIVE contract prints its ISSUED VERSION, never a fresh live
       // snapshot: the persisted issue date, the version's own verification
@@ -1556,7 +1656,7 @@ const PrintingContractsViewInner: React.FC = () => {
         const version = await contractDocumentService.issueScheduleVersion({
           contract: selected,
           items: selectedItems,
-          customerName: customerNameOf(selected.customer_id),
+          customerName: scheduleCustomerName,
           schoolName: schoolNameOf(selected.school_id),
         });
         const parsed = ContractScheduleSchema.parse({
@@ -1574,7 +1674,7 @@ const PrintingContractsViewInner: React.FC = () => {
       const doc = await buildContractScheduleDoc({
         contract: selected,
         items: selectedItems,
-        customerName: customerNameOf(selected.customer_id),
+        customerName: scheduleCustomerName,
         schoolName: schoolNameOf(selected.school_id),
       });
       const parsed = ContractScheduleSchema.parse(doc);
@@ -1593,6 +1693,13 @@ const PrintingContractsViewInner: React.FC = () => {
     const latest = consumedItems[consumedItems.length - 1];
     if (!latest) {
       notify('No consumed assessments yet — complete an assessment before issuing its receipt.', 'error');
+      return;
+    }
+    // A receipt is a customer-facing document: never issue one that names a
+    // placeholder or the internal id.
+    const receiptCustomerName = resolvedContractParty(selected);
+    if (!receiptCustomerName) {
+      notify(`Contract ${selected.contract_number || ''} has no resolvable customer — fix the customer link before issuing its receipt.`, 'error');
       return;
     }
     try {
@@ -1617,7 +1724,7 @@ const PrintingContractsViewInner: React.FC = () => {
         walletBalanceAfter: num((customer as any)?.walletBalance),
         walletTransactionId: `WTX-${latest.id}-CONSUMED`,
         ledgerEntryId: `LG-WTX-${latest.id}-CONSUMED`,
-        customerName: customerNameOf(source.customer_id),
+        customerName: receiptCustomerName,
         schoolName: schoolNameOf(source.school_id),
         consumedAtIso: latest.consumed_at,
       });
@@ -1764,22 +1871,10 @@ const PrintingContractsViewInner: React.FC = () => {
                       <p style={{ fontSize: 10, color: contractInkSoft, textTransform: 'capitalize', margin: '2px 0 0' }}>{(c.assessment_type || '').replace(/_/g, ' ')}</p>
                     </td>
                     <td style={{ padding: '10px 16px' }}>
-                      <p style={{ fontWeight: 600, color: contractInk, margin: 0 }}>
-                        {(() => {
-                          const id = c.customer_id;
-                          const cust = customers.find((cust: Customer) => String(cust.id) === String(id));
-                          if (cust) {
-                            const label = getCustomerOptionLabel(cust);
-                            if (label && label !== String(cust.id || '').trim()) return label;
-                          }
-                          const stored = c.customerName;
-                          if (stored && stored !== id) {
-                            return stored.replace(/\s*\([^)]+\)\s*$/, '').trim();
-                          }
-                          return id || '—';
-                        })()}
-                      </p>
-                      <p style={{ color: contractInkSoft, fontSize: 11, margin: '2px 0 0' }}>{schoolNameOf(c.school_id)}</p>
+                      <p style={{ fontWeight: 600, color: contractInk, margin: 0 }}>{contractCustomerLabel(c)}</p>
+                      {contractSchoolLabel(c) ? (
+                        <p style={{ color: contractInkSoft, fontSize: 11, margin: '2px 0 0' }}>{contractSchoolLabel(c)}</p>
+                      ) : null}
                     </td>
                     <td style={{ padding: '10px 16px', color: contractInkSoft, whiteSpace: 'nowrap' }}>
                       {c.starts_at ? new Date(c.starts_at).toLocaleDateString() : '—'}
@@ -1843,7 +1938,7 @@ const PrintingContractsViewInner: React.FC = () => {
           icon={<FileText size={19} color="#fff" />}
           title={editingContract ? `Edit Contract: ${editingContract.contract_number}` : 'New Printing Contract'}
           subtitle={editingContract
-            ? `${customerNameOf(editingContract.customer_id)}`
+            ? `${contractCustomerLabel(editingContract)}`
             : 'New commercial agreement — draft until verified & activated'}
           onClose={() => { setIsFormOpen(false); setEditingContract(null); }}
           footerHint={editingContract ? `Contract ${editingContract.contract_number} — historical records are protected` : 'Prepaid is the commercial figure — wallet moves only at payment time'}
@@ -1885,8 +1980,16 @@ const PrintingContractsViewInner: React.FC = () => {
               <input
                 value={customerDisplay}
                 onChange={(e) => {
-                  setCustomerDisplay(e.target.value);
-                  setCustomerSuggestOpen(e.target.value.trim().length > 0);
+                  const next = e.target.value;
+                  setCustomerDisplay(next);
+                  // Typing detaches the field from the previously selected
+                  // customer unless the text still names it. A stale
+                  // `customer_id` must never survive a divergence — that would
+                  // silently attach the wrong customer to the contract.
+                  if (formDraft.customer_id && next.trim() !== customerNameOf(formDraft.customer_id)) {
+                    setFormDraft(prev => ({ ...prev, customer_id: '' }));
+                  }
+                  setCustomerSuggestOpen(next.trim().length > 0);
                 }}
                 onFocus={() => setCustomerSuggestOpen(true)}
                 placeholder="Enter customer name"
@@ -2374,7 +2477,8 @@ const PrintingContractsViewInner: React.FC = () => {
           subtitle={
             <span>
               <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>{selected.contract_number}</span>
-              {' — '}{customerNameOf(selected.customer_id)} · {schoolNameOf(selected.school_id)}
+              {' — '}{contractCustomerLabel(selected)}
+              {contractSchoolLabel(selected) ? ` · ${contractSchoolLabel(selected)}` : ''}
               {' · '}<span style={{
                 display: 'inline-block', padding: '1px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700,
                 background: selected.status === 'active' ? contractTeal[50] : contractPaper,
@@ -2712,7 +2816,7 @@ const PrintingContractsViewInner: React.FC = () => {
                           style={{ background: contractPaper, borderRadius: 12, border: `1px solid ${contractHairline}`, padding: 12 }}>
                           <div>
                             <p className="finance-nums" style={{ fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: contractInk, margin: 0 }}>{j.id}</p>
-                            <p style={{ fontSize: 11, color: contractInkSoft, margin: '2px 0 0' }}>{j.customerName || customerNameOf(j.customerId)} · qty {j.totalQuantity} · due {j.dueDate ? new Date(j.dueDate).toLocaleDateString() : '—'}</p>
+                            <p style={{ fontSize: 11, color: contractInkSoft, margin: '2px 0 0' }}>{usableStoredName(j.customerName) || customerNameOf(j.customerId) || 'Unknown customer'} · qty {j.totalQuantity} · due {j.dueDate ? new Date(j.dueDate).toLocaleDateString() : '—'}</p>
                           </div>
                           <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: contractTeal[50], color: contractTeal[700], border: `1px solid ${contractTeal[100]}` }}>{j.status}</span>
                         </div>
@@ -2881,7 +2985,7 @@ const PrintingContractsViewInner: React.FC = () => {
               style={contractSelectStyle}>
               <option value="">None</option>
               {(jobOrders || []).slice(0, 200).map((j: JobOrder) => (
-                <option key={j.id} value={j.id}>{j.id} — {j.customerName || customerNameOf(j.customerId)} ({j.status})</option>
+                <option key={j.id} value={j.id}>{j.id} — {usableStoredName(j.customerName) || customerNameOf(j.customerId) || 'Unknown customer'} ({j.status})</option>
               ))}
             </select>
           </div>
@@ -3048,8 +3152,10 @@ const PrintingContractsViewInner: React.FC = () => {
           <SignatureCapture
             signerLabel={signingParty === 'company' ? 'Company representative' : 'Customer representative'}
             initialName={signingParty === 'company'
-               ? String(authUser?.name || authUser?.username || '')
-              : customerNameOf(selected.customer_id)}
+              ? String(authUser?.name || authUser?.username || '')
+              : ((customers || []).find(c => String(c.id) === String(selected.customer_id))?.contactName
+                || schools.find(s => String(s.id) === String(selected.school_id))?.contactPerson
+                || resolvedContractParty(selected))}
             submitLabel={signingParty === 'company' ? 'Sign as Company' : 'Sign as Customer'}
             onConfirm={(captured) => { void handleConfirmSignature(signingParty, captured); }}
             onCancel={() => setSigningParty(null)}

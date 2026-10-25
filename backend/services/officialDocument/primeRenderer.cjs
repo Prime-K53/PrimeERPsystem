@@ -231027,6 +231027,7 @@ var PrintingContractSchema = external_exports.object({
   }).optional(),
   fullySigned: external_exports.boolean(),
   contentHash: external_exports.string(),
+  integrityShortCode: external_exports.string().optional(),
   issuedInvoiceId: external_exports.string().optional()
 });
 var ContractScheduleSchema = external_exports.object({
@@ -232089,6 +232090,20 @@ function resolveVerificationBaseUrl(documentType) {
     appOrigin: appOrigin(),
     isProduction: isProductionBuild()
   });
+}
+function resolveContractVerifyBaseUrl() {
+  return resolveVerificationBaseUrl("printing_contract");
+}
+function contractNumberForUrl(contractNumber) {
+  return String(contractNumber || "").trim().replace(/\//g, "-");
+}
+function buildContractVerificationUrl(contractNumber, contentHash, baseUrl) {
+  const number6 = String(contractNumber || "").trim();
+  const hash2 = String(contentHash || "").trim().toLowerCase();
+  if (!number6 || !/^[0-9a-f]{64}$/.test(hash2)) return null;
+  const base = String(baseUrl ?? resolveContractVerifyBaseUrl()).replace(/\/+$/, "");
+  if (!base) return null;
+  return `${base}/verify?c=${encodeURIComponent(contractNumberForUrl(number6))}&h=${hash2}`;
 }
 function buildDocumentVerificationUrl(ref, baseUrl) {
   const type = String(ref?.documentType || "invoice");
@@ -233698,6 +233713,23 @@ var DEFAULT_PRIME_TEMPLATE_SETTINGS = {
 };
 var fontsInitialized = false;
 var pdfDebugLoggingEnabled = isPdfDebugLoggingEnabled();
+var PRIME_MONO_FONT_FAMILY = "PrimeMono";
+var primeMonoRegistered = false;
+var registerPrimeMonoFont = () => {
+  if (primeMonoRegistered) return;
+  primeMonoRegistered = true;
+  try {
+    Font.register({
+      family: PRIME_MONO_FONT_FAMILY,
+      fonts: [{ src: "/fonts/JetBrainsMono-Regular.ttf" }]
+    });
+  } catch (error51) {
+    if (pdfDebugLoggingEnabled) {
+      logger.error("[PDF Fonts] Failed to register JetBrains Mono", error51);
+    }
+  }
+};
+registerPrimeMonoFont();
 var initializePrimePdfFonts = async () => {
   if (fontsInitialized) return;
   fontsInitialized = true;
@@ -233711,8 +233743,9 @@ var initializePrimePdfFonts = async () => {
         { src: "/fonts/comicz.ttf", fontWeight: "bold", fontStyle: "italic" }
       ]
     });
+    registerPrimeMonoFont();
     if (pdfDebugLoggingEnabled) {
-      console.log("[PDF Fonts] Custom fonts (Comic Sans MS) registered successfully");
+      console.log("[PDF Fonts] Custom fonts (Comic Sans MS, JetBrains Mono) registered successfully");
     }
   } catch (error51) {
     if (pdfDebugLoggingEnabled) {
@@ -233790,6 +233823,37 @@ var getDefaultPaymentTermsLabel = (companyConfig) => {
   return termsDays === 0 ? "Due on receipt" : `Net ${termsDays}`;
 };
 
+// utils/customerDisplay.ts
+var PLACEHOLDER_CUSTOMER_NAMES = /* @__PURE__ */ new Set([
+  "-",
+  "--",
+  "---",
+  "\u2014",
+  "\u2013",
+  "_",
+  "__",
+  ".",
+  "..",
+  "n/a",
+  "na",
+  "none",
+  "null",
+  "nil",
+  "undefined",
+  "customer",
+  "unknown",
+  "unknown customer",
+  "tbd"
+]);
+var isPlaceholderCustomerName = (value2) => {
+  const text = String(value2 ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return true;
+  if (PLACEHOLDER_CUSTOMER_NAMES.has(text.toLowerCase())) return true;
+  if (!/[\p{L}\p{N}]/u.test(text)) return true;
+  if (/^CUST[-\s]?\d{3,}$/i.test(text)) return true;
+  return false;
+};
+
 // services/printingContractService.ts
 var stripCustomerIdSuffix = (name) => {
   let out = String(name || "").trim();
@@ -233800,7 +233864,17 @@ var stripCustomerIdSuffix = (name) => {
   if (/^CUST-\d{3,}$/i.test(out)) return "";
   return out.replace(/\s*\r?\n\s*/g, " ").replace(/\s+/g, " ").trim();
 };
-var resolveCustomerDisplayName = (customerName, schoolName) => stripCustomerIdSuffix(String(customerName || "")) || stripCustomerIdSuffix(String(schoolName || ""));
+var resolveCustomerNameForDocument = (customerName, schoolName) => {
+  const clean4 = (value2) => {
+    const stripped = stripCustomerIdSuffix(String(value2 || "")).trim();
+    return stripped && !isPlaceholderCustomerName(stripped) ? stripped : "";
+  };
+  return clean4(customerName) || clean4(schoolName) || "";
+};
+var resolveSchoolNameForDocument = (schoolName) => {
+  const stripped = stripCustomerIdSuffix(String(schoolName || "")).trim();
+  return stripped && !isPlaceholderCustomerName(stripped) ? stripped : void 0;
+};
 
 // views/shared/components/PDF/documentPagination.tsx
 var import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
@@ -234317,14 +234391,60 @@ var InvoiceInfoPanel = ({
   if (type === "account_summary") {
     const summary = generateAccountSummary(data2, config2, customers);
     return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 15 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", color: monoText(mode, "#94a3b8"), textTransform: "uppercase", marginBottom: 4, letterSpacing: 1 }, children: "ACCOUNT SUMMARY" }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#475569"), lineHeight: 1.4 }, children: summary.statement })
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+        Text,
+        {
+          style: {
+            fontSize: 8 * fontScale,
+            fontWeight: "bold",
+            color: monoText(mode, "#94a3b8"),
+            textTransform: "uppercase",
+            marginBottom: 4,
+            letterSpacing: 1
+          },
+          children: "ACCOUNT SUMMARY"
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+        Text,
+        {
+          style: {
+            fontSize: 10 * fontScale,
+            color: monoText(mode, "#475569"),
+            lineHeight: 1.4
+          },
+          children: summary.statement
+        }
+      )
     ] });
   }
   const paymentTermsLabel = String(data2?.paymentTerms || "").trim() || getDefaultPaymentTermsLabel(config2);
   return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 15 }, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", color: monoText(mode, "#94a3b8"), textTransform: "uppercase", marginBottom: 4, letterSpacing: 1 }, children: "Payment Terms" }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#475569"), lineHeight: 1.4 }, children: paymentTermsLabel })
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      Text,
+      {
+        style: {
+          fontSize: 8 * fontScale,
+          fontWeight: "bold",
+          color: monoText(mode, "#94a3b8"),
+          textTransform: "uppercase",
+          marginBottom: 4,
+          letterSpacing: 1
+        },
+        children: "Payment Terms"
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      Text,
+      {
+        style: {
+          fontSize: 10 * fontScale,
+          color: monoText(mode, "#475569"),
+          lineHeight: 1.4
+        },
+        children: paymentTermsLabel
+      }
+    )
   ] });
 };
 Font.registerHyphenationCallback((word) => [word]);
@@ -234334,7 +234454,18 @@ var renderQrImage = (qrCodeDataUrl, size = VERIFICATION_QR_SIZE, showCaption = t
   if (!resolvedQrCode) return null;
   return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "center" }, children: [
     /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: resolvedQrCode, style: { width: size, height: size } }),
-    showCaption ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: Math.max(6, size * 0.13), color: "#000", marginTop: 2, letterSpacing: 0.5 }, children: "SCAN TO VERIFY" }) : null
+    showCaption ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      Text,
+      {
+        style: {
+          fontSize: Math.max(6, size * 0.13),
+          color: "#000",
+          marginTop: 2,
+          letterSpacing: 0.5
+        },
+        children: "SCAN TO VERIFY"
+      }
+    ) : null
   ] });
 };
 var formatAmount2 = (amount) => {
@@ -234367,13 +234498,22 @@ var getStatusTone = (status, colorMode = "brand") => {
   const normalized = String(status || "").trim().toLowerCase();
   const mono = colorMode === "mono";
   if (normalized === "paid" || normalized === "active") {
-    return { border: mono ? "#000" : "#10b981", text: mono ? "#000" : "#059669" };
+    return {
+      border: mono ? "#000" : "#10b981",
+      text: mono ? "#000" : "#059669"
+    };
   }
   if (normalized === "partial" || normalized === "partially paid" || normalized === "partially_paid" || normalized === "paused" || normalized === "processing") {
-    return { border: mono ? "#000" : "#f59e0b", text: mono ? "#000" : "#d97706" };
+    return {
+      border: mono ? "#000" : "#f59e0b",
+      text: mono ? "#000" : "#d97706"
+    };
   }
   if (normalized === "overdue") {
-    return { border: mono ? "#000" : "#dc2626", text: mono ? "#000" : "#b91c1c" };
+    return {
+      border: mono ? "#000" : "#dc2626",
+      text: mono ? "#000" : "#b91c1c"
+    };
   }
   return { border: mono ? "#000" : "#ef4444", text: mono ? "#000" : "#dc2626" };
 };
@@ -234678,7 +234818,11 @@ var measureTextWidth = (text, fontSize, bold = false) => {
   return units / 1e3 * fontSize;
 };
 var RECEIPT_FIT_WIDTH_SAFETY = 0.97;
-var fitFontSize = (text, availableWidth, { maxSize, minSize, bold = false }) => {
+var fitFontSize = (text, availableWidth, {
+  maxSize,
+  minSize,
+  bold = false
+}) => {
   const sample = String(text ?? "");
   if (!sample) return maxSize;
   const widthAtMax = measureTextWidth(sample, 1, bold);
@@ -234692,9 +234836,15 @@ var normalizeCompanyIdentity = (config2) => {
   const companyName = pickFirstText2(config2?.companyName, "Prime ERP");
   const companyAddress = buildCompanyAddress(config2);
   const rawPhone = pickFirstText2(config2?.phone);
-  const formattedPhone = rawPhone.replace(/(\+265\s?\d{3}\s?\d{3}\s?\d{3})(?=\+265)/g, "$1 | ");
+  const formattedPhone = rawPhone.replace(
+    /(\+265\s?\d{3}\s?\d{3}\s?\d{3})(?=\+265)/g,
+    "$1 | "
+  );
   const companyEmail = pickFirstText2(config2?.email);
-  const website = pickFirstText2(config2?.website, config2?.companyWebsite);
+  const website = pickFirstText2(
+    config2?.website,
+    config2?.companyWebsite
+  );
   return {
     companyName,
     companyAddress,
@@ -234721,10 +234871,14 @@ var buildFooterContactLine = (_config) => {
 };
 var isCancelledStatus = (status, data2) => {
   if (data2?.isCancelled === true || data2?.cancelled === true) return true;
-  const str = String(status || data2?.status || data2?.transactionStatus || data2?.paymentStatus || data2?.orderStatus || "").trim().toLowerCase();
+  const str = String(
+    status || data2?.status || data2?.transactionStatus || data2?.paymentStatus || data2?.orderStatus || ""
+  ).trim().toLowerCase();
   return str === "cancelled" || str === "canceled" || str === "void" || str === "voided";
 };
-var CancelledWatermark = ({ colorMode = "brand" } = {}) => {
+var CancelledWatermark = ({
+  colorMode = "brand"
+} = {}) => {
   const s4 = colorMode === "mono" ? docStylesMono : docStyles;
   return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.watermarkContainer, fixed: true, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.watermarkText, children: "CANCELLED" }) });
 };
@@ -234742,57 +234896,141 @@ var SecurityFooter = ({
 }) => {
   const mode = colorMode ?? "brand";
   const footerQrSize = VERIFICATION_QR_SIZE;
-  const qrCodeDataUrl = resolvePdfQrCodeSource(String(data2?.securityQrCodeDataUrl || "").trim());
+  const qrCodeDataUrl = resolvePdfQrCodeSource(
+    String(data2?.securityQrCodeDataUrl || "").trim()
+  );
   const displayCompany = String(companyName || "").trim() || "Prime Printing";
   const shortCompany = displayCompany.replace(/\s+(Service|Services)$/i, "").trim() || displayCompany;
   const titleColor = "#000";
-  const subRow = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", alignItems: "center", marginTop: 4, gap: 4 }, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-      View,
-      {
-        style: {
-          width: 12,
-          height: 12,
-          borderRadius: 6,
-          backgroundColor: monoInk(mode, "#10b981"),
-          alignItems: "center",
-          justifyContent: "center"
-        },
-        children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+  const subRow = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+    View,
+    {
+      style: {
+        flexDirection: "row",
+        alignItems: "center",
+        marginTop: 4,
+        gap: 4
+      },
+      children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           View,
           {
             style: {
-              width: 6,
-              height: 3.5,
-              borderLeftWidth: 1.2,
-              borderBottomWidth: 1.2,
-              borderColor: "#ffffff",
-              transform: "rotate(-45deg)",
-              marginTop: -1
-            }
+              width: 12,
+              height: 12,
+              borderRadius: 6,
+              backgroundColor: monoInk(mode, "#10b981"),
+              alignItems: "center",
+              justifyContent: "center"
+            },
+            children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              View,
+              {
+                style: {
+                  width: 6,
+                  height: 3.5,
+                  borderLeftWidth: 1.2,
+                  borderBottomWidth: 1.2,
+                  borderColor: "#ffffff",
+                  transform: "rotate(-45deg)",
+                  marginTop: -1
+                }
+              }
+            )
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          Text,
+          {
+            style: {
+              fontSize: 8.5 * fontScale,
+              fontWeight: "bold",
+              color: monoText(mode, "#2563eb")
+            },
+            children: "Digitally generated"
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          Text,
+          {
+            style: { fontSize: 8.5 * fontScale, color: monoText(mode, "#64748b") },
+            children: "\u2022"
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          Text,
+          {
+            style: {
+              fontSize: 8.5 * fontScale,
+              fontWeight: "bold",
+              color: monoText(mode, "#059669")
+            },
+            children: "Verification available online"
           }
         )
+      ]
+    }
+  );
+  const bodyCopy = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+    Text,
+    {
+      style: {
+        marginTop: 6,
+        fontSize: 9 * fontScale,
+        color: "#000",
+        lineHeight: 1.45
+      },
+      children: [
+        "This is an official ",
+        shortCompany,
+        " document. It was electronically generated and is valid without a handwritten signature. Scan the QR code to verify the document's authenticity and confirm its current record. or contact us on +265 992 528 222"
+      ]
+    }
+  );
+  const qrColumn = /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: footerQrSize + 18, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { alignItems: "center" }, children: !!qrCodeDataUrl ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+    Image,
+    {
+      src: qrCodeDataUrl,
+      style: { width: footerQrSize, height: footerQrSize }
+    }
+  ) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+    View,
+    {
+      style: {
+        width: footerQrSize,
+        height: footerQrSize,
+        backgroundColor: monoFill(mode, "#f1f5f9")
       }
-    ),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5 * fontScale, fontWeight: "bold", color: monoText(mode, "#2563eb") }, children: "Digitally generated" }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5 * fontScale, color: monoText(mode, "#64748b") }, children: "\u2022" }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5 * fontScale, fontWeight: "bold", color: monoText(mode, "#059669") }, children: "Verification available online" })
-  ] });
-  const bodyCopy = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 6, fontSize: 9 * fontScale, color: "#000", lineHeight: 1.45 }, children: [
-    "This is an official ",
-    shortCompany,
-    " document. It was electronically generated and is valid without a handwritten signature. Scan the QR code to verify the document's authenticity and confirm its current record. or contact us on +265 992 528 222"
-  ] });
-  const qrColumn = /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: footerQrSize + 18, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { alignItems: "center" }, children: !!qrCodeDataUrl ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: qrCodeDataUrl, style: { width: footerQrSize, height: footerQrSize } }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: footerQrSize, height: footerQrSize, backgroundColor: monoFill(mode, "#f1f5f9") } }) }) });
+    }
+  ) }) });
   const contentRow = /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", gap: 10 }, children: [
     /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
       subRow,
       bodyCopy
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: 1, backgroundColor: monoFill(mode, "#cbd5e1"), alignSelf: "stretch" } }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      View,
+      {
+        style: {
+          width: 1,
+          backgroundColor: monoFill(mode, "#cbd5e1"),
+          alignSelf: "stretch"
+        }
+      }
+    ),
     qrColumn
   ] });
-  const bottomRule = /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 8, height: 1, backgroundColor: monoFill(mode, "#dbeafe"), width: "100%" } });
+  const bottomRule = /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+    View,
+    {
+      style: {
+        marginTop: 8,
+        height: 1,
+        backgroundColor: monoFill(mode, "#dbeafe"),
+        width: "100%"
+      }
+    }
+  );
   const flowingStyle = {
     flexDirection: "column",
     gap: 0,
@@ -234811,10 +235049,18 @@ var SecurityFooter = ({
     borderColor: monoLine(mode, "#e2e8f0"),
     paddingTop: 8
   };
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: flowing ? flowingStyle : fixedStyle, fixed: !flowing, wrap: false, children: [
-    contentRow,
-    bottomRule
-  ] });
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+    View,
+    {
+      style: flowing ? flowingStyle : fixedStyle,
+      fixed: !flowing,
+      wrap: false,
+      children: [
+        contentRow,
+        bottomRule
+      ]
+    }
+  );
 };
 var CleanInvoiceTemplate = ({
   type,
@@ -234826,7 +235072,13 @@ var CleanInvoiceTemplate = ({
 }) => {
   const dataAny = data2;
   const fontScale = templateSettings.bodyFontSize / 12;
-  const { companyName, companyAddress, formattedPhone, companyPhone, companyEmail } = normalizeCompanyIdentity(config2);
+  const {
+    companyName,
+    companyAddress,
+    formattedPhone,
+    companyPhone,
+    companyEmail
+  } = normalizeCompanyIdentity(config2);
   const currency = config2?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || "K";
   const logo = resolvePdfLogoSource(config2, templateSettings.showCompanyLogo);
   const accentColor = templateSettings.accentColor || "#5a9e96";
@@ -234836,7 +235088,9 @@ var CleanInvoiceTemplate = ({
   else if (type === "PO") docTitle = "PURCHASE ORDER";
   else if (type === "SUBSCRIPTION") docTitle = "RECURRING INVOICE";
   const pod = dataAny.proofOfDelivery;
-  const invoiceNumber = String(dataAny.invoiceNumber || dataAny.orderNumber || dataAny.number || dataAny.quotationNumber || (/* @__PURE__ */ new Date()).getTime());
+  const invoiceNumber = String(
+    dataAny.invoiceNumber || dataAny.orderNumber || dataAny.number || dataAny.quotationNumber || (/* @__PURE__ */ new Date()).getTime()
+  );
   const invoiceDate = String(dataAny.date || (/* @__PURE__ */ new Date()).toLocaleDateString());
   const dueDate = dataAny.dueDate ? String(dataAny.dueDate) : void 0;
   const docTitleForMeta = `${docTitle} ${invoiceNumber}`;
@@ -234846,9 +235100,11 @@ var CleanInvoiceTemplate = ({
   const resolvedRecipientAddress = String(
     dataAny.address || dataAny.customerAddress || dataAny.customer_address || dataAny.billingAddress || dataAny.billing_address || dataAny.shippingAddress || dataAny.shipping_address || dataAny.schoolAddress || dataAny.school_address || dataAny.vendorAddress || dataAny.vendor_address || dataAny.supplierAddress || dataAny.supplier_address || pod?.address || pod?.deliveryLocation || ""
   ).trim();
-  const resolvedRecipientPhone = formatPhone(String(
-    dataAny.phone || dataAny.customerPhone || dataAny.customer_phone || dataAny.schoolPhone || dataAny.school_phone || dataAny.vendorPhone || dataAny.vendor_phone || dataAny.supplierPhone || dataAny.supplier_phone || dataAny.recipientPhone || dataAny.recipient_phone || pod?.receiverPhone || pod?.recipientPhone || pod?.phone || ""
-  ).trim());
+  const resolvedRecipientPhone = formatPhone(
+    String(
+      dataAny.phone || dataAny.customerPhone || dataAny.customer_phone || dataAny.schoolPhone || dataAny.school_phone || dataAny.vendorPhone || dataAny.vendor_phone || dataAny.supplierPhone || dataAny.supplier_phone || dataAny.recipientPhone || dataAny.recipient_phone || pod?.receiverPhone || pod?.recipientPhone || pod?.phone || ""
+    ).trim()
+  );
   const items = dataAny.items || [];
   const subtotal = Number(dataAny.subtotal) || 0;
   const amountPaid = Number(dataAny.amountPaid) || 0;
@@ -234860,11 +235116,18 @@ var CleanInvoiceTemplate = ({
   const discountAmountText = discount > 0 ? `-${currency} ${discount.toLocaleString("en-US", { minimumFractionDigits: 2 })}` : "";
   const showInvoiceBalances = templateSettings.showOutstandingAndWalletBalances;
   const resolvedWalletBalance = Number(dataAny.walletBalance || 0);
-  const resolvedOutstandingBalance = Math.max(0, Number(dataAny.totalAmount || 0) - Number(dataAny.amountPaid || 0));
+  const resolvedOutstandingBalance = Math.max(
+    0,
+    Number(dataAny.totalAmount || 0) - Number(dataAny.amountPaid || 0)
+  );
   const showPaymentTerms = templateSettings.showPaymentTerms;
   const showAccountSummary = templateSettings.showAccountSummary;
   const paymentTermsLabel = String(dataAny.paymentTerms || "").trim() || getDefaultPaymentTermsLabel(config2);
-  const legalFooterLine1 = resolveFooterText(config2, paymentTermsLabel, showPaymentTerms);
+  const legalFooterLine1 = resolveFooterText(
+    config2,
+    paymentTermsLabel,
+    showPaymentTerms
+  );
   const legalFooterLine2 = buildFooterContactLine(config2);
   const renderRow2 = (item, i2) => {
     const isService = item.category === "service" || item.type === "service" || item.isService === true;
@@ -234888,228 +235151,1082 @@ var CleanInvoiceTemplate = ({
         formattedDesc = `${itemName} (${totalPages} pages \xD7 ${copies} copies)`;
       }
     }
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: monoLine(mode, "#e0e0e0"), minHeight: 24, alignItems: "center", paddingVertical: 4 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, "#334155"), textAlign: "center" }, children: i2 + 1 }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, color: monoText(mode, "#334155") }, children: formattedDesc }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, color: monoText(mode, "#334155"), textAlign: "right" }, children: qty }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: monoText(mode, "#334155"), textAlign: "right" }, children: isQP ? formatQuickPhotocopyPriceLabel(unitPrice, currency) : `${currency} ${unitPrice.toFixed(2)}` }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, color: monoText(mode, "#334155"), textAlign: "right" }, children: [
-        currency,
-        " ",
-        total.toFixed(2)
-      ] })
-    ] }, i2);
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+      View,
+      {
+        style: {
+          flexDirection: "row",
+          borderBottomWidth: 0.5,
+          borderBottomColor: monoLine(mode, "#e0e0e0"),
+          minHeight: 24,
+          alignItems: "center",
+          paddingVertical: 4
+        },
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                width: 44,
+                paddingHorizontal: 4,
+                fontSize: 10 * fontScale,
+                color: monoText(mode, "#334155"),
+                textAlign: "center"
+              },
+              children: i2 + 1
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                flex: 2,
+                paddingHorizontal: 8,
+                fontSize: 10 * fontScale,
+                color: monoText(mode, "#334155")
+              },
+              children: formattedDesc
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                width: 60,
+                paddingHorizontal: 8,
+                fontSize: 10 * fontScale,
+                color: monoText(mode, "#334155"),
+                textAlign: "right"
+              },
+              children: qty
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                width: 100,
+                paddingHorizontal: 8,
+                fontSize: 10 * fontScale,
+                color: monoText(mode, "#334155"),
+                textAlign: "right"
+              },
+              children: isQP ? formatQuickPhotocopyPriceLabel(unitPrice, currency) : `${currency} ${unitPrice.toFixed(2)}`
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            Text,
+            {
+              style: {
+                width: 100,
+                paddingHorizontal: 8,
+                fontSize: 10 * fontScale,
+                color: monoText(mode, "#334155"),
+                textAlign: "right"
+              },
+              children: [
+                currency,
+                " ",
+                total.toFixed(2)
+              ]
+            }
+          )
+        ]
+      },
+      i2
+    );
   };
   const isCancelled = isCancelledStatus(dataAny.status, dataAny);
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: docTitleForMeta, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: { padding: 40, paddingBottom: 100, fontFamily: templateSettings.fontFamily }, children: [
-    channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
-    isCancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 20 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-        !!logo ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: logo, style: { width: templateSettings.logoWidth, marginBottom: 10 } }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: templateSettings.companyNameFontSize, fontWeight: "bold", color: monoText(mode, accentColor), marginBottom: 8 }, children: companyName }),
-        !!companyAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: monoText(mode, "#64748b"), lineHeight: 1.4 }, children: companyAddress }),
-        !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: monoText(mode, "#64748b"), marginTop: 2 }, children: companyPhone }),
-        !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: monoText(mode, "#64748b"), marginTop: 2 }, children: companyEmail })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, alignItems: "flex-end", textAlign: "right" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 26 * fontScale, fontWeight: "300", color: monoText(mode, "#1e293b"), letterSpacing: 1.5 }, children: docTitle }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11 * fontScale, color: monoText(mode, "#475569"), marginTop: 8, fontWeight: "bold" }, children: invoiceNumber })
-      ] })
-    ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", marginBottom: 30, gap: 30 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", color: monoText(mode, "#94a3b8"), textTransform: "uppercase", marginBottom: 6, letterSpacing: 1 }, children: "Bill To" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11 * fontScale, fontWeight: "bold", color: monoText(mode, "#1e293b"), marginBottom: 4 }, children: resolvedRecipientName || "N/A" }),
-        !!resolvedRecipientAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#334155"), marginBottom: 3, lineHeight: 1.4 }, children: resolvedRecipientAddress }),
-        !!resolvedRecipientPhone && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#334155") }, children: resolvedRecipientPhone })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, alignItems: "flex-start" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 12 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", color: monoText(mode, "#94a3b8"), textTransform: "uppercase", marginBottom: 3, letterSpacing: 1 }, children: "Date" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#1e293b"), fontWeight: "bold" }, children: invoiceDate })
-        ] }),
-        Boolean(templateSettings.showDueDate) && !!dueDate && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 12 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", color: monoText(mode, "#94a3b8"), textTransform: "uppercase", marginBottom: 3, letterSpacing: 1 }, children: "Due Date" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#1e293b"), fontWeight: "bold" }, children: dueDate })
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flex: 1, alignItems: "center", justifyContent: "center" }, children: !!dataAny.status && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 4, borderWidth: 1, borderColor: monoLine(mode, getStatusTone(String(dataAny.status), mode).border), backgroundColor: monoFill(mode, getStatusTone(String(dataAny.status), mode).border + "15") }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 12 * fontScale, color: monoText(mode, getStatusTone(String(dataAny.status), mode).text), fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1 }, children: String(dataAny.status).toUpperCase() }) }) })
-    ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 20 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", backgroundColor: monoFill(mode, accentColor), borderRadius: 4, minHeight: 28, alignItems: "center" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, fontWeight: "bold", color: monoText(mode, "#ffffff"), textAlign: "center" }, children: "SN" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: monoText(mode, "#ffffff") }, children: "Description" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 60, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: monoText(mode, "#ffffff"), textAlign: "right" }, children: "Qty" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: monoText(mode, "#ffffff"), textAlign: "right" }, children: "Price" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 100, paddingHorizontal: 8, fontSize: 10 * fontScale, fontWeight: "bold", color: monoText(mode, "#ffffff"), textAlign: "right" }, children: "Amount" })
-      ] }),
-      items.map(renderRow2)
-    ] }),
-    type === "PO" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flexDirection: "row", justifyContent: "flex-end", marginTop: 15 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { minWidth: 220 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#475569") }, children: "Subtotal" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#1e293b"), fontWeight: "bold", textAlign: "right" }, children: [
-          currency,
-          " ",
-          subtotal.toLocaleString("en-US", { minimumFractionDigits: 2 })
-        ] })
-      ] }),
-      discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#475569") }, children: discountLabel }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#1e293b"), fontWeight: "bold", textAlign: "right" }, children: discountAmountText })
-      ] }),
-      tax > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#475569") }, children: "Tax" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#1e293b"), fontWeight: "bold", textAlign: "right" }, children: [
-          currency,
-          " ",
-          tax.toLocaleString("en-US", { minimumFractionDigits: 2 })
-        ] })
-      ] }),
-      dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#475569") }, children: [
-          "Rounding",
-          dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ""
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#1e293b"), fontWeight: "bold", textAlign: "right" }, children: [
-          currency,
-          " ",
-          Number(dataAny.roundingDifference).toLocaleString("en-US", { minimumFractionDigits: 2 })
-        ] })
-      ] }) : null,
-      type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4, marginTop: 4, borderTopWidth: 1, borderColor: monoLine(mode, "#e2e8f0"), paddingTop: 8 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#475569") }, children: "Amount Paid" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#1e293b"), fontWeight: "bold", textAlign: "right" }, children: [
-          currency,
-          " ",
-          amountPaid.toLocaleString("en-US", { minimumFractionDigits: 2 })
-        ] })
-      ] }),
-      type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 8, backgroundColor: monoFill(mode, accentColor + "15"), marginTop: 8, borderRadius: 4, paddingHorizontal: 8 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 11 * fontScale, fontWeight: "bold", color: monoText(mode, accentColor) }, children: "Balance Due" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11 * fontScale, fontWeight: "bold", color: monoText(mode, accentColor), textAlign: "right" }, children: [
-          currency,
-          " ",
-          (totalAmount - amountPaid).toLocaleString("en-US", { minimumFractionDigits: 2 })
-        ] })
-      ] })
-    ] }) }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 15 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flex: 1.5, paddingRight: 40 }, children: !!dataAny.notes && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", color: monoText(mode, "#94a3b8"), textTransform: "uppercase", marginBottom: 4, letterSpacing: 1 }, children: "Notes" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#475569"), lineHeight: 1.4 }, children: String(dataAny.notes) })
-      ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, minWidth: 220 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#475569") }, children: "Subtotal" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#1e293b"), fontWeight: "bold", textAlign: "right" }, children: [
-            currency,
-            " ",
-            subtotal.toLocaleString("en-US", { minimumFractionDigits: 2 })
-          ] })
-        ] }),
-        discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#475569") }, children: discountLabel }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#1e293b"), fontWeight: "bold", textAlign: "right" }, children: discountAmountText })
-        ] }),
-        tax > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#475569") }, children: "Tax" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#1e293b"), fontWeight: "bold", textAlign: "right" }, children: [
-            currency,
-            " ",
-            tax.toLocaleString("en-US", { minimumFractionDigits: 2 })
-          ] })
-        ] }),
-        dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#475569") }, children: [
-            "Rounding",
-            dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ""
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: docTitleForMeta, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+    Page,
+    {
+      size: "A4",
+      style: {
+        padding: 40,
+        paddingBottom: 100,
+        fontFamily: templateSettings.fontFamily
+      },
+      children: [
+        channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
+        isCancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+          View,
+          {
+            style: {
+              flexDirection: "row",
+              justifyContent: "space-between",
+              marginBottom: 20
+            },
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
+                !!logo ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Image,
+                  {
+                    src: logo,
+                    style: { width: templateSettings.logoWidth, marginBottom: 10 }
+                  }
+                ) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: templateSettings.companyNameFontSize,
+                      fontWeight: "bold",
+                      color: monoText(mode, accentColor),
+                      marginBottom: 8
+                    },
+                    children: companyName
+                  }
+                ),
+                !!companyAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 9 * fontScale,
+                      color: monoText(mode, "#64748b"),
+                      lineHeight: 1.4
+                    },
+                    children: companyAddress
+                  }
+                ),
+                !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 9 * fontScale,
+                      color: monoText(mode, "#64748b"),
+                      marginTop: 2
+                    },
+                    children: companyPhone
+                  }
+                ),
+                !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 9 * fontScale,
+                      color: monoText(mode, "#64748b"),
+                      marginTop: 2
+                    },
+                    children: companyEmail
+                  }
+                )
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, alignItems: "flex-end", textAlign: "right" }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 26 * fontScale,
+                      fontWeight: "300",
+                      color: monoText(mode, "#1e293b"),
+                      letterSpacing: 1.5
+                    },
+                    children: docTitle
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 11 * fontScale,
+                      color: monoText(mode, "#475569"),
+                      marginTop: 8,
+                      fontWeight: "bold"
+                    },
+                    children: invoiceNumber
+                  }
+                )
+              ] })
+            ]
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", marginBottom: 30, gap: 30 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              Text,
+              {
+                style: {
+                  fontSize: 8 * fontScale,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#94a3b8"),
+                  textTransform: "uppercase",
+                  marginBottom: 6,
+                  letterSpacing: 1
+                },
+                children: "Bill To"
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              Text,
+              {
+                style: {
+                  fontSize: 11 * fontScale,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#1e293b"),
+                  marginBottom: 4
+                },
+                children: resolvedRecipientName || "N/A"
+              }
+            ),
+            !!resolvedRecipientAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              Text,
+              {
+                style: {
+                  fontSize: 10 * fontScale,
+                  color: monoText(mode, "#334155"),
+                  marginBottom: 3,
+                  lineHeight: 1.4
+                },
+                children: resolvedRecipientAddress
+              }
+            ),
+            !!resolvedRecipientPhone && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              Text,
+              {
+                style: {
+                  fontSize: 10 * fontScale,
+                  color: monoText(mode, "#334155")
+                },
+                children: resolvedRecipientPhone
+              }
+            )
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#1e293b"), fontWeight: "bold", textAlign: "right" }, children: [
-            currency,
-            " ",
-            Number(dataAny.roundingDifference).toLocaleString("en-US", { minimumFractionDigits: 2 })
-          ] })
-        ] }) : null,
-        type !== "INVOICE" && type !== "ORDER" && type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignSelf: "flex-end", width: 220, flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, borderTopWidth: 1, borderColor: monoLine(mode, "#e2e8f0"), marginTop: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11 * fontScale, fontWeight: "bold", color: monoText(mode, "#1e293b") }, children: "Total Amount" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11 * fontScale, fontWeight: "bold", color: monoText(mode, "#1e293b"), textAlign: "right" }, children: [
-            currency,
-            " ",
-            totalAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })
-          ] })
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, alignItems: "flex-start" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 12 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                Text,
+                {
+                  style: {
+                    fontSize: 8 * fontScale,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#94a3b8"),
+                    textTransform: "uppercase",
+                    marginBottom: 3,
+                    letterSpacing: 1
+                  },
+                  children: "Date"
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                Text,
+                {
+                  style: {
+                    fontSize: 10 * fontScale,
+                    color: monoText(mode, "#1e293b"),
+                    fontWeight: "bold"
+                  },
+                  children: invoiceDate
+                }
+              )
+            ] }),
+            Boolean(templateSettings.showDueDate) && !!dueDate && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 12 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                Text,
+                {
+                  style: {
+                    fontSize: 8 * fontScale,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#94a3b8"),
+                    textTransform: "uppercase",
+                    marginBottom: 3,
+                    letterSpacing: 1
+                  },
+                  children: "Due Date"
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                Text,
+                {
+                  style: {
+                    fontSize: 10 * fontScale,
+                    color: monoText(mode, "#1e293b"),
+                    fontWeight: "bold"
+                  },
+                  children: dueDate
+                }
+              )
+            ] })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            View,
+            {
+              style: { flex: 1, alignItems: "center", justifyContent: "center" },
+              children: !!dataAny.status && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                View,
+                {
+                  style: {
+                    paddingVertical: 8,
+                    paddingHorizontal: 12,
+                    borderRadius: 4,
+                    borderWidth: 1,
+                    borderColor: monoLine(
+                      mode,
+                      getStatusTone(String(dataAny.status), mode).border
+                    ),
+                    backgroundColor: monoFill(
+                      mode,
+                      getStatusTone(String(dataAny.status), mode).border + "15"
+                    )
+                  },
+                  children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 12 * fontScale,
+                        color: monoText(
+                          mode,
+                          getStatusTone(String(dataAny.status), mode).text
+                        ),
+                        fontWeight: "bold",
+                        textTransform: "uppercase",
+                        letterSpacing: 1
+                      },
+                      children: String(dataAny.status).toUpperCase()
+                    }
+                  )
+                }
+              )
+            }
+          )
         ] }),
-        type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4, marginTop: type === "INVOICE" || type === "ORDER" ? 4 : 0, borderTopWidth: type === "INVOICE" || type === "ORDER" ? 1 : 0, borderColor: monoLine(mode, "#e2e8f0"), paddingTop: type === "INVOICE" || type === "ORDER" ? 8 : 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#475569") }, children: "Amount Paid" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: 10 * fontScale, color: monoText(mode, "#1e293b"), fontWeight: "bold", textAlign: "right" }, children: [
-            currency,
-            " ",
-            amountPaid.toLocaleString("en-US", { minimumFractionDigits: 2 })
-          ] })
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 20 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                flexDirection: "row",
+                backgroundColor: monoFill(mode, accentColor),
+                borderRadius: 4,
+                minHeight: 28,
+                alignItems: "center"
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      width: 44,
+                      paddingHorizontal: 4,
+                      fontSize: 10 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#ffffff"),
+                      textAlign: "center"
+                    },
+                    children: "SN"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      flex: 2,
+                      paddingHorizontal: 8,
+                      fontSize: 10 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#ffffff")
+                    },
+                    children: "Description"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      width: 60,
+                      paddingHorizontal: 8,
+                      fontSize: 10 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#ffffff"),
+                      textAlign: "right"
+                    },
+                    children: "Qty"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      width: 100,
+                      paddingHorizontal: 8,
+                      fontSize: 10 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#ffffff"),
+                      textAlign: "right"
+                    },
+                    children: "Price"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      width: 100,
+                      paddingHorizontal: 8,
+                      fontSize: 10 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#ffffff"),
+                      textAlign: "right"
+                    },
+                    children: "Amount"
+                  }
+                )
+              ]
+            }
+          ),
+          items.map(renderRow2)
         ] }),
-        type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 8, backgroundColor: monoFill(mode, accentColor + "15"), marginTop: 8, borderRadius: 4, paddingHorizontal: 8 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 11 * fontScale, fontWeight: "bold", color: monoText(mode, accentColor) }, children: "Balance Due" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 11 * fontScale, fontWeight: "bold", color: monoText(mode, accentColor), textAlign: "right" }, children: [
-            currency,
-            " ",
-            (totalAmount - amountPaid).toLocaleString("en-US", { minimumFractionDigits: 2 })
-          ] })
-        ] }),
-        type === "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 8, backgroundColor: monoFill(mode, accentColor + "15"), marginTop: 8, borderRadius: 4, paddingHorizontal: 8 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 11 * fontScale, fontWeight: "bold", color: monoText(mode, accentColor) }, children: "Recurring Total" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: 11 * fontScale, fontWeight: "bold", color: monoText(mode, accentColor), textAlign: "right" }, children: [
-            currency,
-            " ",
-            totalAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })
-          ] })
-        ] })
-      ] })
-    ] }),
-    type === "INVOICE" && showInvoiceBalances && Number(dataAny?.totalCustomerOutstanding || 0) > 0 && (() => {
-      const totalOutstanding = Number(dataAny.totalCustomerOutstanding || 0);
-      const todayStr = (/* @__PURE__ */ new Date()).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 15, padding: 8, backgroundColor: monoFill(mode, "#f0f9ff"), borderRadius: 4, borderLeftWidth: 3, borderLeftColor: monoLine(mode, "#0ea5e9") }, wrap: false, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#0369a1"), lineHeight: 1.4 }, children: [
-        "Your overall outstanding balance is ",
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
-          currency,
-          " ",
-          totalOutstanding.toLocaleString("en-US", { minimumFractionDigits: 2 })
-        ] }),
-        ` as of ${todayStr}`
-      ] }) });
-    })(),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { wrap: false, style: { marginTop: 15, flex: 1 }, children: showAccountSummary ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-      InvoiceInfoPanel,
-      {
-        colorMode: mode,
-        type: "account_summary",
-        settings: templateSettings,
-        data: dataAny,
-        config: config2,
-        fontScale
-      }
-    ) : templateSettings.showPaymentTerms ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-      InvoiceInfoPanel,
-      {
-        colorMode: mode,
-        type: "payment_terms",
-        settings: templateSettings,
-        data: dataAny,
-        config: config2,
-        fontScale
-      }
-    ) : null }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-      SecurityFooter,
-      {
-        colorMode: mode,
-        data: dataAny,
-        companyName,
-        legalFooterLine1,
-        legalFooterLine2,
-        fontScale
-      }
-    )
-  ] }) });
+        type === "PO" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          View,
+          {
+            style: {
+              flexDirection: "row",
+              justifyContent: "flex-end",
+              marginTop: 15
+            },
+            children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { minWidth: 220 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#475569")
+                    },
+                    children: "Subtotal"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#1e293b"),
+                      fontWeight: "bold",
+                      textAlign: "right"
+                    },
+                    children: [
+                      currency,
+                      " ",
+                      subtotal.toLocaleString("en-US", {
+                        minimumFractionDigits: 2
+                      })
+                    ]
+                  }
+                )
+              ] }),
+              discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#475569")
+                    },
+                    children: discountLabel
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#1e293b"),
+                      fontWeight: "bold",
+                      textAlign: "right"
+                    },
+                    children: discountAmountText
+                  }
+                )
+              ] }),
+              tax > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#475569")
+                    },
+                    children: "Tax"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#1e293b"),
+                      fontWeight: "bold",
+                      textAlign: "right"
+                    },
+                    children: [
+                      currency,
+                      " ",
+                      tax.toLocaleString("en-US", { minimumFractionDigits: 2 })
+                    ]
+                  }
+                )
+              ] }),
+              dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#475569")
+                    },
+                    children: [
+                      "Rounding",
+                      dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ""
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      flex: 1,
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#1e293b"),
+                      fontWeight: "bold",
+                      textAlign: "right"
+                    },
+                    children: [
+                      currency,
+                      " ",
+                      Number(dataAny.roundingDifference).toLocaleString(
+                        "en-US",
+                        { minimumFractionDigits: 2 }
+                      )
+                    ]
+                  }
+                )
+              ] }) : null,
+              type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                View,
+                {
+                  style: {
+                    flexDirection: "row",
+                    paddingVertical: 4,
+                    marginTop: 4,
+                    borderTopWidth: 1,
+                    borderColor: monoLine(mode, "#e2e8f0"),
+                    paddingTop: 8
+                  },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                      Text,
+                      {
+                        style: {
+                          flex: 1,
+                          fontSize: 10 * fontScale,
+                          color: monoText(mode, "#475569")
+                        },
+                        children: "Amount Paid"
+                      }
+                    ),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                      Text,
+                      {
+                        style: {
+                          flex: 1,
+                          fontSize: 10 * fontScale,
+                          color: monoText(mode, "#1e293b"),
+                          fontWeight: "bold",
+                          textAlign: "right"
+                        },
+                        children: [
+                          currency,
+                          " ",
+                          amountPaid.toLocaleString("en-US", {
+                            minimumFractionDigits: 2
+                          })
+                        ]
+                      }
+                    )
+                  ]
+                }
+              ),
+              type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                View,
+                {
+                  style: {
+                    flexDirection: "row",
+                    paddingVertical: 8,
+                    backgroundColor: monoFill(mode, accentColor + "15"),
+                    marginTop: 8,
+                    borderRadius: 4,
+                    paddingHorizontal: 8
+                  },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                      Text,
+                      {
+                        style: {
+                          flex: 1,
+                          fontSize: 11 * fontScale,
+                          fontWeight: "bold",
+                          color: monoText(mode, accentColor)
+                        },
+                        children: "Balance Due"
+                      }
+                    ),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                      Text,
+                      {
+                        style: {
+                          fontSize: 11 * fontScale,
+                          fontWeight: "bold",
+                          color: monoText(mode, accentColor),
+                          textAlign: "right"
+                        },
+                        children: [
+                          currency,
+                          " ",
+                          (totalAmount - amountPaid).toLocaleString("en-US", {
+                            minimumFractionDigits: 2
+                          })
+                        ]
+                      }
+                    )
+                  ]
+                }
+              )
+            ] })
+          }
+        ) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+          View,
+          {
+            style: {
+              flexDirection: "row",
+              justifyContent: "space-between",
+              marginTop: 15
+            },
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flex: 1.5, paddingRight: 40 }, children: !!dataAny.notes && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 8 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#94a3b8"),
+                      textTransform: "uppercase",
+                      marginBottom: 4,
+                      letterSpacing: 1
+                    },
+                    children: "Notes"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#475569"),
+                      lineHeight: 1.4
+                    },
+                    children: String(dataAny.notes)
+                  }
+                )
+              ] }) }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, minWidth: 220 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        flex: 1,
+                        fontSize: 10 * fontScale,
+                        color: monoText(mode, "#475569")
+                      },
+                      children: "Subtotal"
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    Text,
+                    {
+                      style: {
+                        flex: 1,
+                        fontSize: 10 * fontScale,
+                        color: monoText(mode, "#1e293b"),
+                        fontWeight: "bold",
+                        textAlign: "right"
+                      },
+                      children: [
+                        currency,
+                        " ",
+                        subtotal.toLocaleString("en-US", {
+                          minimumFractionDigits: 2
+                        })
+                      ]
+                    }
+                  )
+                ] }),
+                discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        flex: 1,
+                        fontSize: 10 * fontScale,
+                        color: monoText(mode, "#475569")
+                      },
+                      children: discountLabel
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        flex: 1,
+                        fontSize: 10 * fontScale,
+                        color: monoText(mode, "#1e293b"),
+                        fontWeight: "bold",
+                        textAlign: "right"
+                      },
+                      children: discountAmountText
+                    }
+                  )
+                ] }),
+                tax > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        flex: 1,
+                        fontSize: 10 * fontScale,
+                        color: monoText(mode, "#475569")
+                      },
+                      children: "Tax"
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    Text,
+                    {
+                      style: {
+                        flex: 1,
+                        fontSize: 10 * fontScale,
+                        color: monoText(mode, "#1e293b"),
+                        fontWeight: "bold",
+                        textAlign: "right"
+                      },
+                      children: [
+                        currency,
+                        " ",
+                        tax.toLocaleString("en-US", { minimumFractionDigits: 2 })
+                      ]
+                    }
+                  )
+                ] }),
+                dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 4 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    Text,
+                    {
+                      style: {
+                        flex: 1,
+                        fontSize: 10 * fontScale,
+                        color: monoText(mode, "#475569")
+                      },
+                      children: [
+                        "Rounding",
+                        dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ""
+                      ]
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    Text,
+                    {
+                      style: {
+                        flex: 1,
+                        fontSize: 10 * fontScale,
+                        color: monoText(mode, "#1e293b"),
+                        fontWeight: "bold",
+                        textAlign: "right"
+                      },
+                      children: [
+                        currency,
+                        " ",
+                        Number(dataAny.roundingDifference).toLocaleString(
+                          "en-US",
+                          { minimumFractionDigits: 2 }
+                        )
+                      ]
+                    }
+                  )
+                ] }) : null,
+                type !== "INVOICE" && type !== "ORDER" && type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      alignSelf: "flex-end",
+                      width: 220,
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      paddingVertical: 6,
+                      borderTopWidth: 1,
+                      borderColor: monoLine(mode, "#e2e8f0"),
+                      marginTop: 4
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 11 * fontScale,
+                            fontWeight: "bold",
+                            color: monoText(mode, "#1e293b")
+                          },
+                          children: "Total Amount"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 11 * fontScale,
+                            fontWeight: "bold",
+                            color: monoText(mode, "#1e293b"),
+                            textAlign: "right"
+                          },
+                          children: [
+                            currency,
+                            " ",
+                            totalAmount.toLocaleString("en-US", {
+                              minimumFractionDigits: 2
+                            })
+                          ]
+                        }
+                      )
+                    ]
+                  }
+                ),
+                type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      paddingVertical: 4,
+                      marginTop: type === "INVOICE" || type === "ORDER" ? 4 : 0,
+                      borderTopWidth: type === "INVOICE" || type === "ORDER" ? 1 : 0,
+                      borderColor: monoLine(mode, "#e2e8f0"),
+                      paddingTop: type === "INVOICE" || type === "ORDER" ? 8 : 4
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            flex: 1,
+                            fontSize: 10 * fontScale,
+                            color: monoText(mode, "#475569")
+                          },
+                          children: "Amount Paid"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            flex: 1,
+                            fontSize: 10 * fontScale,
+                            color: monoText(mode, "#1e293b"),
+                            fontWeight: "bold",
+                            textAlign: "right"
+                          },
+                          children: [
+                            currency,
+                            " ",
+                            amountPaid.toLocaleString("en-US", {
+                              minimumFractionDigits: 2
+                            })
+                          ]
+                        }
+                      )
+                    ]
+                  }
+                ),
+                type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      paddingVertical: 8,
+                      backgroundColor: monoFill(mode, accentColor + "15"),
+                      marginTop: 8,
+                      borderRadius: 4,
+                      paddingHorizontal: 8
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            flex: 1,
+                            fontSize: 11 * fontScale,
+                            fontWeight: "bold",
+                            color: monoText(mode, accentColor)
+                          },
+                          children: "Balance Due"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 11 * fontScale,
+                            fontWeight: "bold",
+                            color: monoText(mode, accentColor),
+                            textAlign: "right"
+                          },
+                          children: [
+                            currency,
+                            " ",
+                            (totalAmount - amountPaid).toLocaleString("en-US", {
+                              minimumFractionDigits: 2
+                            })
+                          ]
+                        }
+                      )
+                    ]
+                  }
+                ),
+                type === "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      paddingVertical: 8,
+                      backgroundColor: monoFill(mode, accentColor + "15"),
+                      marginTop: 8,
+                      borderRadius: 4,
+                      paddingHorizontal: 8
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            flex: 1,
+                            fontSize: 11 * fontScale,
+                            fontWeight: "bold",
+                            color: monoText(mode, accentColor)
+                          },
+                          children: "Recurring Total"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            flex: 1,
+                            fontSize: 11 * fontScale,
+                            fontWeight: "bold",
+                            color: monoText(mode, accentColor),
+                            textAlign: "right"
+                          },
+                          children: [
+                            currency,
+                            " ",
+                            totalAmount.toLocaleString("en-US", {
+                              minimumFractionDigits: 2
+                            })
+                          ]
+                        }
+                      )
+                    ]
+                  }
+                )
+              ] })
+            ]
+          }
+        ),
+        type === "INVOICE" && showInvoiceBalances && Number(dataAny?.totalCustomerOutstanding || 0) > 0 && (() => {
+          const totalOutstanding = Number(
+            dataAny.totalCustomerOutstanding || 0
+          );
+          const todayStr = (/* @__PURE__ */ new Date()).toLocaleDateString("en-GB", {
+            day: "numeric",
+            month: "long",
+            year: "numeric"
+          });
+          return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            View,
+            {
+              style: {
+                marginTop: 15,
+                padding: 8,
+                backgroundColor: monoFill(mode, "#f0f9ff"),
+                borderRadius: 4,
+                borderLeftWidth: 3,
+                borderLeftColor: monoLine(mode, "#0ea5e9")
+              },
+              wrap: false,
+              children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                Text,
+                {
+                  style: {
+                    fontSize: 10 * fontScale,
+                    color: monoText(mode, "#0369a1"),
+                    lineHeight: 1.4
+                  },
+                  children: [
+                    "Your overall outstanding balance is ",
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
+                      currency,
+                      " ",
+                      totalOutstanding.toLocaleString("en-US", {
+                        minimumFractionDigits: 2
+                      })
+                    ] }),
+                    ` as of ${todayStr}`
+                  ]
+                }
+              )
+            }
+          );
+        })(),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { wrap: false, style: { marginTop: 15, flex: 1 }, children: showAccountSummary ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          InvoiceInfoPanel,
+          {
+            colorMode: mode,
+            type: "account_summary",
+            settings: templateSettings,
+            data: dataAny,
+            config: config2,
+            fontScale
+          }
+        ) : templateSettings.showPaymentTerms ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          InvoiceInfoPanel,
+          {
+            colorMode: mode,
+            type: "payment_terms",
+            settings: templateSettings,
+            data: dataAny,
+            config: config2,
+            fontScale
+          }
+        ) : null }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          SecurityFooter,
+          {
+            colorMode: mode,
+            data: dataAny,
+            companyName,
+            legalFooterLine1,
+            legalFooterLine2,
+            fontScale
+          }
+        )
+      ]
+    }
+  ) });
 };
 var ModernInvoiceTemplate = ({
   type,
@@ -235140,7 +236257,9 @@ var ModernInvoiceTemplate = ({
   const titleFirst = titleWords[0];
   const titleRest = titleWords.slice(1).join(" ");
   const pod = dataAny.proofOfDelivery;
-  const invoiceNumber = String(dataAny.invoiceNumber || dataAny.orderNumber || dataAny.number || dataAny.quotationNumber || (/* @__PURE__ */ new Date()).getTime());
+  const invoiceNumber = String(
+    dataAny.invoiceNumber || dataAny.orderNumber || dataAny.number || dataAny.quotationNumber || (/* @__PURE__ */ new Date()).getTime()
+  );
   const invoiceDate = String(dataAny.date || (/* @__PURE__ */ new Date()).toLocaleDateString());
   const docTitleForMeta = `${docTitle} ${invoiceNumber}`;
   const resolvedRecipientName = String(
@@ -235149,9 +236268,11 @@ var ModernInvoiceTemplate = ({
   const resolvedRecipientAddress = String(
     dataAny.address || dataAny.customerAddress || dataAny.customer_address || dataAny.billingAddress || dataAny.billing_address || dataAny.shippingAddress || dataAny.shipping_address || dataAny.schoolAddress || dataAny.school_address || dataAny.vendorAddress || dataAny.vendor_address || dataAny.supplierAddress || dataAny.supplier_address || pod?.address || pod?.deliveryLocation || ""
   ).trim();
-  const resolvedRecipientPhone = formatPhone(String(
-    dataAny.phone || dataAny.customerPhone || dataAny.customer_phone || dataAny.schoolPhone || dataAny.school_phone || dataAny.vendorPhone || dataAny.vendor_phone || dataAny.supplierPhone || dataAny.supplier_phone || dataAny.recipientPhone || dataAny.recipient_phone || pod?.receiverPhone || pod?.recipientPhone || pod?.phone || ""
-  ).trim());
+  const resolvedRecipientPhone = formatPhone(
+    String(
+      dataAny.phone || dataAny.customerPhone || dataAny.customer_phone || dataAny.schoolPhone || dataAny.school_phone || dataAny.vendorPhone || dataAny.vendor_phone || dataAny.supplierPhone || dataAny.supplier_phone || dataAny.recipientPhone || dataAny.recipient_phone || pod?.receiverPhone || pod?.recipientPhone || pod?.phone || ""
+    ).trim()
+  );
   const items = dataAny.items || [];
   const subtotal = Number(dataAny.subtotal) || 0;
   const amountPaid = Number(dataAny.amountPaid) || 0;
@@ -235164,10 +236285,15 @@ var ModernInvoiceTemplate = ({
   const showDueDate = templateSettings.showDueDate;
   const showInvoiceBalances = templateSettings.showOutstandingAndWalletBalances;
   const showAccountSummary = templateSettings.showAccountSummary;
-  const resolvedOutstandingBalance = Math.max(0, Number(dataAny.totalAmount || 0) - Number(dataAny.amountPaid || 0));
+  const resolvedOutstandingBalance = Math.max(
+    0,
+    Number(dataAny.totalAmount || 0) - Number(dataAny.amountPaid || 0)
+  );
   const outstandingDisplay = showInvoiceBalances && type === "INVOICE" ? resolvedOutstandingBalance : totalAmount - amountPaid;
   const paymentTermsLabel = String(dataAny.paymentTerms || "").trim() || getDefaultPaymentTermsLabel(config2);
-  const qrCodeDataUrl = resolvePdfQrCodeSource(String(dataAny.securityQrCodeDataUrl || ""));
+  const qrCodeDataUrl = resolvePdfQrCodeSource(
+    String(dataAny.securityQrCodeDataUrl || "")
+  );
   const renderRow2 = (item, i2) => {
     const isService = item.category === "service" || item.type === "service" || item.isService === true;
     let formattedDesc = item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || "";
@@ -235191,188 +236317,947 @@ var ModernInvoiceTemplate = ({
       }
     }
     const bgColor = mode === "mono" ? i2 % 2 !== 0 ? "#e9e9e9" : "#fff" : i2 % 2 !== 0 ? "#F5F5F5" : "transparent";
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", backgroundColor: bgColor, minHeight: 28, alignItems: "center", paddingVertical: 6, paddingHorizontal: 4 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, "#333333"), textAlign: "center" }, children: i2 + 1 }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, "#333333") }, children: formattedDesc }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, "#333333"), textAlign: "right" }, children: qty }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, "#333333"), textAlign: "right" }, children: isQP ? formatQuickPhotocopyPriceLabel(unitPrice, currency) : `${currency} ${unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })}` }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, "#333333"), textAlign: "right" }, children: [
-        currency,
-        " ",
-        total.toLocaleString("en-US", { minimumFractionDigits: 2 })
-      ] })
-    ] }, i2);
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+      View,
+      {
+        style: {
+          flexDirection: "row",
+          backgroundColor: bgColor,
+          minHeight: 28,
+          alignItems: "center",
+          paddingVertical: 6,
+          paddingHorizontal: 4
+        },
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                width: 44,
+                paddingHorizontal: 4,
+                fontSize: 10 * fontScale,
+                color: monoText(mode, "#333333"),
+                textAlign: "center"
+              },
+              children: i2 + 1
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                flex: 2.2,
+                paddingHorizontal: 4,
+                fontSize: 10 * fontScale,
+                color: monoText(mode, "#333333")
+              },
+              children: formattedDesc
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                width: 60,
+                paddingHorizontal: 4,
+                fontSize: 10 * fontScale,
+                color: monoText(mode, "#333333"),
+                textAlign: "right"
+              },
+              children: qty
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                width: 110,
+                paddingHorizontal: 4,
+                fontSize: 10 * fontScale,
+                color: monoText(mode, "#333333"),
+                textAlign: "right"
+              },
+              children: isQP ? formatQuickPhotocopyPriceLabel(unitPrice, currency) : `${currency} ${unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })}`
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            Text,
+            {
+              style: {
+                width: 110,
+                paddingHorizontal: 4,
+                fontSize: 10 * fontScale,
+                color: monoText(mode, "#333333"),
+                textAlign: "right"
+              },
+              children: [
+                currency,
+                " ",
+                total.toLocaleString("en-US", { minimumFractionDigits: 2 })
+              ]
+            }
+          )
+        ]
+      },
+      i2
+    );
   };
-  const isCancelled = isCancelledStatus(dataAny.paymentStatus || dataAny.status, dataAny);
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: docTitleForMeta, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: { paddingVertical: 45, paddingHorizontal: 40, fontFamily: templateSettings.fontFamily, backgroundColor: "#FFFFFF" }, children: [
-    channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
-    isCancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { alignItems: "center", marginBottom: 1.5 }, children: !!logo ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: logo, style: { width: templateSettings.logoWidth } }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#222222"), fontSize: templateSettings.logoWidth * 0.4, fontWeight: "bold" }, children: companyName.charAt(0) }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { alignItems: "center", marginBottom: 2 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 48 * fontScale, color: monoText(mode, "#111111") }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "heavy" }, children: titleFirst }),
-      !!titleRest && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontStyle: "italic", fontWeight: "normal", color: monoText(mode, "#333333") }, children: [
-        " ",
-        titleRest
-      ] })
-    ] }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 30, marginBottom: 20 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 12 * fontScale, color: monoText(mode, "#222222") }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: type === "INVOICE" ? "Invoice Number:" : "Reference Number:" }),
-        " ",
-        invoiceNumber
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 12 * fontScale, color: monoText(mode, "#222222") }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: type === "INVOICE" ? "Invoice Date:" : "Date:" }),
-        " ",
-        invoiceDate
-      ] })
-    ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 30 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, paddingRight: 20 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { backgroundColor: monoFill(mode, accentColor), paddingVertical: 6, paddingHorizontal: 12, alignSelf: "flex-start", marginBottom: 12, minWidth: 150 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#ffffff"), fontSize: 10 * fontScale, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1 }, children: "COMPANY INFO" }) }),
-        !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11 * fontScale, color: monoText(mode, "#333333"), marginBottom: 3 }, children: companyPhone }),
-        !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11 * fontScale, color: monoText(mode, "#333333"), marginBottom: 3 }, children: companyEmail })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { backgroundColor: monoFill(mode, accentColor), paddingVertical: 6, paddingHorizontal: 12, alignSelf: "flex-end", marginBottom: 12, minWidth: 150 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#ffffff"), fontSize: 10 * fontScale, fontWeight: "bold", textAlign: "right", textTransform: "uppercase", letterSpacing: 1 }, children: "BILL TO" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "flex-end" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 12 * fontScale, fontWeight: "bold", color: monoText(mode, "#111111"), marginBottom: 4 }, children: resolvedRecipientName }),
-          !!resolvedRecipientAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#333333"), textAlign: "right", lineHeight: 1.4 }, children: resolvedRecipientAddress }),
-          !!resolvedRecipientPhone && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#333333"), textAlign: "right", marginTop: 2 }, children: resolvedRecipientPhone })
-        ] })
-      ] })
-    ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 15 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", backgroundColor: monoFill(mode, accentColor), paddingVertical: 8, paddingHorizontal: 4, alignItems: "center" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: monoText(mode, "#ffffff"), textAlign: "center" }, children: "SN" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: monoText(mode, "#ffffff") }, children: "Description" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: monoText(mode, "#ffffff"), textAlign: "right" }, children: "Qty" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: monoText(mode, "#ffffff"), textAlign: "right" }, children: "Price" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 110, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: monoText(mode, "#ffffff"), textAlign: "right" }, children: "Amount" })
-      ] }),
-      items.map(renderRow2),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", backgroundColor: monoFill(mode, "#D9DEDE"), paddingVertical: 8, paddingHorizontal: 4, alignItems: "center", marginTop: 4 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, paddingHorizontal: 4, fontSize: 11 * fontScale, color: monoText(mode, "#111111"), textAlign: "center" }, children: "-" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: monoText(mode, "#111111") }, children: "Total Payment" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 60, paddingHorizontal: 4, fontSize: 11 * fontScale, color: monoText(mode, "#111111"), textAlign: "right" }, children: "-" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, color: monoText(mode, "#111111"), textAlign: "right" }, children: "-" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 100, paddingHorizontal: 4, fontSize: 11 * fontScale, fontWeight: "bold", color: monoText(mode, "#111111"), textAlign: "right" }, children: [
-          currency,
-          " ",
-          subtotal.toLocaleString("en-US", { minimumFractionDigits: 2 })
-        ] })
-      ] })
-    ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 15 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: 200 }, children: !!dataAny.notes && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 10 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 12 * fontScale, fontWeight: "bold", color: monoText(mode, "#111111"), marginBottom: 6 }, children: "Notes:" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#333333"), lineHeight: 1.5 }, children: String(dataAny.notes) }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: "100%", height: 1, backgroundColor: monoFill(mode, "#111111"), marginTop: 15 } })
-      ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { width: 220 }, children: [
-        tax > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, paddingRight: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#333333"), fontSize: 11 * fontScale }, children: "Tax" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: monoText(mode, "#333333"), fontSize: 11 * fontScale }, children: [
-            currency,
-            " ",
-            tax.toLocaleString("en-US", { minimumFractionDigits: 2 })
-          ] })
-        ] }),
-        discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, paddingRight: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#333333"), fontSize: 11 * fontScale }, children: discountLabel }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: monoText(mode, "#333333"), fontSize: 11 * fontScale }, children: [
-            "-",
-            currency,
-            " ",
-            discount.toLocaleString("en-US", { minimumFractionDigits: 2 })
-          ] })
-        ] }),
-        dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, paddingRight: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: monoText(mode, "#333333"), fontSize: 11 * fontScale }, children: [
-            "Rounding",
-            dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ""
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: monoText(mode, "#333333"), fontSize: 11 * fontScale }, children: [
-            currency,
-            " ",
-            Number(dataAny.roundingDifference).toLocaleString("en-US", { minimumFractionDigits: 2 })
-          ] })
-        ] }) : null,
-        amountPaid > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, paddingRight: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#333333"), fontSize: 11 * fontScale }, children: "Amount Paid" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: monoText(mode, "#333333"), fontSize: 11 * fontScale }, children: [
-            "-",
-            currency,
-            " ",
-            amountPaid.toLocaleString("en-US", { minimumFractionDigits: 2 })
-          ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", backgroundColor: monoFill(mode, "#Dce1e1"), paddingVertical: 8, paddingHorizontal: 6, marginTop: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#111111"), fontWeight: "bold", fontSize: 12 * fontScale }, children: "Balance Due" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: monoText(mode, "#111111"), fontWeight: "bold", fontSize: 12 * fontScale }, children: [
-            currency,
-            " ",
-            (totalAmount - amountPaid).toLocaleString("en-US", { minimumFractionDigits: 2 })
-          ] })
-        ] })
-      ] })
-    ] }),
-    type === "INVOICE" && showInvoiceBalances && Number(dataAny?.totalCustomerOutstanding || 0) > 0 && (() => {
-      const totalOutstanding = Number(dataAny.totalCustomerOutstanding || 0);
-      const todayStr = (/* @__PURE__ */ new Date()).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 15, padding: 8, backgroundColor: monoFill(mode, "#f0f9ff"), borderRadius: 4, borderLeftWidth: 3, borderLeftColor: monoLine(mode, "#0ea5e9") }, wrap: false, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#0369a1"), lineHeight: 1.4 }, children: [
-        "Your overall outstanding balance is ",
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
-          currency,
-          " ",
-          totalOutstanding.toLocaleString("en-US", { minimumFractionDigits: 2 })
-        ] }),
-        ` as of ${todayStr}`
-      ] }) });
-    })(),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginTop: 15, flex: 1, gap: 20 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "column", flex: 1 }, children: [
-        showAccountSummary ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-          InvoiceInfoPanel,
+  const isCancelled = isCancelledStatus(
+    dataAny.paymentStatus || dataAny.status,
+    dataAny
+  );
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: docTitleForMeta, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+    Page,
+    {
+      size: "A4",
+      style: {
+        paddingVertical: 45,
+        paddingHorizontal: 40,
+        fontFamily: templateSettings.fontFamily,
+        backgroundColor: "#FFFFFF"
+      },
+      children: [
+        channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
+        isCancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { alignItems: "center", marginBottom: 1.5 }, children: !!logo ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: logo, style: { width: templateSettings.logoWidth } }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          Text,
           {
-            colorMode: mode,
-            type: "account_summary",
-            settings: templateSettings,
-            data: dataAny,
-            config: config2,
-            fontScale
+            style: {
+              color: monoText(mode, "#222222"),
+              fontSize: templateSettings.logoWidth * 0.4,
+              fontWeight: "bold"
+            },
+            children: companyName.charAt(0)
           }
-        ) : templateSettings.showPaymentTerms ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-          InvoiceInfoPanel,
+        ) }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { alignItems: "center", marginBottom: 2 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+          Text,
           {
-            colorMode: mode,
-            type: "payment_terms",
-            settings: templateSettings,
-            data: dataAny,
-            config: config2,
-            fontScale
+            style: {
+              fontSize: 48 * fontScale,
+              color: monoText(mode, "#111111")
+            },
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "heavy" }, children: titleFirst }),
+              !!titleRest && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                Text,
+                {
+                  style: {
+                    fontStyle: "italic",
+                    fontWeight: "normal",
+                    color: monoText(mode, "#333333")
+                  },
+                  children: [
+                    " ",
+                    titleRest
+                  ]
+                }
+              )
+            ]
           }
-        ) : null,
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", alignItems: "flex-start", marginTop: 10, gap: 12 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { children: renderQrImage(qrCodeDataUrl, 56, false) || /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: 56, height: 56, backgroundColor: monoFill(mode, "#eeeeee") } }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { justifyContent: "center", flex: 1 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", fontSize: 11 * fontScale, color: monoText(mode, "#111111"), marginBottom: 4 }, children: "More Info:" }),
-            !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#333333"), marginBottom: 2 }, children: companyPhone }),
-            !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#333333") }, children: companyEmail })
-          ] })
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "center", minWidth: 160 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11 * fontScale, color: monoText(mode, "#222222"), marginBottom: 8 }, children: showDueDate && dueDate ? `Due Date: ${formatDateOnly(dueDate)}` : `Date: ${invoiceDate}` }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: "100%", height: 30, alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontFamily: templateSettings.fontFamily, fontStyle: "italic", fontSize: 22, color: monoText(mode, "#111111") }, children: companyName.split(" ")[0] }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: "100%", height: 1.5, backgroundColor: monoFill(mode, "#444444"), marginTop: 8, marginBottom: 4 } }),
-        dataAny.createdAtIso || dataAny.createdAt ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 8 * fontScale, color: monoText(mode, "#666666") }, children: [
-          "Ref: ",
-          String(dataAny.invoiceNumber || dataAny.orderNumber || dataAny.number || "N/A")
-        ] }) : null
-      ] })
-    ] })
-  ] }) });
+        ) }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+          View,
+          {
+            style: {
+              flexDirection: "row",
+              justifyContent: "space-between",
+              paddingHorizontal: 30,
+              marginBottom: 20
+            },
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                Text,
+                {
+                  style: {
+                    fontSize: 12 * fontScale,
+                    color: monoText(mode, "#222222")
+                  },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: type === "INVOICE" ? "Invoice Number:" : "Reference Number:" }),
+                    " ",
+                    invoiceNumber
+                  ]
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                Text,
+                {
+                  style: {
+                    fontSize: 12 * fontScale,
+                    color: monoText(mode, "#222222")
+                  },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: type === "INVOICE" ? "Invoice Date:" : "Date:" }),
+                    " ",
+                    invoiceDate
+                  ]
+                }
+              )
+            ]
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+          View,
+          {
+            style: {
+              flexDirection: "row",
+              justifyContent: "space-between",
+              marginBottom: 30
+            },
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, paddingRight: 20 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  View,
+                  {
+                    style: {
+                      backgroundColor: monoFill(mode, accentColor),
+                      paddingVertical: 6,
+                      paddingHorizontal: 12,
+                      alignSelf: "flex-start",
+                      marginBottom: 12,
+                      minWidth: 150
+                    },
+                    children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                      Text,
+                      {
+                        style: {
+                          color: monoText(mode, "#ffffff"),
+                          fontSize: 10 * fontScale,
+                          fontWeight: "bold",
+                          textTransform: "uppercase",
+                          letterSpacing: 1
+                        },
+                        children: "COMPANY INFO"
+                      }
+                    )
+                  }
+                ),
+                !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 11 * fontScale,
+                      color: monoText(mode, "#333333"),
+                      marginBottom: 3
+                    },
+                    children: companyPhone
+                  }
+                ),
+                !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 11 * fontScale,
+                      color: monoText(mode, "#333333"),
+                      marginBottom: 3
+                    },
+                    children: companyEmail
+                  }
+                )
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  View,
+                  {
+                    style: {
+                      backgroundColor: monoFill(mode, accentColor),
+                      paddingVertical: 6,
+                      paddingHorizontal: 12,
+                      alignSelf: "flex-end",
+                      marginBottom: 12,
+                      minWidth: 150
+                    },
+                    children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                      Text,
+                      {
+                        style: {
+                          color: monoText(mode, "#ffffff"),
+                          fontSize: 10 * fontScale,
+                          fontWeight: "bold",
+                          textAlign: "right",
+                          textTransform: "uppercase",
+                          letterSpacing: 1
+                        },
+                        children: "BILL TO"
+                      }
+                    )
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "flex-end" }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 12 * fontScale,
+                        fontWeight: "bold",
+                        color: monoText(mode, "#111111"),
+                        marginBottom: 4
+                      },
+                      children: resolvedRecipientName
+                    }
+                  ),
+                  !!resolvedRecipientAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 10 * fontScale,
+                        color: monoText(mode, "#333333"),
+                        textAlign: "right",
+                        lineHeight: 1.4
+                      },
+                      children: resolvedRecipientAddress
+                    }
+                  ),
+                  !!resolvedRecipientPhone && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 10 * fontScale,
+                        color: monoText(mode, "#333333"),
+                        textAlign: "right",
+                        marginTop: 2
+                      },
+                      children: resolvedRecipientPhone
+                    }
+                  )
+                ] })
+              ] })
+            ]
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 15 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                flexDirection: "row",
+                backgroundColor: monoFill(mode, accentColor),
+                paddingVertical: 8,
+                paddingHorizontal: 4,
+                alignItems: "center"
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      width: 44,
+                      paddingHorizontal: 4,
+                      fontSize: 11 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#ffffff"),
+                      textAlign: "center"
+                    },
+                    children: "SN"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      flex: 2.2,
+                      paddingHorizontal: 4,
+                      fontSize: 11 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#ffffff")
+                    },
+                    children: "Description"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      width: 60,
+                      paddingHorizontal: 4,
+                      fontSize: 11 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#ffffff"),
+                      textAlign: "right"
+                    },
+                    children: "Qty"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      width: 110,
+                      paddingHorizontal: 4,
+                      fontSize: 11 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#ffffff"),
+                      textAlign: "right"
+                    },
+                    children: "Price"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      width: 110,
+                      paddingHorizontal: 4,
+                      fontSize: 11 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#ffffff"),
+                      textAlign: "right"
+                    },
+                    children: "Amount"
+                  }
+                )
+              ]
+            }
+          ),
+          items.map(renderRow2),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                flexDirection: "row",
+                backgroundColor: monoFill(mode, "#D9DEDE"),
+                paddingVertical: 8,
+                paddingHorizontal: 4,
+                alignItems: "center",
+                marginTop: 4
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      width: 44,
+                      paddingHorizontal: 4,
+                      fontSize: 11 * fontScale,
+                      color: monoText(mode, "#111111"),
+                      textAlign: "center"
+                    },
+                    children: "-"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      flex: 2.2,
+                      paddingHorizontal: 4,
+                      fontSize: 11 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#111111")
+                    },
+                    children: "Total Payment"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      width: 60,
+                      paddingHorizontal: 4,
+                      fontSize: 11 * fontScale,
+                      color: monoText(mode, "#111111"),
+                      textAlign: "right"
+                    },
+                    children: "-"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      width: 100,
+                      paddingHorizontal: 4,
+                      fontSize: 11 * fontScale,
+                      color: monoText(mode, "#111111"),
+                      textAlign: "right"
+                    },
+                    children: "-"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      width: 100,
+                      paddingHorizontal: 4,
+                      fontSize: 11 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#111111"),
+                      textAlign: "right"
+                    },
+                    children: [
+                      currency,
+                      " ",
+                      subtotal.toLocaleString("en-US", { minimumFractionDigits: 2 })
+                    ]
+                  }
+                )
+              ]
+            }
+          )
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+          View,
+          {
+            style: {
+              flexDirection: "row",
+              justifyContent: "space-between",
+              marginTop: 15
+            },
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: 200 }, children: !!dataAny.notes && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 10 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 12 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#111111"),
+                      marginBottom: 6
+                    },
+                    children: "Notes:"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#333333"),
+                      lineHeight: 1.5
+                    },
+                    children: String(dataAny.notes)
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  View,
+                  {
+                    style: {
+                      width: "100%",
+                      height: 1,
+                      backgroundColor: monoFill(mode, "#111111"),
+                      marginTop: 15
+                    }
+                  }
+                )
+              ] }) }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { width: 220 }, children: [
+                tax > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      paddingVertical: 6,
+                      paddingRight: 4
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            color: monoText(mode, "#333333"),
+                            fontSize: 11 * fontScale
+                          },
+                          children: "Tax"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            color: monoText(mode, "#333333"),
+                            fontSize: 11 * fontScale
+                          },
+                          children: [
+                            currency,
+                            " ",
+                            tax.toLocaleString("en-US", { minimumFractionDigits: 2 })
+                          ]
+                        }
+                      )
+                    ]
+                  }
+                ),
+                discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      paddingVertical: 6,
+                      paddingRight: 4
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            color: monoText(mode, "#333333"),
+                            fontSize: 11 * fontScale
+                          },
+                          children: discountLabel
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            color: monoText(mode, "#333333"),
+                            fontSize: 11 * fontScale
+                          },
+                          children: [
+                            "-",
+                            currency,
+                            " ",
+                            discount.toLocaleString("en-US", {
+                              minimumFractionDigits: 2
+                            })
+                          ]
+                        }
+                      )
+                    ]
+                  }
+                ),
+                dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      paddingVertical: 6,
+                      paddingRight: 4
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            color: monoText(mode, "#333333"),
+                            fontSize: 11 * fontScale
+                          },
+                          children: [
+                            "Rounding",
+                            dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : ""
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            color: monoText(mode, "#333333"),
+                            fontSize: 11 * fontScale
+                          },
+                          children: [
+                            currency,
+                            " ",
+                            Number(dataAny.roundingDifference).toLocaleString("en-US", {
+                              minimumFractionDigits: 2
+                            })
+                          ]
+                        }
+                      )
+                    ]
+                  }
+                ) : null,
+                amountPaid > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      paddingVertical: 6,
+                      paddingRight: 4
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            color: monoText(mode, "#333333"),
+                            fontSize: 11 * fontScale
+                          },
+                          children: "Amount Paid"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            color: monoText(mode, "#333333"),
+                            fontSize: 11 * fontScale
+                          },
+                          children: [
+                            "-",
+                            currency,
+                            " ",
+                            amountPaid.toLocaleString("en-US", {
+                              minimumFractionDigits: 2
+                            })
+                          ]
+                        }
+                      )
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      backgroundColor: monoFill(mode, "#Dce1e1"),
+                      paddingVertical: 8,
+                      paddingHorizontal: 6,
+                      marginTop: 4
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            color: monoText(mode, "#111111"),
+                            fontWeight: "bold",
+                            fontSize: 12 * fontScale
+                          },
+                          children: "Balance Due"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            color: monoText(mode, "#111111"),
+                            fontWeight: "bold",
+                            fontSize: 12 * fontScale
+                          },
+                          children: [
+                            currency,
+                            " ",
+                            (totalAmount - amountPaid).toLocaleString("en-US", {
+                              minimumFractionDigits: 2
+                            })
+                          ]
+                        }
+                      )
+                    ]
+                  }
+                )
+              ] })
+            ]
+          }
+        ),
+        type === "INVOICE" && showInvoiceBalances && Number(dataAny?.totalCustomerOutstanding || 0) > 0 && (() => {
+          const totalOutstanding = Number(
+            dataAny.totalCustomerOutstanding || 0
+          );
+          const todayStr = (/* @__PURE__ */ new Date()).toLocaleDateString("en-GB", {
+            day: "numeric",
+            month: "long",
+            year: "numeric"
+          });
+          return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            View,
+            {
+              style: {
+                marginTop: 15,
+                padding: 8,
+                backgroundColor: monoFill(mode, "#f0f9ff"),
+                borderRadius: 4,
+                borderLeftWidth: 3,
+                borderLeftColor: monoLine(mode, "#0ea5e9")
+              },
+              wrap: false,
+              children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                Text,
+                {
+                  style: {
+                    fontSize: 10 * fontScale,
+                    color: monoText(mode, "#0369a1"),
+                    lineHeight: 1.4
+                  },
+                  children: [
+                    "Your overall outstanding balance is ",
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
+                      currency,
+                      " ",
+                      totalOutstanding.toLocaleString("en-US", {
+                        minimumFractionDigits: 2
+                      })
+                    ] }),
+                    ` as of ${todayStr}`
+                  ]
+                }
+              )
+            }
+          );
+        })(),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+          View,
+          {
+            wrap: false,
+            style: {
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              marginTop: 15,
+              flex: 1,
+              gap: 20
+            },
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "column", flex: 1 }, children: [
+                showAccountSummary ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  InvoiceInfoPanel,
+                  {
+                    colorMode: mode,
+                    type: "account_summary",
+                    settings: templateSettings,
+                    data: dataAny,
+                    config: config2,
+                    fontScale
+                  }
+                ) : templateSettings.showPaymentTerms ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  InvoiceInfoPanel,
+                  {
+                    colorMode: mode,
+                    type: "payment_terms",
+                    settings: templateSettings,
+                    data: dataAny,
+                    config: config2,
+                    fontScale
+                  }
+                ) : null,
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      alignItems: "flex-start",
+                      marginTop: 10,
+                      gap: 12
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { children: renderQrImage(qrCodeDataUrl, 56, false) || /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        View,
+                        {
+                          style: {
+                            width: 56,
+                            height: 56,
+                            backgroundColor: monoFill(mode, "#eeeeee")
+                          }
+                        }
+                      ) }),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { justifyContent: "center", flex: 1 }, children: [
+                        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                          Text,
+                          {
+                            style: {
+                              fontWeight: "bold",
+                              fontSize: 11 * fontScale,
+                              color: monoText(mode, "#111111"),
+                              marginBottom: 4
+                            },
+                            children: "More Info:"
+                          }
+                        ),
+                        !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                          Text,
+                          {
+                            style: {
+                              fontSize: 10 * fontScale,
+                              color: monoText(mode, "#333333"),
+                              marginBottom: 2
+                            },
+                            children: companyPhone
+                          }
+                        ),
+                        !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                          Text,
+                          {
+                            style: {
+                              fontSize: 10 * fontScale,
+                              color: monoText(mode, "#333333")
+                            },
+                            children: companyEmail
+                          }
+                        )
+                      ] })
+                    ]
+                  }
+                )
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "center", minWidth: 160 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 11 * fontScale,
+                      color: monoText(mode, "#222222"),
+                      marginBottom: 8
+                    },
+                    children: showDueDate && dueDate ? `Due Date: ${formatDateOnly(dueDate)}` : `Date: ${invoiceDate}`
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  View,
+                  {
+                    style: {
+                      width: "100%",
+                      height: 30,
+                      alignItems: "center",
+                      justifyContent: "center"
+                    },
+                    children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                      Text,
+                      {
+                        style: {
+                          fontFamily: templateSettings.fontFamily,
+                          fontStyle: "italic",
+                          fontSize: 22,
+                          color: monoText(mode, "#111111")
+                        },
+                        children: companyName.split(" ")[0]
+                      }
+                    )
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  View,
+                  {
+                    style: {
+                      width: "100%",
+                      height: 1.5,
+                      backgroundColor: monoFill(mode, "#444444"),
+                      marginTop: 8,
+                      marginBottom: 4
+                    }
+                  }
+                ),
+                dataAny.createdAtIso || dataAny.createdAt ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 8 * fontScale,
+                      color: monoText(mode, "#666666")
+                    },
+                    children: [
+                      "Ref:",
+                      " ",
+                      String(
+                        dataAny.invoiceNumber || dataAny.orderNumber || dataAny.number || "N/A"
+                      )
+                    ]
+                  }
+                ) : null
+              ] })
+            ]
+          }
+        )
+      ]
+    }
+  ) });
 };
 var ProfessionalInvoiceTemplate = ({
   type,
@@ -235384,7 +237269,13 @@ var ProfessionalInvoiceTemplate = ({
 }) => {
   const dataAny = data2;
   const fontScale = templateSettings.bodyFontSize / 12;
-  const { companyName, companyAddress, formattedPhone, companyPhone, companyEmail } = normalizeCompanyIdentity(config2);
+  const {
+    companyName,
+    companyAddress,
+    formattedPhone,
+    companyPhone,
+    companyEmail
+  } = normalizeCompanyIdentity(config2);
   const currency = config2?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || "K";
   const logo = resolvePdfLogoSource(config2, templateSettings.showCompanyLogo);
   const accentColor = templateSettings.accentColor || "#E8450A";
@@ -235394,7 +237285,9 @@ var ProfessionalInvoiceTemplate = ({
   else if (type === "PO") docTitle = "PURCHASE ORDER";
   else if (type === "SUBSCRIPTION") docTitle = "RECURRING INVOICE";
   const pod = dataAny.proofOfDelivery;
-  const invoiceNumber = String(dataAny.invoiceNumber || dataAny.orderNumber || dataAny.number || dataAny.quotationNumber || (/* @__PURE__ */ new Date()).getTime());
+  const invoiceNumber = String(
+    dataAny.invoiceNumber || dataAny.orderNumber || dataAny.number || dataAny.quotationNumber || (/* @__PURE__ */ new Date()).getTime()
+  );
   const invoiceDate = String(dataAny.date || (/* @__PURE__ */ new Date()).toLocaleDateString());
   const dueDate = dataAny.dueDate ? String(dataAny.dueDate) : void 0;
   const docTitleForMeta = `${docTitle} ${invoiceNumber}`;
@@ -235404,9 +237297,11 @@ var ProfessionalInvoiceTemplate = ({
   const resolvedRecipientAddress = String(
     dataAny.address || dataAny.customerAddress || dataAny.customer_address || dataAny.billingAddress || dataAny.billing_address || dataAny.shippingAddress || dataAny.shipping_address || dataAny.schoolAddress || dataAny.school_address || dataAny.vendorAddress || dataAny.vendor_address || dataAny.supplierAddress || dataAny.supplier_address || pod?.address || pod?.deliveryLocation || ""
   ).trim();
-  const resolvedRecipientPhone = formatPhone(String(
-    dataAny.phone || dataAny.customerPhone || dataAny.customer_phone || dataAny.schoolPhone || dataAny.school_phone || dataAny.vendorPhone || dataAny.vendor_phone || dataAny.supplierPhone || dataAny.supplier_phone || dataAny.recipientPhone || dataAny.recipient_phone || pod?.receiverPhone || pod?.recipientPhone || pod?.phone || ""
-  ).trim());
+  const resolvedRecipientPhone = formatPhone(
+    String(
+      dataAny.phone || dataAny.customerPhone || dataAny.customer_phone || dataAny.schoolPhone || dataAny.school_phone || dataAny.vendorPhone || dataAny.vendor_phone || dataAny.supplierPhone || dataAny.supplier_phone || dataAny.recipientPhone || dataAny.recipient_phone || pod?.receiverPhone || pod?.recipientPhone || pod?.phone || ""
+    ).trim()
+  );
   const items = dataAny.items || [];
   const subtotal = Number(dataAny.subtotal) || 0;
   const amountPaid = Number(dataAny.amountPaid) || 0;
@@ -235417,7 +237312,10 @@ var ProfessionalInvoiceTemplate = ({
   const discountLabel = discountPercentage > 0 ? `Discount (${discountPercentage}%)` : "Discount";
   const showDueDate = templateSettings.showDueDate;
   const showInvoiceBalances = templateSettings.showOutstandingAndWalletBalances;
-  const resolvedOutstandingBalance = Math.max(0, Number(dataAny.totalAmount || 0) - Number(dataAny.amountPaid || 0));
+  const resolvedOutstandingBalance = Math.max(
+    0,
+    Number(dataAny.totalAmount || 0) - Number(dataAny.amountPaid || 0)
+  );
   const outstandingDisplay = showInvoiceBalances && type === "INVOICE" ? resolvedOutstandingBalance : totalAmount - amountPaid;
   const renderRow2 = (item, i2) => {
     const isService = item.category === "service" || item.type === "service" || item.isService === true;
@@ -235441,169 +237339,944 @@ var ProfessionalInvoiceTemplate = ({
         formattedDesc = `${itemName} (${totalPages} pages \xD7 ${copies} copies)`;
       }
     }
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: monoLine(mode, "#eeeeee"), minHeight: 24, alignItems: "center", paddingVertical: 5 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, "#333333"), textAlign: "center" }, children: i2 + 1 }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, "#333333") }, children: formattedDesc }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 50, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, "#333333"), textAlign: "right" }, children: qty }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, "#333333"), textAlign: "right" }, children: isQP ? formatQuickPhotocopyPriceLabel(unitPrice, currency) : `${currency} ${unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })}` }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 10 * fontScale, color: monoText(mode, "#333333"), textAlign: "right" }, children: [
-        currency,
-        " ",
-        total.toLocaleString("en-US", { minimumFractionDigits: 2 })
-      ] })
-    ] }, i2);
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+      View,
+      {
+        style: {
+          flexDirection: "row",
+          borderBottomWidth: 0.5,
+          borderBottomColor: monoLine(mode, "#eeeeee"),
+          minHeight: 24,
+          alignItems: "center",
+          paddingVertical: 5
+        },
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                width: 44,
+                paddingHorizontal: 4,
+                fontSize: 10 * fontScale,
+                color: monoText(mode, "#333333"),
+                textAlign: "center"
+              },
+              children: i2 + 1
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                flex: 2.2,
+                paddingHorizontal: 4,
+                fontSize: 10 * fontScale,
+                color: monoText(mode, "#333333")
+              },
+              children: formattedDesc
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                width: 50,
+                paddingHorizontal: 4,
+                fontSize: 10 * fontScale,
+                color: monoText(mode, "#333333"),
+                textAlign: "right"
+              },
+              children: qty
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                width: 80,
+                paddingHorizontal: 4,
+                fontSize: 10 * fontScale,
+                color: monoText(mode, "#333333"),
+                textAlign: "right"
+              },
+              children: isQP ? formatQuickPhotocopyPriceLabel(unitPrice, currency) : `${currency} ${unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })}`
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            Text,
+            {
+              style: {
+                width: 80,
+                paddingHorizontal: 4,
+                fontSize: 10 * fontScale,
+                color: monoText(mode, "#333333"),
+                textAlign: "right"
+              },
+              children: [
+                currency,
+                " ",
+                total.toLocaleString("en-US", { minimumFractionDigits: 2 })
+              ]
+            }
+          )
+        ]
+      },
+      i2
+    );
   };
   const isCancelled = isCancelledStatus(dataAny.status, dataAny);
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: docTitleForMeta, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: { padding: 40, fontFamily: templateSettings.fontFamily, backgroundColor: "#ffffff" }, children: [
-    channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
-    isCancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 15 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { alignItems: "center", justifyContent: "center" }, children: !!logo ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: logo, style: { width: templateSettings.logoWidth } }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#222222"), fontSize: templateSettings.logoWidth * 0.4, fontWeight: "bold" }, children: companyName.charAt(0) }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { textAlign: "right", alignItems: "flex-end" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 13 * fontScale, fontWeight: "bold", color: monoText(mode, "#111111"), marginBottom: 2 }, children: companyName }),
-        !!companyAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#444444"), lineHeight: 1.4 }, children: companyAddress }),
-        !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#444444"), lineHeight: 1.4 }, children: companyPhone }),
-        !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#444444"), lineHeight: 1.4 }, children: companyEmail })
-      ] })
-    ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 25 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: monoText(mode, "#999999"), letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 4 }, children: "Client" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 14 * fontScale, fontWeight: "bold", color: monoText(mode, "#111111"), marginBottom: 2 }, children: resolvedRecipientName }),
-        !!resolvedRecipientAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#444444"), lineHeight: 1.4 }, children: resolvedRecipientAddress })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 32 * fontScale, fontWeight: "bold", color: monoText(mode, "#cccccc"), letterSpacing: 2 }, children: docTitle }) })
-    ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", alignItems: "stretch", marginBottom: 25 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { backgroundColor: monoFill(mode, accentColor), paddingVertical: 12, paddingHorizontal: 16, flex: 1, justifyContent: "center" }, children: type !== "QUOTATION" && type !== "SUBSCRIPTION" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 16 * fontScale, fontWeight: "bold", color: monoText(mode, "#ffffff"), letterSpacing: 1 }, children: [
-        type === "INVOICE" && showInvoiceBalances ? "OUTSTANDING" : "DUE",
-        " \u2014 ",
-        currency,
-        " ",
-        outstandingDisplay.toLocaleString("en-US", { minimumFractionDigits: 2 })
-      ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 16 * fontScale, fontWeight: "bold", color: monoText(mode, "#ffffff"), letterSpacing: 1 }, children: [
-        "TOTAL \u2014 ",
-        currency,
-        " ",
-        totalAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })
-      ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { backgroundColor: "#ffffff", borderWidth: 1, borderColor: monoLine(mode, accentColor), paddingVertical: 10, paddingHorizontal: 14, minWidth: 160, justifyContent: "center" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#999999"), fontSize: 10 * fontScale }, children: "Date" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#444444") }, children: invoiceDate })
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: docTitleForMeta, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+    Page,
+    {
+      size: "A4",
+      style: {
+        padding: 40,
+        fontFamily: templateSettings.fontFamily,
+        backgroundColor: "#ffffff"
+      },
+      children: [
+        channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
+        isCancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+          View,
+          {
+            style: {
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              marginBottom: 15
+            },
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { alignItems: "center", justifyContent: "center" }, children: !!logo ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: logo, style: { width: templateSettings.logoWidth } }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                Text,
+                {
+                  style: {
+                    color: monoText(mode, "#222222"),
+                    fontSize: templateSettings.logoWidth * 0.4,
+                    fontWeight: "bold"
+                  },
+                  children: companyName.charAt(0)
+                }
+              ) }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { textAlign: "right", alignItems: "flex-end" }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 13 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#111111"),
+                      marginBottom: 2
+                    },
+                    children: companyName
+                  }
+                ),
+                !!companyAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#444444"),
+                      lineHeight: 1.4
+                    },
+                    children: companyAddress
+                  }
+                ),
+                !!companyPhone && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#444444"),
+                      lineHeight: 1.4
+                    },
+                    children: companyPhone
+                  }
+                ),
+                !!companyEmail && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#444444"),
+                      lineHeight: 1.4
+                    },
+                    children: companyEmail
+                  }
+                )
+              ] })
+            ]
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+          View,
+          {
+            style: {
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              marginBottom: 25
+            },
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 9 * fontScale,
+                      color: monoText(mode, "#999999"),
+                      letterSpacing: 1.2,
+                      textTransform: "uppercase",
+                      marginBottom: 4
+                    },
+                    children: "Client"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 14 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#111111"),
+                      marginBottom: 2
+                    },
+                    children: resolvedRecipientName
+                  }
+                ),
+                !!resolvedRecipientAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 10 * fontScale,
+                      color: monoText(mode, "#444444"),
+                      lineHeight: 1.4
+                    },
+                    children: resolvedRecipientAddress
+                  }
+                )
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                Text,
+                {
+                  style: {
+                    fontSize: 32 * fontScale,
+                    fontWeight: "bold",
+                    color: monoText(mode, "#cccccc"),
+                    letterSpacing: 2
+                  },
+                  children: docTitle
+                }
+              ) })
+            ]
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+          View,
+          {
+            style: {
+              flexDirection: "row",
+              alignItems: "stretch",
+              marginBottom: 25
+            },
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                View,
+                {
+                  style: {
+                    backgroundColor: monoFill(mode, accentColor),
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                    flex: 1,
+                    justifyContent: "center"
+                  },
+                  children: type !== "QUOTATION" && type !== "SUBSCRIPTION" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 16 * fontScale,
+                        fontWeight: "bold",
+                        color: monoText(mode, "#ffffff"),
+                        letterSpacing: 1
+                      },
+                      children: [
+                        type === "INVOICE" && showInvoiceBalances ? "OUTSTANDING" : "DUE",
+                        " ",
+                        "\u2014 ",
+                        currency,
+                        " ",
+                        outstandingDisplay.toLocaleString("en-US", {
+                          minimumFractionDigits: 2
+                        })
+                      ]
+                    }
+                  ) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 16 * fontScale,
+                        fontWeight: "bold",
+                        color: monoText(mode, "#ffffff"),
+                        letterSpacing: 1
+                      },
+                      children: [
+                        "TOTAL \u2014 ",
+                        currency,
+                        " ",
+                        totalAmount.toLocaleString("en-US", {
+                          minimumFractionDigits: 2
+                        })
+                      ]
+                    }
+                  )
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                View,
+                {
+                  style: {
+                    backgroundColor: "#ffffff",
+                    borderWidth: 1,
+                    borderColor: monoLine(mode, accentColor),
+                    paddingVertical: 10,
+                    paddingHorizontal: 14,
+                    minWidth: 160,
+                    justifyContent: "center"
+                  },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                      View,
+                      {
+                        style: {
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                          marginBottom: 4
+                        },
+                        children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                color: monoText(mode, "#999999"),
+                                fontSize: 10 * fontScale
+                              },
+                              children: "Date"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                fontSize: 10 * fontScale,
+                                color: monoText(mode, "#444444")
+                              },
+                              children: invoiceDate
+                            }
+                          )
+                        ]
+                      }
+                    ),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                      View,
+                      {
+                        style: { flexDirection: "row", justifyContent: "space-between" },
+                        children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                color: monoText(mode, "#999999"),
+                                fontSize: 10 * fontScale
+                              },
+                              children: "Ref #"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                fontSize: 10 * fontScale,
+                                color: monoText(mode, "#444444")
+                              },
+                              children: invoiceNumber
+                            }
+                          )
+                        ]
+                      }
+                    ),
+                    Boolean(showDueDate) && !!dueDate && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                      View,
+                      {
+                        style: {
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                          marginTop: 4
+                        },
+                        children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                color: monoText(mode, "#999999"),
+                                fontSize: 10 * fontScale
+                              },
+                              children: "Due"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                fontSize: 10 * fontScale,
+                                color: monoText(mode, "#444444")
+                              },
+                              children: formatDateOnly(dueDate)
+                            }
+                          )
+                        ]
+                      }
+                    )
+                  ]
+                }
+              )
+            ]
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 15 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                flexDirection: "row",
+                borderBottomWidth: 1.5,
+                borderBottomColor: monoLine(mode, "#222222"),
+                paddingBottom: 6
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      width: 44,
+                      paddingHorizontal: 4,
+                      fontSize: 9 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#666666"),
+                      letterSpacing: 1,
+                      textTransform: "uppercase",
+                      textAlign: "center"
+                    },
+                    children: "SN"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      flex: 2.2,
+                      paddingHorizontal: 4,
+                      fontSize: 9 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#666666"),
+                      letterSpacing: 1,
+                      textTransform: "uppercase"
+                    },
+                    children: "Description"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      width: 50,
+                      paddingHorizontal: 4,
+                      fontSize: 9 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#666666"),
+                      letterSpacing: 1,
+                      textTransform: "uppercase",
+                      textAlign: "right"
+                    },
+                    children: "Qty"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      width: 80,
+                      paddingHorizontal: 4,
+                      fontSize: 9 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#666666"),
+                      letterSpacing: 1,
+                      textTransform: "uppercase",
+                      textAlign: "right"
+                    },
+                    children: "Price"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      width: 80,
+                      paddingHorizontal: 4,
+                      fontSize: 9 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#666666"),
+                      letterSpacing: 1,
+                      textTransform: "uppercase",
+                      textAlign: "right"
+                    },
+                    children: "Amount"
+                  }
+                )
+              ]
+            }
+          ),
+          items.map(renderRow2)
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#999999"), fontSize: 10 * fontScale }, children: "Ref #" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#444444") }, children: invoiceNumber })
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignSelf: "flex-end", width: 220, marginBottom: 25 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                flexDirection: "row",
+                justifyContent: "space-between",
+                paddingVertical: 3
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      color: monoText(mode, "#999999"),
+                      fontSize: 10 * fontScale
+                    },
+                    children: "Sub Total \u2014"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      color: monoText(mode, "#555555"),
+                      fontSize: 10 * fontScale
+                    },
+                    children: [
+                      currency,
+                      " ",
+                      subtotal.toLocaleString("en-US", { minimumFractionDigits: 2 })
+                    ]
+                  }
+                )
+              ]
+            }
+          ),
+          tax > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                flexDirection: "row",
+                justifyContent: "space-between",
+                paddingVertical: 3
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      color: monoText(mode, "#999999"),
+                      fontSize: 10 * fontScale
+                    },
+                    children: "Tax \u2014"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      color: monoText(mode, "#555555"),
+                      fontSize: 10 * fontScale
+                    },
+                    children: [
+                      currency,
+                      " ",
+                      tax.toLocaleString("en-US", { minimumFractionDigits: 2 })
+                    ]
+                  }
+                )
+              ]
+            }
+          ),
+          discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                flexDirection: "row",
+                justifyContent: "space-between",
+                paddingVertical: 3
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      color: monoText(mode, "#999999"),
+                      fontSize: 10 * fontScale
+                    },
+                    children: [
+                      discountLabel,
+                      " \u2014"
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      color: monoText(mode, "#555555"),
+                      fontSize: 10 * fontScale
+                    },
+                    children: [
+                      "-",
+                      currency,
+                      " ",
+                      discount.toLocaleString("en-US", { minimumFractionDigits: 2 })
+                    ]
+                  }
+                )
+              ]
+            }
+          ),
+          dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                flexDirection: "row",
+                justifyContent: "space-between",
+                paddingVertical: 3
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      color: monoText(mode, "#999999"),
+                      fontSize: 10 * fontScale
+                    },
+                    children: [
+                      "Rounding",
+                      dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : "",
+                      " \u2014"
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      color: monoText(mode, "#555555"),
+                      fontSize: 10 * fontScale
+                    },
+                    children: [
+                      currency,
+                      " ",
+                      Number(dataAny.roundingDifference).toLocaleString("en-US", {
+                        minimumFractionDigits: 2
+                      })
+                    ]
+                  }
+                )
+              ]
+            }
+          ) : null,
+          amountPaid > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                flexDirection: "row",
+                justifyContent: "space-between",
+                paddingVertical: 3
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      color: monoText(mode, "#999999"),
+                      fontSize: 10 * fontScale
+                    },
+                    children: "Amount Paid \u2014"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      color: monoText(mode, "#555555"),
+                      fontSize: 10 * fontScale
+                    },
+                    children: [
+                      "-",
+                      currency,
+                      " ",
+                      amountPaid.toLocaleString("en-US", {
+                        minimumFractionDigits: 2
+                      })
+                    ]
+                  }
+                )
+              ]
+            }
+          ),
+          type === "INVOICE" || type === "ORDER" || type === "SALES_ORDER" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                flexDirection: "row",
+                justifyContent: "space-between",
+                marginTop: 3,
+                paddingTop: 6,
+                borderTopWidth: 0.5,
+                borderTopColor: monoLine(mode, "#dddddd")
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      color: monoText(mode, accentColor),
+                      fontWeight: "bold",
+                      fontSize: 12 * fontScale
+                    },
+                    children: "Due Balance \u2014"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      color: monoText(mode, accentColor),
+                      fontWeight: "bold",
+                      fontSize: 12 * fontScale
+                    },
+                    children: [
+                      currency,
+                      " ",
+                      (totalAmount - amountPaid).toLocaleString("en-US", {
+                        minimumFractionDigits: 2
+                      })
+                    ]
+                  }
+                )
+              ]
+            }
+          ) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                flexDirection: "row",
+                justifyContent: "space-between",
+                marginTop: 3,
+                paddingTop: 6,
+                borderTopWidth: 0.5,
+                borderTopColor: monoLine(mode, "#dddddd")
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      color: monoText(mode, accentColor),
+                      fontWeight: "bold",
+                      fontSize: 12 * fontScale
+                    },
+                    children: "Total Grand \u2014"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      color: monoText(mode, accentColor),
+                      fontWeight: "bold",
+                      fontSize: 12 * fontScale
+                    },
+                    children: [
+                      currency,
+                      " ",
+                      totalAmount.toLocaleString("en-US", {
+                        minimumFractionDigits: 2
+                      })
+                    ]
+                  }
+                )
+              ]
+            }
+          )
         ] }),
-        Boolean(showDueDate) && !!dueDate && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#999999"), fontSize: 10 * fontScale }, children: "Due" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#444444") }, children: formatDateOnly(dueDate) })
-        ] })
-      ] })
-    ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 15 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 1.5, borderBottomColor: monoLine(mode, "#222222"), paddingBottom: 6 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: monoText(mode, "#666666"), letterSpacing: 1, textTransform: "uppercase", textAlign: "center" }, children: "SN" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2.2, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: monoText(mode, "#666666"), letterSpacing: 1, textTransform: "uppercase" }, children: "Description" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 50, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: monoText(mode, "#666666"), letterSpacing: 1, textTransform: "uppercase", textAlign: "right" }, children: "Qty" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: monoText(mode, "#666666"), letterSpacing: 1, textTransform: "uppercase", textAlign: "right" }, children: "Price" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 80, paddingHorizontal: 4, fontSize: 9 * fontScale, fontWeight: "bold", color: monoText(mode, "#666666"), letterSpacing: 1, textTransform: "uppercase", textAlign: "right" }, children: "Amount" })
-      ] }),
-      items.map(renderRow2)
-    ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignSelf: "flex-end", width: 220, marginBottom: 25 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#999999"), fontSize: 10 * fontScale }, children: "Sub Total \u2014" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: monoText(mode, "#555555"), fontSize: 10 * fontScale }, children: [
-          currency,
-          " ",
-          subtotal.toLocaleString("en-US", { minimumFractionDigits: 2 })
-        ] })
-      ] }),
-      tax > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#999999"), fontSize: 10 * fontScale }, children: "Tax \u2014" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: monoText(mode, "#555555"), fontSize: 10 * fontScale }, children: [
-          currency,
-          " ",
-          tax.toLocaleString("en-US", { minimumFractionDigits: 2 })
-        ] })
-      ] }),
-      discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: monoText(mode, "#999999"), fontSize: 10 * fontScale }, children: [
-          discountLabel,
-          " \u2014"
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: monoText(mode, "#555555"), fontSize: 10 * fontScale }, children: [
-          "-",
-          currency,
-          " ",
-          discount.toLocaleString("en-US", { minimumFractionDigits: 2 })
-        ] })
-      ] }),
-      dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: monoText(mode, "#999999"), fontSize: 10 * fontScale }, children: [
-          "Rounding",
-          dataAny.roundingMethod ? ` (${dataAny.roundingMethod})` : "",
-          " \u2014"
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: monoText(mode, "#555555"), fontSize: 10 * fontScale }, children: [
-          currency,
-          " ",
-          Number(dataAny.roundingDifference).toLocaleString("en-US", { minimumFractionDigits: 2 })
-        ] })
-      ] }) : null,
-      amountPaid > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#999999"), fontSize: 10 * fontScale }, children: "Amount Paid \u2014" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: monoText(mode, "#555555"), fontSize: 10 * fontScale }, children: [
-          "-",
-          currency,
-          " ",
-          amountPaid.toLocaleString("en-US", { minimumFractionDigits: 2 })
-        ] })
-      ] }),
-      type === "INVOICE" || type === "ORDER" || type === "SALES_ORDER" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 3, paddingTop: 6, borderTopWidth: 0.5, borderTopColor: monoLine(mode, "#dddddd") }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, accentColor), fontWeight: "bold", fontSize: 12 * fontScale }, children: "Due Balance \u2014" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: monoText(mode, accentColor), fontWeight: "bold", fontSize: 12 * fontScale }, children: [
-          currency,
-          " ",
-          (totalAmount - amountPaid).toLocaleString("en-US", { minimumFractionDigits: 2 })
-        ] })
-      ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 3, paddingTop: 6, borderTopWidth: 0.5, borderTopColor: monoLine(mode, "#dddddd") }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, accentColor), fontWeight: "bold", fontSize: 12 * fontScale }, children: "Total Grand \u2014" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: monoText(mode, accentColor), fontWeight: "bold", fontSize: 12 * fontScale }, children: [
-          currency,
-          " ",
-          totalAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })
-        ] })
-      ] })
-    ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginTop: 10, paddingTop: 15, borderTopWidth: 0.5, borderTopColor: monoLine(mode, "#eeeeee"), flex: 1, gap: 20 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-        !!dataAny.notes && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginBottom: 15 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, fontWeight: "bold", color: monoText(mode, "#999999"), textTransform: "uppercase", marginBottom: 4, letterSpacing: 1 }, children: "Notes" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, color: monoText(mode, "#444444"), lineHeight: 1.4 }, children: String(dataAny.notes) })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 10 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontStyle: "italic", fontSize: 15 * fontScale, color: monoText(mode, "#555555"), marginBottom: 4, fontFamily: templateSettings.fontFamily }, children: companyName }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", fontSize: 10 * fontScale, color: monoText(mode, "#111111") }, children: companyName }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: monoText(mode, accentColor), letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }, children: "Authorized Signatory" })
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, alignItems: "flex-end", textAlign: "right" }, children: [
-        templateSettings.showPaymentTerms && config2?.transactionSettings?.defaultPaymentTermsDays !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginBottom: 10 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, fontWeight: "bold", color: monoText(mode, "#999999"), letterSpacing: 1, textTransform: "uppercase", marginBottom: 3 }, children: "Payment Method / Terms" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: monoText(mode, "#666666"), lineHeight: 1.6 }, children: getDefaultPaymentTermsLabel(config2) })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "flex-start", width: "100%" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8 * fontScale, color: monoText(mode, "#aaaaaa"), lineHeight: 1.4, textAlign: "left", marginTop: 4 }, children: resolveFooterText(config2, getDefaultPaymentTermsLabel(config2), templateSettings.showPaymentTerms) }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8 * fontScale, color: monoText(mode, "#aaaaaa"), lineHeight: 1.4, textAlign: "left", marginTop: 1 }, children: buildFooterContactLine(config2) })
-        ] })
-      ] })
-    ] })
-  ] }) });
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+          View,
+          {
+            wrap: false,
+            style: {
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              marginTop: 10,
+              paddingTop: 15,
+              borderTopWidth: 0.5,
+              borderTopColor: monoLine(mode, "#eeeeee"),
+              flex: 1,
+              gap: 20
+            },
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
+                !!dataAny.notes && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginBottom: 15 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 9 * fontScale,
+                        fontWeight: "bold",
+                        color: monoText(mode, "#999999"),
+                        textTransform: "uppercase",
+                        marginBottom: 4,
+                        letterSpacing: 1
+                      },
+                      children: "Notes"
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 10 * fontScale,
+                        color: monoText(mode, "#444444"),
+                        lineHeight: 1.4
+                      },
+                      children: String(dataAny.notes)
+                    }
+                  )
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 10 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontStyle: "italic",
+                        fontSize: 15 * fontScale,
+                        color: monoText(mode, "#555555"),
+                        marginBottom: 4,
+                        fontFamily: templateSettings.fontFamily
+                      },
+                      children: companyName
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontWeight: "bold",
+                        fontSize: 10 * fontScale,
+                        color: monoText(mode, "#111111")
+                      },
+                      children: companyName
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 9 * fontScale,
+                        color: monoText(mode, accentColor),
+                        letterSpacing: 1,
+                        textTransform: "uppercase",
+                        marginTop: 2
+                      },
+                      children: "Authorized Signatory"
+                    }
+                  )
+                ] })
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, alignItems: "flex-end", textAlign: "right" }, children: [
+                templateSettings.showPaymentTerms && config2?.transactionSettings?.defaultPaymentTermsDays !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginBottom: 10 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 9 * fontScale,
+                        fontWeight: "bold",
+                        color: monoText(mode, "#999999"),
+                        letterSpacing: 1,
+                        textTransform: "uppercase",
+                        marginBottom: 3
+                      },
+                      children: "Payment Method / Terms"
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 9 * fontScale,
+                        color: monoText(mode, "#666666"),
+                        lineHeight: 1.6
+                      },
+                      children: getDefaultPaymentTermsLabel(config2)
+                    }
+                  )
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "flex-start", width: "100%" }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 8 * fontScale,
+                        color: monoText(mode, "#aaaaaa"),
+                        lineHeight: 1.4,
+                        textAlign: "left",
+                        marginTop: 4
+                      },
+                      children: resolveFooterText(
+                        config2,
+                        getDefaultPaymentTermsLabel(config2),
+                        templateSettings.showPaymentTerms
+                      )
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 8 * fontScale,
+                        color: monoText(mode, "#aaaaaa"),
+                        lineHeight: 1.4,
+                        textAlign: "left",
+                        marginTop: 1
+                      },
+                      children: buildFooterContactLine(config2)
+                    }
+                  )
+                ] })
+              ] })
+            ]
+          }
+        )
+      ]
+    }
+  ) });
 };
-var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [], channel = "erp", colorMode = "brand" }) => {
+var PrimeDocument = ({
+  type,
+  data: data2,
+  configOverride = null,
+  customers = [],
+  channel = "erp",
+  colorMode = "brand"
+}) => {
   const mode = colorMode ?? "brand";
   const s4 = mode === "mono" ? docStylesMono : docStyles;
   const isFinancial = type === "INVOICE" || type === "PO" || type === "QUOTATION" || type === "ORDER" || type === "SALES_ORDER" || type === "SUBSCRIPTION";
@@ -235612,13 +238285,43 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
   const config2 = configOverride || getStoredCompanyConfig();
   const templateSettings = resolvePrimeTemplateSettings(config2);
   if (isFinancial && templateSettings.engine === "Clean") {
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CleanInvoiceTemplate, { type, data: dataAny, config: config2, templateSettings, channel, mode });
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      CleanInvoiceTemplate,
+      {
+        type,
+        data: dataAny,
+        config: config2,
+        templateSettings,
+        channel,
+        mode
+      }
+    );
   }
   if (isFinancial && templateSettings.engine === "Professional") {
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ProfessionalInvoiceTemplate, { type, data: dataAny, config: config2, templateSettings, channel, mode });
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      ProfessionalInvoiceTemplate,
+      {
+        type,
+        data: dataAny,
+        config: config2,
+        templateSettings,
+        channel,
+        mode
+      }
+    );
   }
   if (isFinancial && templateSettings.engine === "Modern") {
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ModernInvoiceTemplate, { type, data: dataAny, config: config2, templateSettings, channel, mode });
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      ModernInvoiceTemplate,
+      {
+        type,
+        data: dataAny,
+        config: config2,
+        templateSettings,
+        channel,
+        mode
+      }
+    );
   }
   const fontScale = templateSettings.bodyFontSize / 12;
   const showDueDate = templateSettings.showDueDate;
@@ -235626,10 +238329,20 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
   const showAccountSummary = templateSettings.showAccountSummary;
   const showConversionHistory = templateSettings.showConversionHistory !== false;
   const paymentTermsLabel = String(dataAny?.paymentTerms || "").trim() || getDefaultPaymentTermsLabel(config2);
-  const { companyName, companyAddress, formattedPhone, companyPhone, companyEmail } = normalizeCompanyIdentity(config2);
+  const {
+    companyName,
+    companyAddress,
+    formattedPhone,
+    companyPhone,
+    companyEmail
+  } = normalizeCompanyIdentity(config2);
   const companyContact = [formattedPhone, companyEmail].filter(Boolean).join(" | ");
   const receiptCompanyAddress = buildReceiptCompanyAddress(config2);
-  const legalFooterLine1 = resolveFooterText(config2, paymentTermsLabel, showPaymentTerms);
+  const legalFooterLine1 = resolveFooterText(
+    config2,
+    paymentTermsLabel,
+    showPaymentTerms
+  );
   const legalFooterLine2 = buildFooterContactLine(config2);
   const currency = config2?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || "K";
   const logo = resolvePdfLogoSource(config2, templateSettings.showCompanyLogo);
@@ -235657,7 +238370,10 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
   const contractPreambleNameAvailWidth = RECEIPT_CONTENT_WIDTH - (!!logo ? (templateSettings.logoWidth + 12) * 2 : 24);
   const contractPreambleNameFontSize = Math.max(
     8.5,
-    Math.min(templateSettings.companyNameFontSize, contractPreambleNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6))
+    Math.min(
+      templateSettings.companyNameFontSize,
+      contractPreambleNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6)
+    )
   );
   const renderBrandMark = (alignment = "right") => !!logo ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
     Image,
@@ -235680,25 +238396,49 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
       children: companyName
     }
   );
-  const isRightAligned = ["INVOICE", "QUOTATION", "ORDER", "SALES_ORDER", "PO", "DELIVERY_NOTE", "EXAMINATION_INVOICE", "SALES_EXCHANGE", "SUBSCRIPTION"].includes(type);
-  const recipientSectionEnabledTypes = ["INVOICE", "PO", "WORK_ORDER", "DELIVERY_NOTE", "QUOTATION", "EXAMINATION_INVOICE", "ORDER", "SALES_ORDER", "SUBSCRIPTION"];
+  const isRightAligned = [
+    "INVOICE",
+    "QUOTATION",
+    "ORDER",
+    "SALES_ORDER",
+    "PO",
+    "DELIVERY_NOTE",
+    "EXAMINATION_INVOICE",
+    "SALES_EXCHANGE",
+    "SUBSCRIPTION"
+  ].includes(type);
+  const recipientSectionEnabledTypes = [
+    "INVOICE",
+    "PO",
+    "WORK_ORDER",
+    "DELIVERY_NOTE",
+    "QUOTATION",
+    "EXAMINATION_INVOICE",
+    "ORDER",
+    "SALES_ORDER",
+    "SUBSCRIPTION"
+  ];
   const resolvedRecipientName = String(
     dataAny.clientName || dataAny.customerName || dataAny.customer_name || dataAny.schoolName || dataAny.school_name || dataAny.recipientName || dataAny.recipient_name || dataAny.vendorName || dataAny.vendor_name || dataAny.supplierName || dataAny.supplier_name || pod?.receivedBy || dataAny.receivedBy || ""
   ).trim();
   const resolvedRecipientAddress = String(
     dataAny.address || dataAny.customerAddress || dataAny.customer_address || dataAny.billingAddress || dataAny.billing_address || dataAny.shippingAddress || dataAny.shipping_address || dataAny.schoolAddress || dataAny.school_address || dataAny.vendorAddress || dataAny.vendor_address || dataAny.supplierAddress || dataAny.supplier_address || pod?.address || pod?.deliveryLocation || ""
   ).trim();
-  const resolvedRecipientPhone = formatPhone(String(
-    dataAny.phone || dataAny.customerPhone || dataAny.customer_phone || dataAny.schoolPhone || dataAny.school_phone || dataAny.vendorPhone || dataAny.vendor_phone || dataAny.supplierPhone || dataAny.supplier_phone || dataAny.recipientPhone || dataAny.recipient_phone || pod?.receiverPhone || pod?.recipientPhone || pod?.phone || ""
-  ).trim());
+  const resolvedRecipientPhone = formatPhone(
+    String(
+      dataAny.phone || dataAny.customerPhone || dataAny.customer_phone || dataAny.schoolPhone || dataAny.school_phone || dataAny.vendorPhone || dataAny.vendor_phone || dataAny.supplierPhone || dataAny.supplier_phone || dataAny.recipientPhone || dataAny.recipient_phone || pod?.receiverPhone || pod?.recipientPhone || pod?.phone || ""
+    ).trim()
+  );
   const shouldRenderRecipientSection = Boolean(
     recipientSectionEnabledTypes.includes(type) || resolvedRecipientName || resolvedRecipientAddress || resolvedRecipientPhone
   );
   const recipientLabel = type === "PO" ? "To Vendor" : type === "EXAMINATION_INVOICE" ? "Customer" : "Bill To:";
   const resolveConversionSourceNumber = (doc) => {
     if (!doc?.conversionDetails) return "N/A";
-    if (doc.conversionDetails.sourceNumber === "N/A" && "invoiceNumber" in doc) return doc.invoiceNumber;
-    if (doc.conversionDetails.sourceNumber === "N/A" && "orderNumber" in doc) return doc.orderNumber;
+    if (doc.conversionDetails.sourceNumber === "N/A" && "invoiceNumber" in doc)
+      return doc.invoiceNumber;
+    if (doc.conversionDetails.sourceNumber === "N/A" && "orderNumber" in doc)
+      return doc.orderNumber;
     return doc.conversionDetails.sourceNumber || "N/A";
   };
   if (type === "SALES_EXCHANGE") {
@@ -235706,113 +238446,240 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
     const items = d3.items || [];
     const cd = d3.conversionDetails;
     const isCancelled2 = isCancelledStatus(d3.status, d3);
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: `Sales Exchange - ${String(d3.exchangeNumber)}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [s4.page, pageStyle], children: [
-      channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
-      isCancelled2 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-        PaginationFurniture,
-        {
-          colorMode: mode,
-          identity: paginationIdentity(type, d3, resolvedRecipientName || ""),
-          companyName
-        }
-      ),
-      showConversionHistory && Boolean(d3.isConverted) && !!cd && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.conversionBox, { position: "absolute", top: 40, right: 40, zIndex: 10 }], children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.conversionTitle, children: "Conversion History" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-          "Converted from ",
-          String(cd.sourceType),
-          " ",
-          String(cd.sourceNumber)
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-          "on ",
-          String(cd.date)
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.headerSection, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.headerLeft, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.title, titleStyle], children: "Exchange Note" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.infoText, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Exchange # : ",
-              String(d3.exchangeNumber)
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      Document,
+      {
+        title: `Sales Exchange - ${String(d3.exchangeNumber)}`,
+        author: companyName,
+        children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [s4.page, pageStyle], children: [
+          channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
+          isCancelled2 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            PaginationFurniture,
+            {
+              colorMode: mode,
+              identity: paginationIdentity(type, d3, resolvedRecipientName || ""),
+              companyName
+            }
+          ),
+          showConversionHistory && Boolean(d3.isConverted) && !!cd && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: [
+                s4.conversionBox,
+                { position: "absolute", top: 40, right: 40, zIndex: 10 }
+              ],
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.conversionTitle, children: "Conversion History" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                  "Converted from ",
+                  String(cd.sourceType),
+                  " ",
+                  String(cd.sourceNumber)
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                  "on ",
+                  String(cd.date)
+                ] })
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.headerSection, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.headerLeft, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.title, titleStyle], children: "Exchange Note" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.infoText, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                  "Exchange # : ",
+                  String(d3.exchangeNumber)
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                  "Date : ",
+                  String(d3.date)
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                  "Ref Invoice : ",
+                  String(d3.invoiceNumber)
+                ] })
+              ] })
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Date : ",
-              String(d3.date)
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.headerRight, children: renderBrandMark("right") })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.billingSection, { marginTop: 10 }], children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                Text,
+                {
+                  style: {
+                    fontWeight: "bold",
+                    marginBottom: 5,
+                    fontSize: 10,
+                    textTransform: "uppercase",
+                    color: monoText(mode, "#64748b")
+                  },
+                  children: "Customer"
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold" }, children: String(d3.customerName) }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                Text,
+                {
+                  style: {
+                    fontSize: 10,
+                    color: monoText(mode, "#475569"),
+                    marginTop: 4
+                  },
+                  children: resolvedRecipientAddress || "N/A"
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                Text,
+                {
+                  style: {
+                    fontSize: 10,
+                    color: monoText(mode, "#475569"),
+                    marginTop: 2
+                  },
+                  children: resolvedRecipientPhone || "N/A"
+                }
+              )
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Ref Invoice : ",
-              String(d3.invoiceNumber)
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                Text,
+                {
+                  style: {
+                    fontWeight: "bold",
+                    marginBottom: 5,
+                    fontSize: 10,
+                    textTransform: "uppercase",
+                    color: monoText(mode, "#64748b")
+                  },
+                  children: "Reason for Exchange"
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11 }, children: String(d3.reason) })
             ] })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 20 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.tableHeader, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: "SN" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: "Description" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.colQty, { width: 60 }], children: "Returned" }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.colQty, { width: 60 }], children: "Replaced" })
+            ] }),
+            items.map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.row, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.colSn, { fontSize: 10 }], children: i2 + 1 }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.colDesc, { fontSize: 10 }], children: String(item.desc || "N/A") }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.colQty, { width: 60, fontSize: 10 }], children: Number(item.qtyReturned) }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.colQty, { width: 60, fontSize: 10 }], children: Number(item.qtyReplaced) }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                Text,
+                {
+                  style: [s4.colTotal, { fontSize: 10, fontWeight: "bold" }],
+                  children: [
+                    currency,
+                    " ",
+                    formatAmount2(Number(item.priceDiff))
+                  ]
+                }
+              )
+            ] }, i2))
+          ] }),
+          !!d3.remarks && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                marginTop: 20,
+                padding: 12,
+                backgroundColor: monoFill(mode, "#f8fafc"),
+                borderRadius: 6,
+                borderLeftWidth: 3,
+                borderLeftColor: monoLine(mode, "#3b82f6")
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 10,
+                      fontWeight: "bold",
+                      marginBottom: 5,
+                      textTransform: "uppercase",
+                      color: monoText(mode, "#475569")
+                    },
+                    children: "Remarks / Special Instructions:"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 10,
+                      color: monoText(mode, "#1e293b"),
+                      lineHeight: 1.5
+                    },
+                    children: String(d3.remarks)
+                  }
+                )
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 60 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: { flexDirection: "row", justifyContent: "space-between" },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { width: 180, alignItems: "center" }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    View,
+                    {
+                      style: {
+                        width: "100%",
+                        borderTopWidth: 1,
+                        borderColor: "#000",
+                        marginBottom: 5
+                      }
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 }, children: "Customer Signature" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8, color: monoText(mode, "#666") }, children: "I accept the replacement items" })
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { width: 180, alignItems: "center" }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    View,
+                    {
+                      style: {
+                        width: "100%",
+                        borderTopWidth: 1,
+                        borderColor: "#000",
+                        marginBottom: 5
+                      }
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 }, children: "Authorized Officer" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8, color: monoText(mode, "#666") }, children: "Exchange approved & processed" })
+                ] })
+              ]
+            }
+          ) }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              SecurityFooter,
+              {
+                colorMode: mode,
+                data: d3,
+                companyName,
+                legalFooterLine1: "This is a computer-generated Sales Exchange Note. No signature required. For enquiries contact Prime Printing Service, Along M5 Road, Mtakataka, Phone +265992528222.",
+                legalFooterLine2: `All exchanges are subject to ${companyName} Return & Exchange Policy.`,
+                fontScale,
+                flowing: true
+              }
+            )
           ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.headerRight, children: renderBrandMark("right") })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.billingSection, { marginTop: 10 }], children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: monoText(mode, "#64748b") }, children: "Customer" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold" }, children: String(d3.customerName) }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, color: monoText(mode, "#475569"), marginTop: 4 }, children: resolvedRecipientAddress || "N/A" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, color: monoText(mode, "#475569"), marginTop: 2 }, children: resolvedRecipientPhone || "N/A" })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: monoText(mode, "#64748b") }, children: "Reason for Exchange" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11 }, children: String(d3.reason) })
         ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 20 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.tableHeader, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: "SN" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: "Description" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.colQty, { width: 60 }], children: "Returned" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.colQty, { width: 60 }], children: "Replaced" })
-        ] }),
-        items.map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.row, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.colSn, { fontSize: 10 }], children: i2 + 1 }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.colDesc, { fontSize: 10 }], children: String(item.desc || "N/A") }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.colQty, { width: 60, fontSize: 10 }], children: Number(item.qtyReturned) }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.colQty, { width: 60, fontSize: 10 }], children: Number(item.qtyReplaced) }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: [s4.colTotal, { fontSize: 10, fontWeight: "bold" }], children: [
-            currency,
-            " ",
-            formatAmount2(Number(item.priceDiff))
-          ] })
-        ] }, i2))
-      ] }),
-      !!d3.remarks && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 20, padding: 12, backgroundColor: monoFill(mode, "#f8fafc"), borderRadius: 6, borderLeftWidth: 3, borderLeftColor: monoLine(mode, "#3b82f6") }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 5, textTransform: "uppercase", color: monoText(mode, "#475569") }, children: "Remarks / Special Instructions:" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, color: monoText(mode, "#1e293b"), lineHeight: 1.5 }, children: String(d3.remarks) })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 60 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { width: 180, alignItems: "center" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: "100%", borderTopWidth: 1, borderColor: "#000", marginBottom: 5 } }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 }, children: "Customer Signature" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8, color: monoText(mode, "#666") }, children: "I accept the replacement items" })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { width: 180, alignItems: "center" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: "100%", borderTopWidth: 1, borderColor: "#000", marginBottom: 5 } }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 }, children: "Authorized Officer" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8, color: monoText(mode, "#666") }, children: "Exchange approved & processed" })
-        ] })
-      ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-          SecurityFooter,
-          {
-            colorMode: mode,
-            data: d3,
-            companyName,
-            legalFooterLine1: "This is a computer-generated Sales Exchange Note. No signature required. For enquiries contact Prime Printing Service, Along M5 Road, Mtakataka, Phone +265992528222.",
-            legalFooterLine2: `All exchanges are subject to ${companyName} Return & Exchange Policy.`,
-            fontScale,
-            flowing: true
-          }
-        )
-      ] })
-    ] }) });
+      }
+    );
   }
   if (type === "RECEIPT") {
     const rc = data2;
@@ -235820,7 +238687,9 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
     const isOverpaid = rc.paymentStatus === "OVERPAID";
     const overpaymentAmount = rc.overpaymentAmount || rc.walletDeposit || 0;
     const isCancelled2 = isCancelledStatus(rc.paymentStatus || rc.status, rc);
-    const receiptBadge = resolveReceiptPaymentBadge(rc);
+    const receiptBadge = resolveReceiptPaymentBadge(
+      rc
+    );
     const appliedOrderRefs = rc.appliedOrders || [];
     const appliedInvoiceRefs = rc.appliedInvoices || [];
     const allocationRef = appliedOrderRefs.length === 1 ? String(appliedOrderRefs[0]) : appliedOrderRefs.length > 1 ? `Multiple orders (${appliedOrderRefs.length})` : appliedInvoiceRefs.length === 1 ? String(appliedInvoiceRefs[0]) : appliedInvoiceRefs.length > 1 ? `Multiple invoices (${appliedInvoiceRefs.length})` : "\u2014";
@@ -235834,154 +238703,601 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
     const receiptTitleFontSize = 20 * fontScale;
     const receiptNameFontSize = Math.max(
       8.5,
-      Math.min(templateSettings.companyNameFontSize, receiptNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6))
+      Math.min(
+        templateSettings.companyNameFontSize,
+        receiptNameAvailWidth / (Math.max(String(companyName).length, 1) * 0.6)
+      )
     );
     const receiptNameGutter = !!logo ? templateSettings.logoWidth + 12 : 0;
     const receiptBodyFontSize = 12;
     const customerNameLabel = "Customer Name: ";
     const customerNameText = String(rc.customerName || "N/A");
     const RECEIPT_MIN_META_FONT_SIZE = 7;
-    const receiptMetaRightIndent = Math.min(RECEIPT_META_INDENT * fontScale, 128);
+    const receiptMetaRightIndent = Math.min(
+      RECEIPT_META_INDENT * fontScale,
+      128
+    );
     const customerNameAvailWidth = Math.max(
       24,
       RECEIPT_CONTENT_WIDTH - measureTextWidth(customerNameLabel, receiptBodyFontSize, true)
     );
-    const receiptCustomerNameFontSize = fitFontSize(customerNameText, customerNameAvailWidth, {
-      maxSize: receiptBodyFontSize,
-      minSize: RECEIPT_MIN_META_FONT_SIZE
-    });
+    const receiptCustomerNameFontSize = fitFontSize(
+      customerNameText,
+      customerNameAvailWidth,
+      {
+        maxSize: receiptBodyFontSize,
+        minSize: RECEIPT_MIN_META_FONT_SIZE
+      }
+    );
     const receiptNoteFallback = buildReceiptAcknowledgement({
       amount: receiptAmountReceived,
       customerName: rc.customerName,
       currencySymbol: currency,
       accountBalance: rc.currentBalance
     });
-    const receiptMetaRow = (label, value2, valueStyle) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: receiptBodyFontSize, color: monoText(mode, "#111111"), marginBottom: 4 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
-        label,
-        ": "
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: valueStyle, children: value2 })
-    ] });
-    const receiptCustomerNameRow = () => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: receiptBodyFontSize, color: monoText(mode, "#111111"), marginBottom: 4, maxLines: 1, textOverflow: "ellipsis" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: customerNameLabel }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: receiptCustomerNameFontSize }, children: customerNameText })
-    ] });
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: `Payment Receipt - ${rc.receiptNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [s4.page, pageStyle], children: [
-      channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
-      isCancelled2 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-        PaginationFurniture,
-        {
-          colorMode: mode,
-          identity: paginationIdentity(type, rc, resolvedRecipientName || ""),
-          companyName
-        }
-      ),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { position: "relative", alignItems: "center", marginBottom: 6, paddingTop: 2 }, children: [
-        !!logo && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: logo, style: { position: "absolute", left: 0, top: 0, width: templateSettings.logoWidth } }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "center", width: "100%", paddingLeft: receiptNameGutter, paddingRight: receiptNameGutter }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: receiptNameFontSize, fontWeight: "bold", color: monoText(mode, "#000"), textAlign: "center", maxLines: 1, textOverflow: "ellipsis" }, children: companyName }),
-          !!receiptCompanyAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: receiptBodyFontSize, color: monoText(mode, "#334155"), textAlign: "center", marginTop: 2 }, children: receiptCompanyAddress }),
-          !!companyContact && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: receiptBodyFontSize, color: monoText(mode, "#334155"), textAlign: "center", marginTop: 2 }, children: companyContact })
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: receiptTitleFontSize, fontWeight: "bold", color: monoText(mode, "#000"), textAlign: "center", marginTop: 8, marginBottom: 8 }, children: "Payment Receipt" }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginBottom: 10 } }),
-      isOverpaid && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { backgroundColor: monoFill(mode, "#fef2f2"), padding: 10, borderRadius: 4, marginBottom: 15, borderLeftWidth: 4, borderLeftColor: monoLine(mode, "#ef4444") }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#991b1b"), fontSize: 12, fontWeight: "bold", lineHeight: 1.4 }, children: "OVERPAYMENT NOTICE" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#b91c1c"), fontSize: 12, lineHeight: 1.4 }, children: "This payment exceeds the invoice total. The excess has been credited to your wallet." })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginBottom: 8 }, children: receiptCustomerNameRow() }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", gap: RECEIPT_META_GAP, marginBottom: 10 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-          receiptMetaRow("Receipt No", rc.receiptNumber),
-          receiptMetaRow("Reference", allocationRef),
-          receiptMetaRow("Currency", resolveReceiptCurrencyLabel(currency))
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, paddingLeft: receiptMetaRightIndent }, children: [
-          receiptMetaRow("Date", rc.date),
-          receiptMetaRow("Payment Method", rc.paymentMethod),
-          !!receiptAccount && receiptMetaRow("Account", receiptAccount),
-          receiptMetaRow("Status", receiptBadge.label, { fontWeight: "bold", color: monoText(mode, receiptBadge.color) })
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginBottom: 10 } }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: receiptBodyFontSize, fontWeight: "bold", color: monoText(mode, "#111111"), marginBottom: 6 }, children: "Payment Details Table" }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { borderWidth: 0.5, borderColor: monoLine(mode, "#9ca3af"), marginBottom: 10 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3, fontSize: receiptBodyFontSize, fontWeight: "bold", color: monoText(mode, "#111111"), padding: 5, borderRightWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: "Description" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: receiptBodyFontSize, fontWeight: "bold", color: monoText(mode, "#111111"), padding: 5, textAlign: "right", borderRightWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: "Line Total" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: receiptBodyFontSize, fontWeight: "bold", color: monoText(mode, "#111111"), padding: 5, textAlign: "right" }, children: "Paid" })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3, fontSize: receiptBodyFontSize, color: monoText(mode, "#111111"), padding: 5, borderRightWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: (rc.appliedOrders || []).length > 0 ? `Payment for Orders: ${(rc.appliedOrders || []).join(", ")}` : `Payment for Invoices: ${(rc.appliedInvoices || []).join(", ")}` }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: receiptBodyFontSize, color: monoText(mode, "#111111"), padding: 5, textAlign: "right", borderRightWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: [
-            currency,
-            " ",
-            formatAmount2(receiptInvoiceTotal)
+    const receiptMetaRow = (label, value2, valueStyle) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+      Text,
+      {
+        style: {
+          fontSize: receiptBodyFontSize,
+          color: monoText(mode, "#111111"),
+          marginBottom: 4
+        },
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
+            label,
+            ": "
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: receiptBodyFontSize, color: monoText(mode, "#111111"), padding: 5, textAlign: "right" }, children: [
-            currency,
-            " ",
-            formatAmount2(receiptPaid)
-          ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", padding: 5 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 4, fontSize: receiptBodyFontSize, fontWeight: "bold", color: monoText(mode, "#111111"), textAlign: "right" }, children: "Amount Received" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: receiptBodyFontSize, fontWeight: "bold", color: monoText(mode, "#111111"), textAlign: "right" }, children: [
-            currency,
-            " ",
-            formatAmount2(rc.amountReceived)
-          ] })
-        ] }),
-        isPartial && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", padding: 5 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 4, fontSize: receiptBodyFontSize, color: monoText(mode, "#ef4444"), textAlign: "right" }, children: "Outstanding Balance" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: receiptBodyFontSize, color: monoText(mode, "#ef4444"), textAlign: "right" }, children: [
-            currency,
-            " ",
-            formatAmount2(rc.balanceDue)
-          ] })
-        ] }),
-        isOverpaid && overpaymentAmount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", padding: 5 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 4, fontSize: receiptBodyFontSize, fontWeight: "bold", color: monoText(mode, "#10b981"), textAlign: "right" }, children: "Wallet Credit" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: receiptBodyFontSize, fontWeight: "bold", color: monoText(mode, "#10b981"), textAlign: "right" }, children: [
-            currency,
-            " ",
-            formatAmount2(overpaymentAmount)
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: valueStyle, children: value2 })
+        ]
+      }
+    );
+    const receiptCustomerNameRow = () => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+      Text,
+      {
+        style: {
+          fontSize: receiptBodyFontSize,
+          color: monoText(mode, "#111111"),
+          marginBottom: 4,
+          maxLines: 1,
+          textOverflow: "ellipsis"
+        },
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: customerNameLabel }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: receiptCustomerNameFontSize }, children: customerNameText })
+        ]
+      }
+    );
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      Document,
+      {
+        title: `Payment Receipt - ${rc.receiptNumber}`,
+        author: companyName,
+        children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [s4.page, pageStyle], children: [
+          channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
+          isCancelled2 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            PaginationFurniture,
+            {
+              colorMode: mode,
+              identity: paginationIdentity(
+                type,
+                rc,
+                resolvedRecipientName || ""
+              ),
+              companyName
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                position: "relative",
+                alignItems: "center",
+                marginBottom: 6,
+                paddingTop: 2
+              },
+              children: [
+                !!logo && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Image,
+                  {
+                    src: logo,
+                    style: {
+                      position: "absolute",
+                      left: 0,
+                      top: 0,
+                      width: templateSettings.logoWidth
+                    }
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      alignItems: "center",
+                      width: "100%",
+                      paddingLeft: receiptNameGutter,
+                      paddingRight: receiptNameGutter
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: receiptNameFontSize,
+                            fontWeight: "bold",
+                            color: monoText(mode, "#000"),
+                            textAlign: "center",
+                            maxLines: 1,
+                            textOverflow: "ellipsis"
+                          },
+                          children: companyName
+                        }
+                      ),
+                      !!receiptCompanyAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: receiptBodyFontSize,
+                            color: monoText(mode, "#334155"),
+                            textAlign: "center",
+                            marginTop: 2
+                          },
+                          children: receiptCompanyAddress
+                        }
+                      ),
+                      !!companyContact && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: receiptBodyFontSize,
+                            color: monoText(mode, "#334155"),
+                            textAlign: "center",
+                            marginTop: 2
+                          },
+                          children: companyContact
+                        }
+                      )
+                    ]
+                  }
+                )
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                fontSize: receiptTitleFontSize,
+                fontWeight: "bold",
+                color: monoText(mode, "#000"),
+                textAlign: "center",
+                marginTop: 8,
+                marginBottom: 8
+              },
+              children: "Payment Receipt"
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            View,
+            {
+              style: {
+                height: 1,
+                backgroundColor: monoLine(mode, "#9ca3af"),
+                marginBottom: 10
+              }
+            }
+          ),
+          isOverpaid && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                backgroundColor: monoFill(mode, "#fef2f2"),
+                padding: 10,
+                borderRadius: 4,
+                marginBottom: 15,
+                borderLeftWidth: 4,
+                borderLeftColor: monoLine(mode, "#ef4444")
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      color: monoText(mode, "#991b1b"),
+                      fontSize: 12,
+                      fontWeight: "bold",
+                      lineHeight: 1.4
+                    },
+                    children: "OVERPAYMENT NOTICE"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      color: monoText(mode, "#b91c1c"),
+                      fontSize: 12,
+                      lineHeight: 1.4
+                    },
+                    children: "This payment exceeds the invoice total. The excess has been credited to your wallet."
+                  }
+                )
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginBottom: 8 }, children: receiptCustomerNameRow() }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                flexDirection: "row",
+                gap: RECEIPT_META_GAP,
+                marginBottom: 10
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
+                  receiptMetaRow("Receipt No", rc.receiptNumber),
+                  receiptMetaRow("Reference", allocationRef),
+                  receiptMetaRow(
+                    "Currency",
+                    resolveReceiptCurrencyLabel(currency)
+                  )
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, paddingLeft: receiptMetaRightIndent }, children: [
+                  receiptMetaRow("Date", rc.date),
+                  receiptMetaRow("Payment Method", rc.paymentMethod),
+                  !!receiptAccount && receiptMetaRow("Account", receiptAccount),
+                  receiptMetaRow("Status", receiptBadge.label, {
+                    fontWeight: "bold",
+                    color: monoText(mode, receiptBadge.color)
+                  })
+                ] })
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            View,
+            {
+              style: {
+                height: 1,
+                backgroundColor: monoLine(mode, "#9ca3af"),
+                marginBottom: 10
+              }
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                fontSize: receiptBodyFontSize,
+                fontWeight: "bold",
+                color: monoText(mode, "#111111"),
+                marginBottom: 6
+              },
+              children: "Payment Details Table"
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                borderWidth: 0.5,
+                borderColor: monoLine(mode, "#9ca3af"),
+                marginBottom: 10
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      borderBottomWidth: 0.5,
+                      borderColor: monoLine(mode, "#9ca3af")
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            flex: 3,
+                            fontSize: receiptBodyFontSize,
+                            fontWeight: "bold",
+                            color: monoText(mode, "#111111"),
+                            padding: 5,
+                            borderRightWidth: 0.5,
+                            borderColor: monoLine(mode, "#9ca3af")
+                          },
+                          children: "Description"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            flex: 1,
+                            fontSize: receiptBodyFontSize,
+                            fontWeight: "bold",
+                            color: monoText(mode, "#111111"),
+                            padding: 5,
+                            textAlign: "right",
+                            borderRightWidth: 0.5,
+                            borderColor: monoLine(mode, "#9ca3af")
+                          },
+                          children: "Line Total"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            flex: 1,
+                            fontSize: receiptBodyFontSize,
+                            fontWeight: "bold",
+                            color: monoText(mode, "#111111"),
+                            padding: 5,
+                            textAlign: "right"
+                          },
+                          children: "Paid"
+                        }
+                      )
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      borderBottomWidth: 0.5,
+                      borderColor: monoLine(mode, "#9ca3af")
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            flex: 3,
+                            fontSize: receiptBodyFontSize,
+                            color: monoText(mode, "#111111"),
+                            padding: 5,
+                            borderRightWidth: 0.5,
+                            borderColor: monoLine(mode, "#9ca3af")
+                          },
+                          children: (rc.appliedOrders || []).length > 0 ? `Payment for Orders: ${(rc.appliedOrders || []).join(", ")}` : `Payment for Invoices: ${(rc.appliedInvoices || []).join(", ")}`
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            flex: 1,
+                            fontSize: receiptBodyFontSize,
+                            color: monoText(mode, "#111111"),
+                            padding: 5,
+                            textAlign: "right",
+                            borderRightWidth: 0.5,
+                            borderColor: monoLine(mode, "#9ca3af")
+                          },
+                          children: [
+                            currency,
+                            " ",
+                            formatAmount2(receiptInvoiceTotal)
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            flex: 1,
+                            fontSize: receiptBodyFontSize,
+                            color: monoText(mode, "#111111"),
+                            padding: 5,
+                            textAlign: "right"
+                          },
+                          children: [
+                            currency,
+                            " ",
+                            formatAmount2(receiptPaid)
+                          ]
+                        }
+                      )
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", padding: 5 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        flex: 4,
+                        fontSize: receiptBodyFontSize,
+                        fontWeight: "bold",
+                        color: monoText(mode, "#111111"),
+                        textAlign: "right"
+                      },
+                      children: "Amount Received"
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    Text,
+                    {
+                      style: {
+                        flex: 1,
+                        fontSize: receiptBodyFontSize,
+                        fontWeight: "bold",
+                        color: monoText(mode, "#111111"),
+                        textAlign: "right"
+                      },
+                      children: [
+                        currency,
+                        " ",
+                        formatAmount2(rc.amountReceived)
+                      ]
+                    }
+                  )
+                ] }),
+                isPartial && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", padding: 5 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        flex: 4,
+                        fontSize: receiptBodyFontSize,
+                        color: monoText(mode, "#ef4444"),
+                        textAlign: "right"
+                      },
+                      children: "Outstanding Balance"
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    Text,
+                    {
+                      style: {
+                        flex: 1,
+                        fontSize: receiptBodyFontSize,
+                        color: monoText(mode, "#ef4444"),
+                        textAlign: "right"
+                      },
+                      children: [
+                        currency,
+                        " ",
+                        formatAmount2(rc.balanceDue)
+                      ]
+                    }
+                  )
+                ] }),
+                isOverpaid && overpaymentAmount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", padding: 5 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        flex: 4,
+                        fontSize: receiptBodyFontSize,
+                        fontWeight: "bold",
+                        color: monoText(mode, "#10b981"),
+                        textAlign: "right"
+                      },
+                      children: "Wallet Credit"
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    Text,
+                    {
+                      style: {
+                        flex: 1,
+                        fontSize: receiptBodyFontSize,
+                        fontWeight: "bold",
+                        color: monoText(mode, "#10b981"),
+                        textAlign: "right"
+                      },
+                      children: [
+                        currency,
+                        " ",
+                        formatAmount2(overpaymentAmount)
+                      ]
+                    }
+                  )
+                ] })
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            View,
+            {
+              style: {
+                height: 1,
+                backgroundColor: monoLine(mode, "#9ca3af"),
+                marginBottom: 10
+              }
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 4 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              Text,
+              {
+                style: {
+                  fontSize: receiptBodyFontSize,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#111111"),
+                  marginBottom: 6
+                },
+                children: "Notes Section"
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              View,
+              {
+                style: {
+                  padding: 10,
+                  backgroundColor: monoFill(mode, "#f8fafc"),
+                  borderRadius: 8
+                },
+                children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: receiptBodyFontSize,
+                      lineHeight: 1.6,
+                      color: monoText(mode, "#334155")
+                    },
+                    children: rc.narrative || receiptNoteFallback
+                  }
+                )
+              }
+            )
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            View,
+            {
+              style: {
+                height: 1,
+                backgroundColor: monoLine(mode, "#9ca3af"),
+                marginTop: 10,
+                marginBottom: 10
+              }
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { wrap: false, style: { marginTop: 10, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            Text,
+            {
+              style: {
+                fontSize: scaledFont(12),
+                color: monoText(mode, "#334155")
+              },
+              children: [
+                "Thank you for choosing",
+                " ",
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: companyName })
+              ]
+            }
+          ) }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              SecurityFooter,
+              {
+                colorMode: mode,
+                data: rc,
+                companyName,
+                legalFooterLine1: resolveFooterText(config2, "", false),
+                legalFooterLine2: buildFooterContactLine(config2),
+                fontScale,
+                flowing: true
+              }
+            )
           ] })
         ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginBottom: 10 } }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 4 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: receiptBodyFontSize, fontWeight: "bold", color: monoText(mode, "#111111"), marginBottom: 6 }, children: "Notes Section" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { padding: 10, backgroundColor: monoFill(mode, "#f8fafc"), borderRadius: 8 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: receiptBodyFontSize, lineHeight: 1.6, color: monoText(mode, "#334155") }, children: rc.narrative || receiptNoteFallback }) })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginTop: 10, marginBottom: 10 } }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { wrap: false, style: { marginTop: 10, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: scaledFont(12), color: monoText(mode, "#334155") }, children: [
-        "Thank you for choosing ",
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: companyName })
-      ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-          SecurityFooter,
-          {
-            colorMode: mode,
-            data: rc,
-            companyName,
-            legalFooterLine1: resolveFooterText(config2, "", false),
-            legalFooterLine2: buildFooterContactLine(config2),
-            fontScale,
-            flowing: true
-          }
-        )
-      ] })
-    ] }) });
+      }
+    );
   }
   if (type === "PRINTING_CONTRACT") {
     const pc = data2;
-    const cancelled = isCancelledStatus(pc.status, pc);
+    const cancelled = isCancelledStatus(
+      pc.status,
+      pc
+    );
     const fullySigned = Boolean(pc.fullySigned);
     const ink = monoText(mode, "#0f172a");
     const softInk = monoText(mode, "#334155");
@@ -236007,74 +239323,322 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
     const dateText = readableDate;
     const lifecycleStatus = String(pc.status || "").trim().toLowerCase();
     const statusLabel = lifecycleStatus === "voided" ? "Voided" : lifecycleStatus === "cancelled" || lifecycleStatus === "canceled" ? "Cancelled" : lifecycleStatus === "expired" ? "Expired" : lifecycleStatus === "completed" ? "Completed" : lifecycleStatus === "suspended" ? "Suspended" : fullySigned ? "Active" : "Pending signature";
-    const statusTone = cancelled ? { border: monoLine(mode, "#b91c1c"), text: monoText(mode, "#b91c1c"), fill: monoFill(mode, "#fef2f2") } : fullySigned ? { border: accent, text: accent, fill: monoFill(mode, "#eff6ff") } : { border: strongRule, text: muted, fill: headerFill };
+    const statusTone = cancelled ? {
+      border: monoLine(mode, "#b91c1c"),
+      text: monoText(mode, "#b91c1c"),
+      fill: monoFill(mode, "#fef2f2")
+    } : fullySigned ? { border: accent, text: accent, fill: monoFill(mode, "#eff6ff") } : { border: strongRule, text: muted, fill: headerFill };
     const renderableSignature = (raw) => {
       const validated = normalizeSignatureDataUrl(String(raw || ""));
       const mime = (validated?.match(/^data:([^;]+);base64,/i)?.[1] || "").toLowerCase();
       return validated && (mime === "image/png" || mime === "image/jpeg" || mime === "image/jpg") ? validated : null;
     };
-    const sectionHeading = (label, style) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [{ fontSize: 9.5, fontWeight: "bold", letterSpacing: 0.8, textTransform: "uppercase", color: accent, marginBottom: 5 }, style], children: label });
+    const sectionHeading = (label, style) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      Text,
+      {
+        style: [
+          {
+            fontSize: 9.5,
+            fontWeight: "bold",
+            letterSpacing: 0.8,
+            textTransform: "uppercase",
+            color: accent,
+            marginBottom: 5
+          },
+          style
+        ],
+        children: label
+      }
+    );
     const partyLine = (label, value2) => value2 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", marginTop: 2 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 62, fontSize: 7.5, color: muted, letterSpacing: 0.4, textTransform: "uppercase" }, children: label }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 8.8, color: softInk, lineHeight: 1.3 }, children: value2 })
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+        Text,
+        {
+          style: {
+            width: 62,
+            fontSize: 7.5,
+            color: muted,
+            letterSpacing: 0.4,
+            textTransform: "uppercase"
+          },
+          children: label
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+        Text,
+        {
+          style: { flex: 1, fontSize: 8.8, color: softInk, lineHeight: 1.3 },
+          children: value2
+        }
+      )
     ] }) : null;
-    const termCell = (label, value2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, paddingHorizontal: 8, paddingVertical: 6, borderRightWidth: 0.5, borderColor: hairline }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7.2, letterSpacing: 0.5, textTransform: "uppercase", color: muted }, children: label }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9.2, color: ink, fontWeight: "bold", marginTop: 2 }, children: value2 })
-    ] });
-    const summaryLine = (label, value2, options = {}) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      paddingVertical: options.strong ? 4 : 2.5,
-      marginTop: options.top ? 3 : 0,
-      borderTopWidth: options.top ? 0.8 : 0,
-      borderColor: strongRule
-    }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: options.strong ? 10 : 8.8, fontWeight: options.strong ? "bold" : "normal", color: options.strong ? ink : muted }, children: label }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: options.strong ? 10.5 : 9, fontWeight: options.strong ? "bold" : "normal", color: ink, textAlign: "right" }, children: value2 })
-    ] });
-    const specRow = (label, value2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderTopWidth: 0.5, borderColor: hairline, paddingVertical: 3.2 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 136, fontSize: 8.5, color: muted, paddingRight: 8 }, children: label }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 9.2, color: softInk, lineHeight: 1.3 }, children: value2 })
-    ] }, `${label}:${value2}`);
-    const clause = (index2, title2, body) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", marginTop: 9 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 20, fontSize: bodySize, lineHeight: 1.4, fontWeight: "bold", color: accent }, children: [
-        index2,
-        "."
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, fontSize: bodySize, lineHeight: 1.4, color: softInk }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold", color: ink }, children: [
-          title2,
-          ". "
-        ] }),
-        body
-      ] })
-    ] }, `${index2}:${title2}`);
-    const signatureCard = (label, block, fallbackRole) => {
+    const termCell = (label, value2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+      View,
+      {
+        style: {
+          flex: 1,
+          paddingHorizontal: 8,
+          paddingVertical: 6,
+          borderRightWidth: 0.5,
+          borderColor: hairline
+        },
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                fontSize: 7.2,
+                letterSpacing: 0.5,
+                textTransform: "uppercase",
+                color: muted
+              },
+              children: label
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                fontSize: 9.2,
+                color: ink,
+                fontWeight: "bold",
+                marginTop: 2
+              },
+              children: value2
+            }
+          )
+        ]
+      }
+    );
+    const summaryLine = (label, value2, options = {}) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+      View,
+      {
+        style: {
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "center",
+          paddingVertical: options.strong ? 4 : 2.5,
+          marginTop: options.top ? 3 : 0,
+          borderTopWidth: options.top ? 0.8 : 0,
+          borderColor: strongRule
+        },
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                fontSize: options.strong ? 10 : 8.8,
+                fontWeight: options.strong ? "bold" : "normal",
+                color: options.strong ? ink : muted
+              },
+              children: label
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                fontSize: options.strong ? 10.5 : 9,
+                fontWeight: options.strong ? "bold" : "normal",
+                color: ink,
+                textAlign: "right"
+              },
+              children: value2
+            }
+          )
+        ]
+      }
+    );
+    const specRow = (label, value2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+      View,
+      {
+        style: {
+          flexDirection: "row",
+          borderTopWidth: 0.5,
+          borderColor: hairline,
+          paddingVertical: 3.2
+        },
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: { width: 136, fontSize: 8.5, color: muted, paddingRight: 8 },
+              children: label
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: { flex: 1, fontSize: 9.2, color: softInk, lineHeight: 1.3 },
+              children: value2
+            }
+          )
+        ]
+      },
+      `${label}:${value2}`
+    );
+    const clause = (index2, title2, body) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+      View,
+      {
+        style: { flexDirection: "row", marginTop: 9 },
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            Text,
+            {
+              style: {
+                width: 20,
+                fontSize: bodySize,
+                lineHeight: 1.4,
+                fontWeight: "bold",
+                color: accent
+              },
+              children: [
+                index2,
+                "."
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            Text,
+            {
+              style: {
+                flex: 1,
+                fontSize: bodySize,
+                lineHeight: 1.4,
+                color: softInk
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold", color: ink }, children: [
+                  title2,
+                  ". "
+                ] }),
+                body
+              ]
+            }
+          )
+        ]
+      },
+      `${index2}:${title2}`
+    );
+    const signatureCard = (label, block, fallbackRole, fallbackSignedAt, fallbackName) => {
       const img = block ? renderableSignature(block.signatureDataUrl) : null;
-      return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, borderWidth: 0.5, borderColor: strongRule, borderRadius: 3, padding: 9, backgroundColor: pageBackground }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7.5, fontWeight: "bold", letterSpacing: 1, textTransform: "uppercase", color: muted }, children: label }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", color: ink, marginTop: 5 }, children: block?.name || "____________________________" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5, color: muted, marginTop: 1 }, children: block?.role || fallbackRole }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 42, justifyContent: "flex-end", alignItems: "center", marginTop: 8, borderBottomWidth: 0.5, borderColor: strongRule }, children: img ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: img, style: { width: 118, height: 34, objectFit: "contain", marginBottom: 2 } }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5, color: muted, fontStyle: "italic", marginBottom: 6 }, children: "Not signed" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7, letterSpacing: 0.4, textTransform: "uppercase", color: muted, marginTop: 2 }, children: "Signature" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", marginTop: 8, alignItems: "flex-end" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8, color: muted }, children: "Date: " }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5, color: ink }, children: block?.signedAt ? readableDate(block.signedAt) : "________________" })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", marginTop: 4, alignItems: "flex-end" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8, color: muted }, children: "Witness (optional): " }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5, color: ink }, children: "________________" })
-        ] })
-      ] });
+      const signedAt = block?.signedAt || fallbackSignedAt || "";
+      return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+        View,
+        {
+          style: {
+            flex: 1,
+            borderWidth: 0.5,
+            borderColor: strongRule,
+            borderRadius: 3,
+            padding: 9,
+            backgroundColor: pageBackground
+          },
+          children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              Text,
+              {
+                style: {
+                  fontSize: 7.5,
+                  fontWeight: "bold",
+                  letterSpacing: 1,
+                  textTransform: "uppercase",
+                  color: muted
+                },
+                children: label
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              Text,
+              {
+                style: {
+                  fontSize: 10,
+                  fontWeight: "bold",
+                  color: ink,
+                  marginTop: 5
+                },
+                children: block?.name || fallbackName || "____________________________"
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5, color: muted, marginTop: 1 }, children: block?.role || fallbackRole }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              View,
+              {
+                style: {
+                  height: 42,
+                  justifyContent: "flex-end",
+                  alignItems: "center",
+                  marginTop: 8,
+                  borderBottomWidth: 0.5,
+                  borderColor: strongRule
+                },
+                children: img ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Image,
+                  {
+                    src: img,
+                    style: {
+                      width: 118,
+                      height: 34,
+                      objectFit: "contain",
+                      marginBottom: 2
+                    }
+                  }
+                ) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 8.5,
+                      color: muted,
+                      fontStyle: "italic",
+                      marginBottom: 6
+                    },
+                    children: "Not signed"
+                  }
+                )
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              Text,
+              {
+                style: {
+                  fontSize: 7,
+                  letterSpacing: 0.4,
+                  textTransform: "uppercase",
+                  color: muted,
+                  marginTop: 2
+                },
+                children: "Signature"
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+              View,
+              {
+                style: {
+                  flexDirection: "row",
+                  marginTop: 8,
+                  alignItems: "flex-end"
+                },
+                children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8, color: muted }, children: "Date: " }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5, color: ink }, children: signedAt ? readableDate(signedAt) : "\u2014" })
+                ]
+              }
+            )
+          ]
+        }
+      );
     };
     const recordedTerms = String(pc.terms || "").trim();
-    const termsAreStub = !recordedTerms || recordedTerms.length <= 48 && /^(?:\d[\d,.\s]*\s*)?(?:learners?|candidates?|pupils?|students?|assessments?)?(?:\s*[\d,.\s]*)?$/i.test(recordedTerms);
-    const clientSchool = pc.schoolName && pc.schoolName.trim().toLowerCase() !== pc.customerName.trim().toLowerCase() ? pc.schoolName.trim() : "";
+    const termsAreStub = !recordedTerms || recordedTerms.length <= 48 && /^(?:\d[\d,.\s]*\s*)?(?:learners?|candidates?|pupils?|students?|assessments?)?(?:\s*[\d,.\s]*)?$/i.test(
+      recordedTerms
+    );
+    const clientSchoolName = resolveSchoolNameForDocument(pc.schoolName);
+    const clientSchool = clientSchoolName && clientSchoolName.toLowerCase() !== String(pc.customerName || "").trim().toLowerCase() ? clientSchoolName : "";
     const clientLocation = [pc.customerAddress, pc.schoolZone].filter(Boolean).join(" \xB7 ");
     const deliveryPlace = [pc.deliveryMethod, pc.deliveryTimeline].filter(Boolean).join(", ");
-    const companySettingsSignature = renderableSignature(resolvePdfSignatureSource(config2));
+    const companySettingsSignature = renderableSignature(
+      resolvePdfSignatureSource(config2)
+    );
     const recordedCompanySignature = pc.signatures?.company;
     const companySignatureBlock = companySettingsSignature ? {
       name: recordedCompanySignature?.name || companyName,
@@ -236082,213 +239646,854 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
       signatureDataUrl: companySettingsSignature,
       signedAt: recordedCompanySignature?.signedAt || ""
     } : recordedCompanySignature;
-    const lineSubtotal = (pc.lines || []).reduce((sum, line2) => sum + (Number(line2.total) || 0), 0);
+    const lineSubtotal = (pc.lines || []).reduce(
+      (sum, line2) => sum + (Number(line2.total) || 0),
+      0
+    );
     const vatAmount = Math.max(0, Number(pc.vatAmount) || 0);
     const totalAmount = lineSubtotal > 0 ? lineSubtotal + vatAmount : Math.max(0, Number(pc.prepaidAmount) || 0);
     const prepaidAmount = Math.max(0, Number(pc.prepaidAmount) || 0);
     const balanceDue = Math.max(0, totalAmount - prepaidAmount);
     const specRows = [];
     const candidature = pc.totalCandidature !== void 0 ? pc.totalCandidature : pc.maxAssessments;
-    if (candidature !== void 0 && Number(candidature) > 0) specRows.push(["Candidates", String(candidature)]);
-    if (pc.printPaperSummary) specRows.push(["Paper / pages", pc.printPaperSummary]);
+    if (candidature !== void 0 && Number(candidature) > 0)
+      specRows.push(["Candidates", String(candidature)]);
+    if (pc.printPaperSummary)
+      specRows.push(["Paper / pages", pc.printPaperSummary]);
     if (pc.printColorSummary) specRows.push(["Print", pc.printColorSummary]);
-    if (pc.printTypeSummary) specRows.push(["Paper type / orientation", pc.printTypeSummary]);
+    if (pc.printTypeSummary)
+      specRows.push(["Paper type / orientation", pc.printTypeSummary]);
     if (!pc.printPaperSummary && !pc.printColorSummary && pc.printSpecSummary) {
       specRows.push(["Printing specification", pc.printSpecSummary]);
     }
     const unitPrice = pc.chargePerCandidate !== void 0 ? pc.chargePerCandidate : pc.assessmentPrice;
     if (Number(unitPrice) > 0) {
-      specRows.push(["Pricing", `${money(Number(unitPrice))} per ${pc.chargePerCandidate !== void 0 ? "candidate" : "assessment"}`]);
+      specRows.push([
+        "Pricing",
+        `${money(Number(unitPrice))} per ${pc.chargePerCandidate !== void 0 ? "candidate" : "assessment"}`
+      ]);
     }
     if (deliveryPlace) specRows.push(["Delivery", deliveryPlace]);
-    if (pc.deliveryAddress) specRows.push(["Delivery point", pc.deliveryAddress]);
+    if (pc.deliveryAddress)
+      specRows.push(["Delivery point", pc.deliveryAddress]);
     if (pc.printFinishing) specRows.push(["Finishing", pc.printFinishing]);
     if (pc.printPackaging) specRows.push(["Packaging", pc.printPackaging]);
-    if (pc.assessmentSittings) specRows.push(["Sittings", pc.assessmentSittings]);
-    if (pc.assessmentSpec) specRows.push(["Assessment specification", pc.assessmentSpec]);
-    const pricingNotes = stripChargePerCandidateSubstring(String(pc.pricingRulesSummary || ""));
+    if (pc.assessmentSittings)
+      specRows.push(["Sittings", pc.assessmentSittings]);
+    if (pc.assessmentSpec)
+      specRows.push(["Assessment specification", pc.assessmentSpec]);
+    const pricingNotes = stripChargePerCandidateSubstring(
+      String(pc.pricingRulesSummary || "")
+    );
     const unitLabel = pc.chargePerCandidate !== void 0 ? "candidate" : "assessment";
     const unitEchoRe = new RegExp(`^per[\\s_-]*${unitLabel}s?$`, "i");
     const pricingSegments = pricingNotes.split(" \xB7 ").map((part) => part.trim()).filter(Boolean);
-    if (pricingSegments.length > 1 && unitEchoRe.test(pricingSegments[0])) pricingSegments.shift();
+    if (pricingSegments.length > 1 && unitEchoRe.test(pricingSegments[0]))
+      pricingSegments.shift();
     const informativePricingNotes = pricingSegments.join(" \xB7 ");
     if (informativePricingNotes && !unitEchoRe.test(informativePricingNotes)) {
       specRows.push(["Pricing notes", informativePricingNotes]);
     }
-    if (!deliveryPlace && pc.deliveryTermsSummary) specRows.push(["Delivery", pc.deliveryTermsSummary]);
+    if (!deliveryPlace && pc.deliveryTermsSummary)
+      specRows.push(["Delivery", pc.deliveryTermsSummary]);
     if (pc.deliveryNotes) specRows.push(["Delivery notes", pc.deliveryNotes]);
     if (pc.notes) specRows.push(["Contract notes", pc.notes]);
-    if (specRows.length === 0) specRows.push(["Specification", "As agreed between the parties."]);
-    const verificationUrl = /^https?:\/\//i.test(String(pc.securityQrPayload || "")) ? String(pc.securityQrPayload) : "";
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: `Printing Contract - ${pc.contractNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
-       Page, {
-        size: "A4",
-        style: [s4.page, {
-          paddingTop: 30,
-          paddingHorizontal: 36,
-          paddingBottom: 40,
-          fontFamily: templateSettings.fontFamily,
-          fontSize: bodySize,
+    if (specRows.length === 0)
+      specRows.push(["Specification", "As agreed between the parties."]);
+    const qrCodeDataUrl = resolvePdfQrCodeSource(
+      String(pc.securityQrCodeDataUrl || "")
+    );
+    const verificationUrl = /^https?:\/\//i.test(
+      String(pc.securityQrPayload || "")
+    ) ? String(pc.securityQrPayload) : "";
+    const verifyOrigin = (/^https?:\/\/([^/?#]+)/i.exec(verificationUrl) || [])[1] || "";
+    const verifyAddress = verifyOrigin ? `${verifyOrigin}/verify` : "the address in the QR code";
+    const contentHash = String(pc.contentHash || "").trim().toLowerCase();
+    const hashGroups = contentHash.match(/.{1,8}/g) || [];
+    const hashLines = [
+      hashGroups.slice(0, 4).join(" "),
+      hashGroups.slice(4, 8).join(" ")
+    ].filter(Boolean);
+    const shortCode = String(pc.integrityShortCode || "").trim() || (hashGroups.length >= 2 ? `${contentHash.slice(0, 4)}-${contentHash.slice(4, 8)}-${contentHash.slice(8, 12)}` : "");
+    const generatedOn = (() => {
+      const raw = String(pc.date || "").trim();
+      const dmy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(raw);
+      if (dmy)
+        return `${dmy[1].padStart(2, "0")}/${dmy[2].padStart(2, "0")}/${dmy[3]}`;
+      const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+      if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+      return raw || "\u2014";
+    })();
+    const metaLabel = (label) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      Text,
+      {
+        style: {
+          fontSize: 6.8,
+          letterSpacing: 0.5,
+          textTransform: "uppercase",
+          color: muted
+        },
+        children: label
+      }
+    );
+    const metaValue = (value2, mono = false) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      Text,
+      {
+        style: {
+          fontSize: mono ? 8 : 7.8,
           color: ink,
-          backgroundColor: pageBackground
-        }],
-        children: [
-          channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
-          cancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-            PaginationFurniture,
-            {
-              colorMode: mode,
-              identity: { title: "Contract", number: String(pc.contractNumber || ""), customer: String(pc.customerName || "") },
-              companyName,
-              pagePrefix: `Contract ${pc.contractNumber}`
-            }
-          ),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", paddingBottom: 10, borderBottomWidth: 0.8, borderColor: strongRule, marginBottom: 12 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flex: 1, paddingRight: 14 }, children: logo ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: logo, style: { width: Math.min(templateSettings.logoWidth, 120) } }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 13, fontWeight: "bold", color: ink }, children: companyName }) }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, alignItems: "flex-end" }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 19, fontWeight: "bold", letterSpacing: 0.4, color: accent }, children: "PRINTING CONTRACT" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", color: ink, marginTop: 3 }, children: pc.contractNumber }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 8.2, color: muted, marginTop: 2 }, children: [
-                "Issued ",
-                readableDate(pc.date),
-                " \xB7 Version ",
-                pc.version
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.2, color: muted, marginTop: 1 }, children: fullySigned ? "Fully signed" : "Awaiting signatures" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 4, borderWidth: 0.6, borderColor: statusTone.border, backgroundColor: statusTone.fill, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7.2, fontWeight: "bold", letterSpacing: 0.6, textTransform: "uppercase", color: statusTone.text }, children: statusLabel }) })
-            ] })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", gap: 12 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, borderWidth: 0.5, borderColor: hairline, borderRadius: 3, padding: 9, backgroundColor: softFill }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7.2, fontWeight: "bold", letterSpacing: 1, textTransform: "uppercase", color: muted }, children: "Service Provider" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11, fontWeight: "bold", color: ink, marginTop: 4 }, children: companyName }),
-              buildReceiptCompanyAddress(config) ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.6, color: softInk, marginTop: 2, lineHeight: 1.3 }, children: buildReceiptCompanyAddress(config) }) : null,
-              partyLine("Phone", formattedPhone || companyPhone),
-              partyLine("WhatsApp", config?.whatsappNumber),
-              partyLine("Email", companyEmail)
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, borderWidth: 0.5, borderColor: hairline, borderRadius: 3, padding: 9, backgroundColor: softFill }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7.2, fontWeight: "bold", letterSpacing: 1, textTransform: "uppercase", color: muted }, children: "Client" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11, fontWeight: "bold", color: ink, marginTop: 4 }, children: pc.customerName || "N/A" }),
-              clientSchool ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.8, color: softInk, marginTop: 1 }, children: clientSchool }) : null,
-              partyLine("Contact", pc.customerContact),
-              partyLine("Phone", pc.customerPhone),
-              partyLine("Address", clientLocation),
-              pc.customerReference ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 7.2, color: muted, marginTop: 4, letterSpacing: 0.3 }, children: [
-                "Customer ref: ",
-                pc.customerReference
-              ] }) : null
-            ] })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", marginTop: 10, borderWidth: 0.5, borderColor: hairline, borderRadius: 3 }, children: [
-            termCell("Effective date", dateText(pc.periodStart) || "Not stated"),
-            termCell("Expiry date", pc.periodEnd ? dateText(pc.periodEnd) : "Open-ended"),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, paddingHorizontal: 8, paddingVertical: 6 }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7.2, letterSpacing: 0.5, textTransform: "uppercase", color: muted }, children: "Delivery / pickup" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9.2, color: ink, fontWeight: "bold", marginTop: 2 }, children: deliveryPlace || "As agreed" })
-            ] })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 12 }, children: [
-            sectionHeading("Order summary"),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", backgroundColor: headerFill, paddingVertical: 4, paddingHorizontal: 5 }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3, fontSize: 7.2, fontWeight: "bold", letterSpacing: 0.5, textTransform: "uppercase", color: accent }, children: "Description" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 42, fontSize: 7.2, fontWeight: "bold", letterSpacing: 0.5, textTransform: "uppercase", color: accent, textAlign: "right" }, children: "Qty" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 88, fontSize: 7.2, fontWeight: "bold", letterSpacing: 0.5, textTransform: "uppercase", color: accent, textAlign: "right" }, children: "Unit price" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 94, fontSize: 7.2, fontWeight: "bold", letterSpacing: 0.5, textTransform: "uppercase", color: accent, textAlign: "right" }, children: "Amount" })
-            ] }),
-            (pc.lines || []).map((line2, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderColor: hairline, paddingVertical: 4.5, paddingHorizontal: 5 }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3, fontSize: 9.2, color: softInk, lineHeight: 1.3 }, children: line2.desc }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 42, fontSize: 9.2, color: ink, textAlign: "right" }, children: line2.qty }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 88, fontSize: 9.2, color: ink, textAlign: "right" }, children: money(line2.price) }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 94, fontSize: 9.2, color: ink, textAlign: "right" }, children: money(line2.total) })
-            ] }, `${line2.desc}:${i2}`)),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flexDirection: "row", justifyContent: "flex-end", marginTop: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { width: 250 }, children: [
-              summaryLine("Subtotal", money(lineSubtotal)),
-              vatAmount > 0 ? summaryLine("VAT", money(vatAmount)) : null,
-              summaryLine("Total", money(totalAmount), { strong: true, top: true }),
-              summaryLine("Prepaid", money(prepaidAmount)),
-              summaryLine("Balance due", money(balanceDue), { strong: true })
-            ] }) })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 12 }, children: [
-            sectionHeading("Agreed specification"),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", backgroundColor: headerFill, paddingVertical: 3.5, paddingHorizontal: 4 }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 136, fontSize: 7.2, fontWeight: "bold", letterSpacing: 0.5, textTransform: "uppercase", color: accent }, children: "Item" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 7.2, fontWeight: "bold", letterSpacing: 0.5, textTransform: "uppercase", color: accent }, children: "Detail" })
-            ] }),
-            specRows.map(([label, value2]) => specRow(label, value2))
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 12 }, children: [
-            sectionHeading("Terms & Conditions"),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.2, color: muted, marginBottom: 1 }, children: "These terms form part of the contract and apply to all work performed under it." }),
-            PRINTING_CONTRACT_STANDARD_TERMS.map((term, index2) => clause(index2 + 1, term.title, term.body)),
-            !termsAreStub ? clause(PRINTING_CONTRACT_STANDARD_TERMS.length + 1, "Additional agreed terms", recordedTerms) : null
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 14 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
-              sectionHeading("Signatures"),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.2, color: muted, marginBottom: 6 }, children: "Signed for and on behalf of the parties. This contract takes effect when both parties have signed." }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", gap: 12 }, children: [
-                signatureCard("Company", companySignatureBlock, "Authorised signatory"),
-                signatureCard("Client", pc.signatures?.customer, "Authorised signatory")
-              ] })
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 12, borderTopWidth: 0.5, borderColor: strongRule, paddingTop: 7 }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5, fontWeight: "bold", letterSpacing: 0.8, color: accent, textTransform: "uppercase" }, children: "DOCUMENT INTEGRITY" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 4, fontSize: 8.2, color: accent, lineHeight: 1.4 }, children: [
-                "Content hash: ",
-                pc.contentHash
-              ] }),
-              verificationUrl ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 2, fontSize: 8, color: softInk, lineHeight: 1.4 }, children: [
-                "Verification URL: ",
-                verificationUrl
-              ] }) : null,
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 3, fontSize: 8.2, color: muted, lineHeight: 1.4 }, children: [
-                "This hash covers the agreed parties, commercial lines, totals, terms and the recorded signature blocks. Any alteration changes the hash. Quote the contract number and hash to verify with ",
-                companyName,
-                "."
-              ] })
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 6 }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale: 1 }),
+          marginTop: 1.5,
+          fontFamily: mono ? PRIME_MONO_FONT_FAMILY : void 0
+        },
+        children: value2
+      }
+    );
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      Document,
+      {
+        title: `Printing Contract - ${pc.contractNumber}`,
+        author: companyName,
+        children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+          Page,
+          {
+            size: "A4",
+            style: [
+              s4.page,
+              {
+                paddingTop: 30,
+                paddingHorizontal: 36,
+                paddingBottom: 40,
+                fontFamily: templateSettings.fontFamily,
+                fontSize: bodySize,
+                color: ink,
+                backgroundColor: pageBackground
+              }
+            ],
+            children: [
+              channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
+              cancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
               /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-                SecurityFooter,
+                PaginationFurniture,
                 {
                   colorMode: mode,
-                  data: pc,
+                  identity: {
+                    title: "Contract",
+                    number: String(pc.contractNumber || ""),
+                    customer: String(pc.customerName || "")
+                  },
                   companyName,
-                  legalFooterLine1: resolveFooterText(config2, "", false),
-                  legalFooterLine2: buildFooterContactLine(config2),
-                  fontScale: 1,
-                  flowing: true
+                  pagePrefix: `Contract ${pc.contractNumber}`
                 }
-              )
-            ] })
-          ] })
-        ]
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                View,
+                {
+                  style: {
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    paddingBottom: 10,
+                    borderBottomWidth: 0.8,
+                    borderColor: strongRule,
+                    marginBottom: 12
+                  },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flex: 1, paddingRight: 14 }, children: logo ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                      Image,
+                      {
+                        src: logo,
+                        style: { width: Math.min(templateSettings.logoWidth, 120) }
+                      }
+                    ) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 13, fontWeight: "bold", color: ink }, children: companyName }) }),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, alignItems: "flex-end" }, children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 19,
+                            fontWeight: "bold",
+                            letterSpacing: 0.4,
+                            color: accent
+                          },
+                          children: "PRINTING CONTRACT"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 10,
+                            fontWeight: "bold",
+                            color: ink,
+                            marginTop: 3
+                          },
+                          children: pc.contractNumber
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 8.2, color: muted, marginTop: 2 }, children: [
+                        "Issued ",
+                        readableDate(pc.date),
+                        " \xB7 Version ",
+                        pc.version
+                      ] }),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.2, color: muted, marginTop: 1 }, children: fullySigned ? "Fully signed" : "Awaiting signatures" }),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        View,
+                        {
+                          style: {
+                            marginTop: 4,
+                            borderWidth: 0.6,
+                            borderColor: statusTone.border,
+                            backgroundColor: statusTone.fill,
+                            borderRadius: 8,
+                            paddingHorizontal: 7,
+                            paddingVertical: 2
+                          },
+                          children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                fontSize: 7.2,
+                                fontWeight: "bold",
+                                letterSpacing: 0.6,
+                                textTransform: "uppercase",
+                                color: statusTone.text
+                              },
+                              children: statusLabel
+                            }
+                          )
+                        }
+                      )
+                    ] })
+                  ]
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", gap: 12 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flex: 1,
+                      borderWidth: 0.5,
+                      borderColor: hairline,
+                      borderRadius: 3,
+                      padding: 9,
+                      backgroundColor: softFill
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 7.2,
+                            fontWeight: "bold",
+                            letterSpacing: 1,
+                            textTransform: "uppercase",
+                            color: muted
+                          },
+                          children: "Service Provider"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 11,
+                            fontWeight: "bold",
+                            color: ink,
+                            marginTop: 4
+                          },
+                          children: companyName
+                        }
+                      ),
+                      buildReceiptCompanyAddress(config2) ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 8.6,
+                            color: softInk,
+                            marginTop: 2,
+                            lineHeight: 1.3
+                          },
+                          children: buildReceiptCompanyAddress(config2)
+                        }
+                      ) : null,
+                      partyLine("Phone", formattedPhone || companyPhone),
+                      partyLine("WhatsApp", config2?.whatsappNumber),
+                      partyLine("Email", companyEmail)
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flex: 1,
+                      borderWidth: 0.5,
+                      borderColor: hairline,
+                      borderRadius: 3,
+                      padding: 9,
+                      backgroundColor: softFill
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 7.2,
+                            fontWeight: "bold",
+                            letterSpacing: 1,
+                            textTransform: "uppercase",
+                            color: muted
+                          },
+                          children: "Client"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 11,
+                            fontWeight: "bold",
+                            color: ink,
+                            marginTop: 4
+                          },
+                          children: resolveCustomerNameForDocument(pc.customerName, pc.schoolName) || clientSchool || "Customer"
+                        }
+                      ),
+                      clientSchool ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.8, color: softInk, marginTop: 1 }, children: clientSchool }) : null,
+                      partyLine("Contact", pc.customerContact),
+                      partyLine("Phone", pc.customerPhone),
+                      partyLine("Address", clientLocation),
+                      pc.customerReference ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 7.2,
+                            color: muted,
+                            marginTop: 4,
+                            letterSpacing: 0.3
+                          },
+                          children: [
+                            "Customer ref: ",
+                            pc.customerReference
+                          ]
+                        }
+                      ) : null
+                    ]
+                  }
+                )
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                View,
+                {
+                  style: {
+                    flexDirection: "row",
+                    marginTop: 10,
+                    borderWidth: 0.5,
+                    borderColor: hairline,
+                    borderRadius: 3
+                  },
+                  children: [
+                    termCell(
+                      "Effective date",
+                      dateText(pc.periodStart) || "Not stated"
+                    ),
+                    termCell(
+                      "Expiry date",
+                      pc.periodEnd ? dateText(pc.periodEnd) : "Open-ended"
+                    ),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, paddingHorizontal: 8, paddingVertical: 6 }, children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 7.2,
+                            letterSpacing: 0.5,
+                            textTransform: "uppercase",
+                            color: muted
+                          },
+                          children: "Delivery / pickup"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 9.2,
+                            color: ink,
+                            fontWeight: "bold",
+                            marginTop: 2
+                          },
+                          children: deliveryPlace || "As agreed"
+                        }
+                      )
+                    ] })
+                  ]
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 12 }, children: [
+                sectionHeading("Order summary"),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      backgroundColor: headerFill,
+                      paddingVertical: 4,
+                      paddingHorizontal: 5
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            flex: 3,
+                            fontSize: 7.2,
+                            fontWeight: "bold",
+                            letterSpacing: 0.5,
+                            textTransform: "uppercase",
+                            color: accent
+                          },
+                          children: "Description"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            width: 42,
+                            fontSize: 7.2,
+                            fontWeight: "bold",
+                            letterSpacing: 0.5,
+                            textTransform: "uppercase",
+                            color: accent,
+                            textAlign: "right"
+                          },
+                          children: "Qty"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            width: 88,
+                            fontSize: 7.2,
+                            fontWeight: "bold",
+                            letterSpacing: 0.5,
+                            textTransform: "uppercase",
+                            color: accent,
+                            textAlign: "right"
+                          },
+                          children: "Unit price"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            width: 94,
+                            fontSize: 7.2,
+                            fontWeight: "bold",
+                            letterSpacing: 0.5,
+                            textTransform: "uppercase",
+                            color: accent,
+                            textAlign: "right"
+                          },
+                          children: "Amount"
+                        }
+                      )
+                    ]
+                  }
+                ),
+                (pc.lines || []).map((line2, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      borderBottomWidth: 0.5,
+                      borderColor: hairline,
+                      paddingVertical: 4.5,
+                      paddingHorizontal: 5
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            flex: 3,
+                            fontSize: 9.2,
+                            color: softInk,
+                            lineHeight: 1.3
+                          },
+                          children: line2.desc
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            width: 42,
+                            fontSize: 9.2,
+                            color: ink,
+                            textAlign: "right"
+                          },
+                          children: line2.qty
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            width: 88,
+                            fontSize: 9.2,
+                            color: ink,
+                            textAlign: "right"
+                          },
+                          children: money(line2.price)
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            width: 94,
+                            fontSize: 9.2,
+                            color: ink,
+                            textAlign: "right"
+                          },
+                          children: money(line2.total)
+                        }
+                      )
+                    ]
+                  },
+                  `${line2.desc}:${i2}`
+                )),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      justifyContent: "flex-end",
+                      marginTop: 6
+                    },
+                    children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { width: 250 }, children: [
+                      summaryLine("Subtotal", money(lineSubtotal)),
+                      vatAmount > 0 ? summaryLine("VAT", money(vatAmount)) : null,
+                      summaryLine("Total", money(totalAmount), {
+                        strong: true,
+                        top: true
+                      }),
+                      summaryLine("Prepaid", money(prepaidAmount)),
+                      summaryLine("Balance due", money(balanceDue), {
+                        strong: true
+                      })
+                    ] })
+                  }
+                )
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 12 }, children: [
+                sectionHeading("Agreed specification"),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      backgroundColor: headerFill,
+                      paddingVertical: 3.5,
+                      paddingHorizontal: 4
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            width: 136,
+                            fontSize: 7.2,
+                            fontWeight: "bold",
+                            letterSpacing: 0.5,
+                            textTransform: "uppercase",
+                            color: accent
+                          },
+                          children: "Item"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            flex: 1,
+                            fontSize: 7.2,
+                            fontWeight: "bold",
+                            letterSpacing: 0.5,
+                            textTransform: "uppercase",
+                            color: accent
+                          },
+                          children: "Detail"
+                        }
+                      )
+                    ]
+                  }
+                ),
+                specRows.map(([label, value2]) => specRow(label, value2))
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 12 }, children: [
+                sectionHeading("Terms & Conditions"),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.2, color: muted, marginBottom: 1 }, children: "These terms form part of the contract and apply to all work performed under it." }),
+                PRINTING_CONTRACT_STANDARD_TERMS.map(
+                  (term, index2) => clause(index2 + 1, term.title, term.body)
+                ),
+                !termsAreStub ? clause(
+                  PRINTING_CONTRACT_STANDARD_TERMS.length + 1,
+                  "Additional agreed terms",
+                  recordedTerms
+                ) : null
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 14 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
+                  sectionHeading("Signatures"),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.2, color: muted, marginBottom: 6 }, children: "Signed for and on behalf of the parties. This contract takes effect when both parties have signed." }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", gap: 12 }, children: [
+                    signatureCard(
+                      "Company",
+                      companySignatureBlock,
+                      "Authorised signatory",
+                      pc.date
+                    ),
+                    signatureCard(
+                      "Client",
+                      pc.signatures?.customer,
+                      "Authorised signatory",
+                      pc.date,
+                      resolveCustomerNameForDocument(pc.customerName, pc.schoolName) || void 0
+                    )
+                  ] })
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    wrap: false,
+                    style: {
+                      marginTop: 12,
+                      borderTopWidth: 0.5,
+                      borderColor: strongRule,
+                      paddingTop: 7
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: {
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                            alignItems: "center"
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                              Text,
+                              {
+                                style: {
+                                  fontSize: 8.5,
+                                  fontWeight: "bold",
+                                  letterSpacing: 0.8,
+                                  color: accent,
+                                  textTransform: "uppercase"
+                                },
+                                children: "Document integrity"
+                              }
+                            ),
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                              View,
+                              {
+                                style: {
+                                  borderWidth: 0.5,
+                                  borderColor: accent,
+                                  borderRadius: 8,
+                                  paddingHorizontal: 6,
+                                  paddingVertical: 2
+                                },
+                                children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                                  Text,
+                                  {
+                                    style: {
+                                      fontSize: 6.6,
+                                      fontWeight: "bold",
+                                      letterSpacing: 0.5,
+                                      color: accent,
+                                      textTransform: "uppercase"
+                                    },
+                                    children: "Digitally generated"
+                                  }
+                                )
+                              }
+                            )
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: {
+                            flexDirection: "row",
+                            marginTop: 7,
+                            borderTopWidth: 0.5,
+                            borderColor: hairline,
+                            paddingTop: 7
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                              View,
+                              {
+                                style: {
+                                  width: 96,
+                                  alignItems: "center",
+                                  paddingRight: 12,
+                                  borderRightWidth: 0.5,
+                                  borderColor: hairline
+                                },
+                                children: [
+                                  qrCodeDataUrl ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                                    Image,
+                                    {
+                                      src: qrCodeDataUrl,
+                                      style: { width: 79, height: 79 }
+                                    }
+                                  ) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                                    View,
+                                    {
+                                      style: {
+                                        width: 79,
+                                        height: 79,
+                                        borderWidth: 0.5,
+                                        borderColor: hairline
+                                      }
+                                    }
+                                  ),
+                                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 6.8, color: muted, marginTop: 3 }, children: "Scan to verify" })
+                                ]
+                              }
+                            ),
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, paddingLeft: 12 }, children: [
+                              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                                Text,
+                                {
+                                  style: {
+                                    fontSize: 6.8,
+                                    letterSpacing: 0.5,
+                                    textTransform: "uppercase",
+                                    color: muted
+                                  },
+                                  children: "SHA-256 content hash"
+                                }
+                              ),
+                              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                                View,
+                                {
+                                  style: {
+                                    marginTop: 3,
+                                    borderWidth: 0.5,
+                                    borderColor: hairline,
+                                    borderRadius: 3,
+                                    backgroundColor: "#f8fafc",
+                                    paddingVertical: 5,
+                                    paddingHorizontal: 6
+                                  },
+                                  children: hashLines.length > 0 ? hashLines.map((line2, index2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                                    Text,
+                                    {
+                                      style: {
+                                        fontFamily: PRIME_MONO_FONT_FAMILY,
+                                        fontSize: 8,
+                                        letterSpacing: 0.3,
+                                        color: softInk,
+                                        lineHeight: 1.5
+                                      },
+                                      children: line2
+                                    },
+                                    `hash-line-${index2}`
+                                  )) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                                    Text,
+                                    {
+                                      style: {
+                                        fontFamily: PRIME_MONO_FONT_FAMILY,
+                                        fontSize: 8,
+                                        color: muted
+                                      },
+                                      children: "Not available"
+                                    }
+                                  )
+                                }
+                              ),
+                              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", marginTop: 6 }, children: [
+                                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { width: 108 }, children: [
+                                  metaLabel("Short code"),
+                                  metaValue(shortCode || "\u2014", true)
+                                ] }),
+                                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
+                                  metaLabel("Verify at"),
+                                  metaValue(verifyAddress)
+                                ] })
+                              ] })
+                            ] })
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        View,
+                        {
+                          style: {
+                            marginTop: 7,
+                            borderTopWidth: 0.5,
+                            borderColor: hairline,
+                            paddingTop: 5
+                          },
+                          children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 7.2, color: muted, lineHeight: 1.35 }, children: [
+                            "Covers parties, amounts, terms and signatures. Any alteration changes the hash. Generated ",
+                            generatedOn,
+                            " - Contract",
+                            " ",
+                            pc.contractNumber
+                          ] })
+                        }
+                      )
+                    ]
+                  }
+                )
+              ] })
+            ]
+          }
+        )
       }
-    ) });
+    );
   }
   if (type === "CONTRACT_SCHEDULE") {
     const cs2 = data2;
-    const cancelled = isCancelledStatus(String(cs2.status || ""), cs2);
+    const cancelled = isCancelledStatus(
+      String(cs2.status || ""),
+      cs2
+    );
     const scheduleCurrency = config2?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || "K";
     const preambleFontSize = 12;
     const preambleTitleFontSize = contractPreambleTitleFontSize;
-    const preambleMetaRightIndent = Math.min(RECEIPT_META_INDENT * fontScale, 128);
+    const preambleMetaRightIndent = Math.min(
+      RECEIPT_META_INDENT * fontScale,
+      128
+    );
     const preambleNameGutter = contractPreambleNameGutter;
     const preambleNameFontSize = contractPreambleNameFontSize;
     const customerNameLabel = "Customer Name: ";
-    const customerNameText = resolveCustomerDisplayName(cs2.customerName, cs2.schoolName) || "N/A";
+    const customerNameText = resolveCustomerNameForDocument(cs2.customerName, cs2.schoolName) || "Customer";
     const customerNameFontSize = fitFontSize(
       customerNameText,
-      Math.max(24, RECEIPT_CONTENT_WIDTH - measureTextWidth(customerNameLabel, preambleFontSize, true)),
+      Math.max(
+        24,
+        RECEIPT_CONTENT_WIDTH - measureTextWidth(customerNameLabel, preambleFontSize, true)
+      ),
       { maxSize: preambleFontSize, minSize: 7 }
     );
     const partySeen = /* @__PURE__ */ new Set([customerNameText.trim().toLowerCase()]);
     const customerSubline = [
-      stripCustomerIdSuffix(String(cs2.schoolName || "")),
+      resolveSchoolNameForDocument(cs2.schoolName) || "",
       cs2.schoolZone,
       cs2.customerPhone
     ].map((value2) => String(value2 || "").trim()).filter((value2) => {
@@ -236304,9 +240509,18 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
     const scheduleTone = (status) => {
       if (mode === "mono") return { border: "#000", text: "#000" };
       const key = String(status || "").trim().toLowerCase();
-      if (["consumed", "completed", "active", "printed"].includes(key)) return { border: "#10b981", text: "#047857" };
-      if (["reserved", "scheduled", "processing", "pending", "in_progress"].includes(key)) return { border: "#f59e0b", text: "#b45309" };
-      if (["cancelled", "canceled", "void"].includes(key)) return { border: "#ef4444", text: "#b91c1c" };
+      if (["consumed", "completed", "active", "printed"].includes(key))
+        return { border: "#10b981", text: "#047857" };
+      if ([
+        "reserved",
+        "scheduled",
+        "processing",
+        "pending",
+        "in_progress"
+      ].includes(key))
+        return { border: "#f59e0b", text: "#b45309" };
+      if (["cancelled", "canceled", "void"].includes(key))
+        return { border: "#ef4444", text: "#b91c1c" };
       return { border: "#94a3b8", text: "#475569" };
     };
     const scheduleRows = cs2.schedule || [];
@@ -236326,27 +240540,107 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
       textTransform: "uppercase",
       color: inkTone("#64748b")
     };
-    const sectionHeading = (label) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", letterSpacing: 1.2, textTransform: "uppercase", color: inkTone("#64748b"), marginBottom: 6 }, children: label });
-    const preambleMetaRow = (label, value2, valueStyle) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: preambleFontSize, color: monoText(mode, "#111111"), marginBottom: 4 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
-        label,
-        ": "
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: valueStyle, children: value2 })
-    ] });
-    const defRow = (label, value2, withDivider = true) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", paddingVertical: 3, ...withDivider ? { borderTopWidth: 0.5, borderColor: hairline } : null }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: inkTone("#475569") }, children: label }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9.5 * fontScale, fontWeight: "bold", color: inkTone("#0f172a"), marginLeft: 10, textAlign: "right", flexShrink: 1 }, children: value2 })
-    ] });
+    const sectionHeading = (label) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      Text,
+      {
+        style: {
+          fontSize: 8 * fontScale,
+          fontWeight: "bold",
+          letterSpacing: 1.2,
+          textTransform: "uppercase",
+          color: inkTone("#64748b"),
+          marginBottom: 6
+        },
+        children: label
+      }
+    );
+    const preambleMetaRow = (label, value2, valueStyle) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+      Text,
+      {
+        style: {
+          fontSize: preambleFontSize,
+          color: monoText(mode, "#111111"),
+          marginBottom: 4
+        },
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
+            label,
+            ": "
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: valueStyle, children: value2 })
+        ]
+      }
+    );
+    const defRow = (label, value2, withDivider = true) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+      View,
+      {
+        style: {
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          paddingVertical: 3,
+          ...withDivider ? { borderTopWidth: 0.5, borderColor: hairline } : null
+        },
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: inkTone("#475569") }, children: label }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                fontSize: 9.5 * fontScale,
+                fontWeight: "bold",
+                color: inkTone("#0f172a"),
+                marginLeft: 10,
+                textAlign: "right",
+                flexShrink: 1
+              },
+              children: value2
+            }
+          )
+        ]
+      }
+    );
     const statusPill = (status) => {
       const tone = scheduleTone(status);
-      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { borderWidth: 0.6, borderColor: tone.border, borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1.5 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7.5 * fontScale, fontWeight: "bold", letterSpacing: 0.3, textTransform: "uppercase", color: tone.text, textAlign: "center" }, children: toTitleCase(String(status || "reserved")) }) });
+      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+        View,
+        {
+          style: {
+            borderWidth: 0.6,
+            borderColor: tone.border,
+            borderRadius: 8,
+            paddingHorizontal: 5,
+            paddingVertical: 1.5
+          },
+          children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                fontSize: 7.5 * fontScale,
+                fontWeight: "bold",
+                letterSpacing: 0.3,
+                textTransform: "uppercase",
+                color: tone.text,
+                textAlign: "center"
+              },
+              children: toTitleCase(String(status || "reserved"))
+            }
+          )
+        }
+      );
     };
     const profileRows = [];
-    if (cs2.totalCandidature !== void 0) profileRows.push(["Total candidature", String(cs2.totalCandidature)]);
-    if (cs2.assessmentSpec) profileRows.push(["Printing specification", String(cs2.assessmentSpec)]);
-    if (cs2.chargePerCandidate !== void 0) profileRows.push(["Charge per candidate", moneyOf(cs2.chargePerCandidate)]);
-    if (cs2.assessmentSittings) profileRows.push(["Assessment sittings", String(cs2.assessmentSittings)]);
+    if (cs2.totalCandidature !== void 0)
+      profileRows.push(["Total candidature", String(cs2.totalCandidature)]);
+    if (cs2.assessmentSpec)
+      profileRows.push(["Printing specification", String(cs2.assessmentSpec)]);
+    if (cs2.chargePerCandidate !== void 0)
+      profileRows.push([
+        "Charge per candidate",
+        moneyOf(cs2.chargePerCandidate)
+      ]);
+    if (cs2.assessmentSittings)
+      profileRows.push(["Assessment sittings", String(cs2.assessmentSittings)]);
     const activeAssessments = cs2.activeAssessments ?? cs2.totalAssessments;
     const undatedCount = cs2.undatedCount ?? (cs2.missingDateSequences || []).length;
     const progressRows = [
@@ -236364,234 +240658,913 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
       ["Contract value (commercial)", moneyOf(cs2.prepaidAmount)],
       ["Reserved", moneyOf(cs2.reservedAmount)],
       ["Consumed", moneyOf(cs2.consumedAmount)],
-      [`Available balance${cs2.availableFundsSource === "generated" ? "" : " (derived)"}`, moneyOf(availableFunds)],
+      [
+        `Available balance${cs2.availableFundsSource === "generated" ? "" : " (derived)"}`,
+        moneyOf(availableFunds)
+      ],
       // A released assessment is a MOVEMENT, not a fourth bucket: the money it
       // carried is already inside the available balance above. It is shown as a
       // memo so the customer can see what was returned, never as an addition to
       // the position.
-      ...releasedAmount > 0 ? [["Released (returned to balance)", moneyOf(releasedAmount)]] : []
+      ...releasedAmount > 0 ? [
+        ["Released (returned to balance)", moneyOf(releasedAmount)]
+      ] : []
     ];
     const missingSequences = cs2.missingDateSequences || [];
     const outOfPeriodRows = cs2.outOfPeriodRows || [];
-    const outOfPeriodSequences = new Set(outOfPeriodRows.map((r4) => Number(r4.sequence)));
+    const outOfPeriodSequences = new Set(
+      outOfPeriodRows.map((r4) => Number(r4.sequence))
+    );
     const pricingMismatches = cs2.pricingMismatches || [];
     const entitledAssessmentCount = scheduleRows.filter((row) => {
       const status = String(row.status || "").trim().toLowerCase();
       return status !== "released" && !["cancelled", "canceled", "void", "voided"].includes(status);
     }).length;
-    const baseCurrency = currencyService.getCurrency(currencyService.getBaseCurrency());
+    const baseCurrency = currencyService.getCurrency(
+      currencyService.getBaseCurrency()
+    );
     const currencyUnitNote = baseCurrency?.code ? `All amounts in ${baseCurrency.code}${baseCurrency.name ? ` (${baseCurrency.name})` : ""}, stated to two decimal places.` : `All amounts in ${scheduleCurrency}, stated to two decimal places.`;
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: `Contract Schedule - ${cs2.contractNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [s4.page, pageStyle], children: [
-      channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
-      cancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-        PaginationFurniture,
-        {
-          colorMode: mode,
-          identity: { title: "Assessment Schedule", number: String(cs2.contractNumber || ""), customer: String(cs2.customerName || "") },
-          companyName
-        }
-      ),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { position: "relative", alignItems: "center", marginBottom: 4, paddingTop: 0 }, children: [
-        !!logo && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: logo, style: { position: "absolute", left: 0, top: 0, width: templateSettings.logoWidth } }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "center", width: "100%", paddingLeft: preambleNameGutter, paddingRight: preambleNameGutter }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: preambleNameFontSize, fontWeight: "bold", color: monoText(mode, "#000"), textAlign: "center", maxLines: 1, textOverflow: "ellipsis" }, children: companyName }),
-          !!receiptCompanyAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: preambleFontSize, color: monoText(mode, "#334155"), textAlign: "center", marginTop: 1 }, children: receiptCompanyAddress }),
-          !!companyContact && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: preambleFontSize, color: monoText(mode, "#334155"), textAlign: "center", marginTop: 1 }, children: companyContact })
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: preambleTitleFontSize, fontWeight: "bold", color: monoText(mode, "#000"), textAlign: "center", marginTop: 4, marginBottom: 4 }, children: "Assessment Schedule" }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginBottom: 6 } }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 6 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: preambleFontSize, color: monoText(mode, "#111111"), maxLines: 1, textOverflow: "ellipsis" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: customerNameLabel }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: customerNameFontSize }, children: customerNameText })
-        ] }),
-        !!customerSubline && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: inkTone("#64748b"), marginTop: 3 }, children: customerSubline })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", gap: RECEIPT_META_GAP, marginBottom: 6 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-          preambleMetaRow("Contract No", String(cs2.contractNumber || "Not stated")),
-          preambleMetaRow("Branch", String(cs2.billedBranch || "Main Account")),
-          preambleMetaRow("Issued", formatIsoDate(cs2.date) || "Not issued")
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, paddingLeft: preambleMetaRightIndent }, children: [
-          preambleMetaRow("Contract Period", periodLabel),
-          preambleMetaRow("Status", toTitleCase(String(cs2.status || "draft")), { fontWeight: "bold", color: scheduleTone(String(cs2.status || "draft")).text }),
-          preambleMetaRow("Academic Year", String(cs2.academicYear || "Not stated"))
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginBottom: 6 } }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { borderWidth: 0.8, borderColor: hairline, borderRadius: 3, padding: 8 }, children: [
-        sectionHeading("Contract Summary"),
-        profileRows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9.5 * fontScale, color: inkTone("#64748b") }, children: "No agreed profile recorded on this contract." }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: inkTone("#334155"), lineHeight: 1.45 }, children: profileRows.map(([label, value2]) => `${label}: ${value2}`).join("  \xB7  ") })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 10 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", alignItems: "flex-end", borderBottomWidth: 1, borderColor: monoLine(mode, "#0f172a"), paddingBottom: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [thStyle, { width: COL.seq, textAlign: "right" }], children: "#" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [thStyle, { flexGrow: 1, flexBasis: 0, marginLeft: 10, marginRight: 8 }], children: "Assessment" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [thStyle, { width: COL.scheduled }], children: "Scheduled" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [thStyle, { width: COL.status }], children: "Status" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [thStyle, { width: COL.value, textAlign: "right" }], children: "Value" })
-        ] }),
-        scheduleRows.map((row, index2) => {
-          const qualifiers = [row.grade, row.subject].filter(Boolean).join(" \xB7 ");
-          return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { flexDirection: "row", alignItems: "flex-start", paddingVertical: 2.5, borderBottomWidth: 0.5, borderColor: hairline, ...index2 % 2 === 1 ? { backgroundColor: softFill } : null }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: COL.seq, textAlign: "right", fontSize: 9 * fontScale, color: inkTone("#94a3b8") }, children: row.sequence }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flexGrow: 1, flexBasis: 0, marginLeft: 10, marginRight: 8 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9.5 * fontScale, color: inkTone("#0f172a") }, children: [
-              row.assessmentName,
-              qualifiers ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8 * fontScale, color: inkTone("#64748b") }, children: `  (${qualifiers})` }) : null
-            ] }) }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: COL.scheduled, fontSize: 9 * fontScale, color: inkTone("#334155") }, children: [
-              row.assessmentDate ? formatIsoDate(row.assessmentDate) : "Not scheduled",
-              outOfPeriodSequences.has(Number(row.sequence)) ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 7.5 * fontScale, color: inkTone("#b91c1c") }, children: [
-                "\n",
-                "outside contract period"
-              ] }) : null
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: COL.status, alignItems: "flex-start" }, children: statusPill(String(row.status || "reserved")) }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: COL.value, textAlign: "right", fontSize: 9.5 * fontScale, color: inkTone("#0f172a") }, children: moneyOf(row.unitPrice) })
-          ] }, index2);
-        }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { flexDirection: "row", alignItems: "center", paddingTop: 6, borderTopWidth: 1, borderColor: monoLine(mode, "#0f172a") }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flexGrow: 1, flexBasis: 0, fontSize: 9 * fontScale, fontWeight: "bold", letterSpacing: 0.6, textTransform: "uppercase", color: inkTone("#334155") }, children: (cs2.releasedCount || 0) > 0 ? `${entitledAssessmentCount} of ${activeAssessments} active assessment${activeAssessments === 1 ? "" : "s"} \xB7 schedule value` : `${activeAssessments} active assessment${activeAssessments === 1 ? "" : "s"} \xB7 schedule value` }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10.5 * fontScale, fontWeight: "bold", color: inkTone("#0f172a") }, children: moneyOf(cs2.totalValue) })
-        ] }),
-        (cs2.cancelledCount || 0) > 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 8.5 * fontScale, color: inkTone("#64748b"), marginTop: 3 }, children: [
-          cs2.cancelledCount,
-          " cancelled assessment",
-          (cs2.cancelledCount || 0) === 1 ? "" : "s",
-          " excluded from the active schedule value",
-          (cs2.cancelledValue || 0) > 0 ? ` (cancelled value ${moneyOf(cs2.cancelledValue || 0)})` : "",
-          "."
-        ] }) : null,
-        (cs2.releasedCount || 0) > 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 8.5 * fontScale, color: inkTone("#64748b"), marginTop: 3 }, children: [
-          cs2.releasedCount || 0,
-          " released assessment",
-          (cs2.releasedCount || 0) === 1 ? "" : "s",
-          " excluded from the schedule value",
-          releasedAmount > 0 ? ` (${moneyOf(releasedAmount)})` : "",
-          ": the reservation was returned to the available balance."
-        ] }) : null
-      ] }),
-      !cs2.scheduleComplete ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10, flexDirection: "row", borderWidth: 0.8, borderColor: monoLine(mode, "#f59e0b"), borderRadius: 3, backgroundColor: monoFill(mode, "#fffbeb") }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: 3, backgroundColor: monoFill(mode, "#f59e0b") } }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 9 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9.5 * fontScale, fontWeight: "bold", color: inkTone("#92400e") }, children: [
-            "Schedule incomplete: ",
-            missingSequences.length,
-            " of ",
-            activeAssessments,
-            " active assessment",
-            activeAssessments === 1 ? "" : "s",
-            " have no scheduled date (sequence",
-            missingSequences.length === 1 ? "" : "s",
-            " ",
-            missingSequences.join(", "),
-            ")."
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      Document,
+      {
+        title: `Contract Schedule - ${cs2.contractNumber}`,
+        author: companyName,
+        children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [s4.page, pageStyle], children: [
+          channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
+          cancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            PaginationFurniture,
+            {
+              colorMode: mode,
+              identity: {
+                title: "Assessment Schedule",
+                number: String(cs2.contractNumber || ""),
+                customer: String(cs2.customerName || "")
+              },
+              companyName
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                position: "relative",
+                alignItems: "center",
+                marginBottom: 4,
+                paddingTop: 0
+              },
+              children: [
+                !!logo && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Image,
+                  {
+                    src: logo,
+                    style: {
+                      position: "absolute",
+                      left: 0,
+                      top: 0,
+                      width: templateSettings.logoWidth
+                    }
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      alignItems: "center",
+                      width: "100%",
+                      paddingLeft: preambleNameGutter,
+                      paddingRight: preambleNameGutter
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: preambleNameFontSize,
+                            fontWeight: "bold",
+                            color: monoText(mode, "#000"),
+                            textAlign: "center",
+                            maxLines: 1,
+                            textOverflow: "ellipsis"
+                          },
+                          children: companyName
+                        }
+                      ),
+                      !!receiptCompanyAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: preambleFontSize,
+                            color: monoText(mode, "#334155"),
+                            textAlign: "center",
+                            marginTop: 1
+                          },
+                          children: receiptCompanyAddress
+                        }
+                      ),
+                      !!companyContact && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: preambleFontSize,
+                            color: monoText(mode, "#334155"),
+                            textAlign: "center",
+                            marginTop: 1
+                          },
+                          children: companyContact
+                        }
+                      )
+                    ]
+                  }
+                )
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                fontSize: preambleTitleFontSize,
+                fontWeight: "bold",
+                color: monoText(mode, "#000"),
+                textAlign: "center",
+                marginTop: 4,
+                marginBottom: 4
+              },
+              children: "Assessment Schedule"
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            View,
+            {
+              style: {
+                height: 1,
+                backgroundColor: monoLine(mode, "#9ca3af"),
+                marginBottom: 6
+              }
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 6 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+              Text,
+              {
+                style: {
+                  fontSize: preambleFontSize,
+                  color: monoText(mode, "#111111"),
+                  maxLines: 1,
+                  textOverflow: "ellipsis"
+                },
+                children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: customerNameLabel }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: customerNameFontSize }, children: customerNameText })
+                ]
+              }
+            ),
+            !!customerSubline && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              Text,
+              {
+                style: {
+                  fontSize: 9 * fontScale,
+                  color: inkTone("#64748b"),
+                  marginTop: 3
+                },
+                children: customerSubline
+              }
+            )
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: inkTone("#92400e"), marginTop: 2, lineHeight: 1.4 }, children: "This schedule is not yet complete as agreed. Missing dates are reported explicitly and are never substituted." })
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                flexDirection: "row",
+                gap: RECEIPT_META_GAP,
+                marginBottom: 6
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
+                  preambleMetaRow(
+                    "Contract No",
+                    String(cs2.contractNumber || "Not stated")
+                  ),
+                  preambleMetaRow(
+                    "Branch",
+                    String(cs2.billedBranch || "Main Account")
+                  ),
+                  preambleMetaRow(
+                    "Issued",
+                    formatIsoDate(cs2.date) || "Not issued"
+                  )
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, paddingLeft: preambleMetaRightIndent }, children: [
+                  preambleMetaRow("Contract Period", periodLabel),
+                  preambleMetaRow(
+                    "Status",
+                    toTitleCase(String(cs2.status || "draft")),
+                    {
+                      fontWeight: "bold",
+                      color: scheduleTone(String(cs2.status || "draft")).text
+                    }
+                  ),
+                  preambleMetaRow(
+                    "Academic Year",
+                    String(cs2.academicYear || "Not stated")
+                  )
+                ] })
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            View,
+            {
+              style: {
+                height: 1,
+                backgroundColor: monoLine(mode, "#9ca3af"),
+                marginBottom: 6
+              }
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                borderWidth: 0.8,
+                borderColor: hairline,
+                borderRadius: 3,
+                padding: 8
+              },
+              children: [
+                sectionHeading("Contract Summary"),
+                profileRows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: { fontSize: 9.5 * fontScale, color: inkTone("#64748b") },
+                    children: "No agreed profile recorded on this contract."
+                  }
+                ) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 9 * fontScale,
+                      color: inkTone("#334155"),
+                      lineHeight: 1.45
+                    },
+                    children: profileRows.map(([label, value2]) => `${label}: ${value2}`).join("  \xB7  ")
+                  }
+                )
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 10 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+              View,
+              {
+                style: {
+                  flexDirection: "row",
+                  alignItems: "flex-end",
+                  borderBottomWidth: 1,
+                  borderColor: monoLine(mode, "#0f172a"),
+                  paddingBottom: 4
+                },
+                children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [thStyle, { width: COL.seq, textAlign: "right" }], children: "#" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: [
+                        thStyle,
+                        { flexGrow: 1, flexBasis: 0, marginLeft: 10, marginRight: 8 }
+                      ],
+                      children: "Assessment"
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [thStyle, { width: COL.scheduled }], children: "Scheduled" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [thStyle, { width: COL.status }], children: "Status" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [thStyle, { width: COL.value, textAlign: "right" }], children: "Value" })
+                ]
+              }
+            ),
+            scheduleRows.map((row, index2) => {
+              const qualifiers = [row.grade, row.subject].filter(Boolean).join(" \xB7 ");
+              return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                View,
+                {
+                  wrap: false,
+                  style: {
+                    flexDirection: "row",
+                    alignItems: "flex-start",
+                    paddingVertical: 2.5,
+                    borderBottomWidth: 0.5,
+                    borderColor: hairline,
+                    ...index2 % 2 === 1 ? { backgroundColor: softFill } : null
+                  },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                      Text,
+                      {
+                        style: {
+                          width: COL.seq,
+                          textAlign: "right",
+                          fontSize: 9 * fontScale,
+                          color: inkTone("#94a3b8")
+                        },
+                        children: row.sequence
+                      }
+                    ),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                      View,
+                      {
+                        style: {
+                          flexGrow: 1,
+                          flexBasis: 0,
+                          marginLeft: 10,
+                          marginRight: 8
+                        },
+                        children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                          Text,
+                          {
+                            style: {
+                              fontSize: 9.5 * fontScale,
+                              color: inkTone("#0f172a")
+                            },
+                            children: [
+                              row.assessmentName,
+                              qualifiers ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                                Text,
+                                {
+                                  style: {
+                                    fontSize: 8 * fontScale,
+                                    color: inkTone("#64748b")
+                                  },
+                                  children: `  (${qualifiers})`
+                                }
+                              ) : null
+                            ]
+                          }
+                        )
+                      }
+                    ),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                      Text,
+                      {
+                        style: {
+                          width: COL.scheduled,
+                          fontSize: 9 * fontScale,
+                          color: inkTone("#334155")
+                        },
+                        children: [
+                          row.assessmentDate ? formatIsoDate(row.assessmentDate) : "Not scheduled",
+                          outOfPeriodSequences.has(Number(row.sequence)) ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                            Text,
+                            {
+                              style: {
+                                fontSize: 7.5 * fontScale,
+                                color: inkTone("#b91c1c")
+                              },
+                              children: [
+                                "\n",
+                                "outside contract period"
+                              ]
+                            }
+                          ) : null
+                        ]
+                      }
+                    ),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: COL.status, alignItems: "flex-start" }, children: statusPill(String(row.status || "reserved")) }),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                      Text,
+                      {
+                        style: {
+                          width: COL.value,
+                          textAlign: "right",
+                          fontSize: 9.5 * fontScale,
+                          color: inkTone("#0f172a")
+                        },
+                        children: moneyOf(row.unitPrice)
+                      }
+                    )
+                  ]
+                },
+                index2
+              );
+            }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+              View,
+              {
+                wrap: false,
+                style: {
+                  flexDirection: "row",
+                  alignItems: "center",
+                  paddingTop: 6,
+                  borderTopWidth: 1,
+                  borderColor: monoLine(mode, "#0f172a")
+                },
+                children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        flexGrow: 1,
+                        flexBasis: 0,
+                        fontSize: 9 * fontScale,
+                        fontWeight: "bold",
+                        letterSpacing: 0.6,
+                        textTransform: "uppercase",
+                        color: inkTone("#334155")
+                      },
+                      children: (cs2.releasedCount || 0) > 0 ? `${entitledAssessmentCount} of ${activeAssessments} active assessment${activeAssessments === 1 ? "" : "s"} \xB7 schedule value` : `${activeAssessments} active assessment${activeAssessments === 1 ? "" : "s"} \xB7 schedule value`
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 10.5 * fontScale,
+                        fontWeight: "bold",
+                        color: inkTone("#0f172a")
+                      },
+                      children: moneyOf(cs2.totalValue)
+                    }
+                  )
+                ]
+              }
+            ),
+            (cs2.cancelledCount || 0) > 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+              Text,
+              {
+                style: {
+                  fontSize: 8.5 * fontScale,
+                  color: inkTone("#64748b"),
+                  marginTop: 3
+                },
+                children: [
+                  cs2.cancelledCount,
+                  " cancelled assessment",
+                  (cs2.cancelledCount || 0) === 1 ? "" : "s",
+                  " excluded from the active schedule value",
+                  (cs2.cancelledValue || 0) > 0 ? ` (cancelled value ${moneyOf(cs2.cancelledValue || 0)})` : "",
+                  "."
+                ]
+              }
+            ) : null,
+            (cs2.releasedCount || 0) > 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+              Text,
+              {
+                style: {
+                  fontSize: 8.5 * fontScale,
+                  color: inkTone("#64748b"),
+                  marginTop: 3
+                },
+                children: [
+                  cs2.releasedCount || 0,
+                  " released assessment",
+                  (cs2.releasedCount || 0) === 1 ? "" : "s",
+                  " excluded from the schedule value",
+                  releasedAmount > 0 ? ` (${moneyOf(releasedAmount)})` : "",
+                  ": the reservation was returned to the available balance."
+                ]
+              }
+            ) : null
+          ] }),
+          !cs2.scheduleComplete ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              wrap: false,
+              style: {
+                marginTop: 10,
+                flexDirection: "row",
+                borderWidth: 0.8,
+                borderColor: monoLine(mode, "#f59e0b"),
+                borderRadius: 3,
+                backgroundColor: monoFill(mode, "#fffbeb")
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  View,
+                  {
+                    style: { width: 3, backgroundColor: monoFill(mode, "#f59e0b") }
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 9 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 9.5 * fontScale,
+                        fontWeight: "bold",
+                        color: inkTone("#92400e")
+                      },
+                      children: [
+                        "Schedule incomplete: ",
+                        missingSequences.length,
+                        " of",
+                        " ",
+                        activeAssessments,
+                        " active assessment",
+                        activeAssessments === 1 ? "" : "s",
+                        " have no scheduled date (sequence",
+                        missingSequences.length === 1 ? "" : "s",
+                        " ",
+                        missingSequences.join(", "),
+                        ")."
+                      ]
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 9 * fontScale,
+                        color: inkTone("#92400e"),
+                        marginTop: 2,
+                        lineHeight: 1.4
+                      },
+                      children: "This schedule is not yet complete as agreed. Missing dates are reported explicitly and are never substituted."
+                    }
+                  )
+                ] })
+              ]
+            }
+          ) : null,
+          outOfPeriodRows.length > 0 || pricingMismatches.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              wrap: false,
+              style: {
+                marginTop: 10,
+                flexDirection: "row",
+                borderWidth: 0.8,
+                borderColor: monoLine(mode, "#ef4444"),
+                borderRadius: 3,
+                backgroundColor: monoFill(mode, "#fef2f2")
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  View,
+                  {
+                    style: { width: 3, backgroundColor: monoFill(mode, "#ef4444") }
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 9 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 9.5 * fontScale,
+                        fontWeight: "bold",
+                        color: inkTone("#991b1b")
+                      },
+                      children: "Schedule needs review"
+                    }
+                  ),
+                  outOfPeriodRows.map((row) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 9 * fontScale,
+                        color: inkTone("#991b1b"),
+                        marginTop: 2,
+                        lineHeight: 1.45
+                      },
+                      children: [
+                        "\u2022 Assessment ",
+                        row.sequence,
+                        " (",
+                        row.assessmentName,
+                        ") is scheduled for ",
+                        formatIsoDate(row.assessmentDate),
+                        ", which is",
+                        " ",
+                        row.reason === "after_period_end" ? "after the contract period ends" : "before the contract period starts",
+                        "."
+                      ]
+                    },
+                    `oop-${row.sequence}`
+                  )),
+                  pricingMismatches.map((row) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 9 * fontScale,
+                        color: inkTone("#991b1b"),
+                        marginTop: 2,
+                        lineHeight: 1.45
+                      },
+                      children: [
+                        "\u2022 Assessment ",
+                        row.sequence,
+                        " (",
+                        row.assessmentName,
+                        ") is priced",
+                        " ",
+                        moneyOf(row.recorded),
+                        ", but the agreed pricing basis is",
+                        " ",
+                        moneyOf(row.expected),
+                        "."
+                      ]
+                    },
+                    `pm-${row.sequence}`
+                  )),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 8.5 * fontScale,
+                        color: inkTone("#991b1b"),
+                        marginTop: 3,
+                        lineHeight: 1.45
+                      },
+                      children: "Dates and amounts are shown as recorded and are not adjusted on this document."
+                    }
+                  )
+                ] })
+              ]
+            }
+          ) : null,
+          fundInconsistencies.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              wrap: false,
+              style: {
+                marginTop: 10,
+                flexDirection: "row",
+                borderWidth: 0.8,
+                borderColor: monoLine(mode, "#ef4444"),
+                borderRadius: 3,
+                backgroundColor: monoFill(mode, "#fef2f2")
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  View,
+                  {
+                    style: { width: 3, backgroundColor: monoFill(mode, "#ef4444") }
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 9 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 9.5 * fontScale,
+                        fontWeight: "bold",
+                        color: inkTone("#991b1b")
+                      },
+                      children: "Fund position needs review"
+                    }
+                  ),
+                  fundInconsistencies.map((detail, index2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 9 * fontScale,
+                        color: inkTone("#991b1b"),
+                        marginTop: 2,
+                        lineHeight: 1.45
+                      },
+                      children: [
+                        "\u2022 ",
+                        detail
+                      ]
+                    },
+                    index2
+                  )),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 8.5 * fontScale,
+                        color: inkTone("#991b1b"),
+                        marginTop: 3,
+                        lineHeight: 1.45
+                      },
+                      children: "Figures are shown as recorded and are not adjusted on this document."
+                    }
+                  )
+                ] })
+              ]
+            }
+          ) : null,
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              wrap: false,
+              style: {
+                flexDirection: "row",
+                marginTop: 8,
+                borderWidth: 0.8,
+                borderColor: hairline,
+                borderRadius: 3
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 8 }, children: [
+                  sectionHeading("Progress"),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 8.5 * fontScale,
+                        color: inkTone("#334155"),
+                        lineHeight: 1.45
+                      },
+                      children: progressRows.slice(0, 3).map(([label, value2]) => `${label} ${value2}`).join("  \xB7  ")
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 8.5 * fontScale,
+                        color: inkTone("#334155"),
+                        lineHeight: 1.45
+                      },
+                      children: progressRows.slice(3).map(([label, value2]) => `${label} ${value2}`).join("  \xB7  ")
+                    }
+                  )
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flex: 1,
+                      padding: 8,
+                      borderLeftWidth: 0.6,
+                      borderColor: hairline
+                    },
+                    children: [
+                      sectionHeading("Fund Position"),
+                      fundRows.map(([label, value2], index2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { children: defRow(label, value2, index2 > 0) }, label))
+                    ]
+                  }
+                )
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { wrap: false, style: { marginTop: 5 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            Text,
+            {
+              style: {
+                fontSize: 7.5 * fontScale,
+                color: inkTone("#64748b"),
+                lineHeight: 1.35
+              },
+              children: [
+                "Reserved: committed to a scheduled assessment. Consumed: completed and chargeable. Released: reservation returned to the available balance. Cancelled: excluded from this schedule.",
+                " ",
+                currencyUnitNote
+              ]
+            }
+          ) }),
+          cs2.terms || cs2.notes ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              wrap: false,
+              style: {
+                marginTop: 8,
+                borderWidth: 0.8,
+                borderColor: hairline,
+                borderRadius: 3,
+                padding: 8
+              },
+              children: [
+                sectionHeading("Terms & Conditions"),
+                cs2.terms ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 9 * fontScale,
+                      color: inkTone("#334155"),
+                      lineHeight: 1.5
+                    },
+                    children: cs2.terms
+                  }
+                ) : null,
+                cs2.notes ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: cs2.terms ? 7 : 0 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 8 * fontScale,
+                        fontWeight: "bold",
+                        letterSpacing: 1,
+                        textTransform: "uppercase",
+                        color: inkTone("#64748b"),
+                        marginBottom: 3
+                      },
+                      children: "Notes"
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 9 * fontScale,
+                        color: inkTone("#334155"),
+                        lineHeight: 1.5
+                      },
+                      children: cs2.notes
+                    }
+                  )
+                ] }) : null
+              ]
+            }
+          ) : null,
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { wrap: false, style: { marginTop: 6, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            Text,
+            {
+              style: {
+                fontSize: scaledFont(11),
+                color: inkTone("#334155"),
+                textAlign: "center"
+              },
+              children: [
+                "Thank you for choosing",
+                " ",
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: companyName })
+              ]
+            }
+          ) }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              wrap: false,
+              style: {
+                marginTop: 8,
+                borderTopWidth: 0.5,
+                borderColor: monoLine(mode, "#e2e8f0"),
+                paddingTop: 6
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 10 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#1e3a8a"),
+                      letterSpacing: 0.4
+                    },
+                    children: "DOCUMENT INTEGRITY"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      marginTop: 4,
+                      fontSize: 8 * fontScale,
+                      color: monoText(mode, "#1e3a8a"),
+                      letterSpacing: 0.3
+                    },
+                    children: [
+                      "Content hash: ",
+                      cs2.contentHash
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      marginTop: 2,
+                      fontSize: 8 * fontScale,
+                      color: inkTone("#475569"),
+                      lineHeight: 1.35
+                    },
+                    children: [
+                      "This SHA-256 digest covers the contract identity, the assessment schedule and the fund position; any change to them changes the digest. It is a tamper-evidence fingerprint, not a digital signature. Scan the QR code to view this document's record and verify it with ",
+                      companyName,
+                      "."
+                    ]
+                  }
+                )
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 8 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              SecurityFooter,
+              {
+                colorMode: mode,
+                data: cs2,
+                companyName,
+                legalFooterLine1: resolveFooterText(config2, "", false),
+                legalFooterLine2: buildFooterContactLine(config2),
+                fontScale,
+                flowing: true
+              }
+            )
+          ] })
         ] })
-      ] }) : null,
-      outOfPeriodRows.length > 0 || pricingMismatches.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10, flexDirection: "row", borderWidth: 0.8, borderColor: monoLine(mode, "#ef4444"), borderRadius: 3, backgroundColor: monoFill(mode, "#fef2f2") }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: 3, backgroundColor: monoFill(mode, "#ef4444") } }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 9 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9.5 * fontScale, fontWeight: "bold", color: inkTone("#991b1b") }, children: "Schedule needs review" }),
-          outOfPeriodRows.map((row) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9 * fontScale, color: inkTone("#991b1b"), marginTop: 2, lineHeight: 1.45 }, children: [
-            "\u2022 Assessment ",
-            row.sequence,
-            " (",
-            row.assessmentName,
-            ") is scheduled for ",
-            formatIsoDate(row.assessmentDate),
-            ", which is ",
-            row.reason === "after_period_end" ? "after the contract period ends" : "before the contract period starts",
-            "."
-          ] }, `oop-${row.sequence}`)),
-          pricingMismatches.map((row) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9 * fontScale, color: inkTone("#991b1b"), marginTop: 2, lineHeight: 1.45 }, children: [
-            "\u2022 Assessment ",
-            row.sequence,
-            " (",
-            row.assessmentName,
-            ") is priced ",
-            moneyOf(row.recorded),
-            ", but the agreed pricing basis is ",
-            moneyOf(row.expected),
-            "."
-          ] }, `pm-${row.sequence}`)),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5 * fontScale, color: inkTone("#991b1b"), marginTop: 3, lineHeight: 1.45 }, children: "Dates and amounts are shown as recorded and are not adjusted on this document." })
-        ] })
-      ] }) : null,
-      fundInconsistencies.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10, flexDirection: "row", borderWidth: 0.8, borderColor: monoLine(mode, "#ef4444"), borderRadius: 3, backgroundColor: monoFill(mode, "#fef2f2") }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: 3, backgroundColor: monoFill(mode, "#ef4444") } }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 9 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9.5 * fontScale, fontWeight: "bold", color: inkTone("#991b1b") }, children: "Fund position needs review" }),
-          fundInconsistencies.map((detail, index2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9 * fontScale, color: inkTone("#991b1b"), marginTop: 2, lineHeight: 1.45 }, children: [
-            "\u2022 ",
-            detail
-          ] }, index2)),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5 * fontScale, color: inkTone("#991b1b"), marginTop: 3, lineHeight: 1.45 }, children: "Figures are shown as recorded and are not adjusted on this document." })
-        ] })
-      ] }) : null,
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { flexDirection: "row", marginTop: 8, borderWidth: 0.8, borderColor: hairline, borderRadius: 3 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 8 }, children: [
-          sectionHeading("Progress"),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5 * fontScale, color: inkTone("#334155"), lineHeight: 1.45 }, children: progressRows.slice(0, 3).map(([label, value2]) => `${label} ${value2}`).join("  \xB7  ") }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5 * fontScale, color: inkTone("#334155"), lineHeight: 1.45 }, children: progressRows.slice(3).map(([label, value2]) => `${label} ${value2}`).join("  \xB7  ") })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 8, borderLeftWidth: 0.6, borderColor: hairline }, children: [
-          sectionHeading("Fund Position"),
-          fundRows.map(([label, value2], index2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { children: defRow(label, value2, index2 > 0) }, label))
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { wrap: false, style: { marginTop: 5 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 7.5 * fontScale, color: inkTone("#64748b"), lineHeight: 1.35 }, children: [
-        "Reserved: committed to a scheduled assessment. Consumed: completed and chargeable. Released: reservation returned to the available balance. Cancelled: excluded from this schedule. ",
-        currencyUnitNote
-      ] }) }),
-      cs2.terms || cs2.notes ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 8, borderWidth: 0.8, borderColor: hairline, borderRadius: 3, padding: 8 }, children: [
-        sectionHeading("Terms & Conditions"),
-        cs2.terms ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: inkTone("#334155"), lineHeight: 1.5 }, children: cs2.terms }) : null,
-        cs2.notes ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: cs2.terms ? 7 : 0 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", letterSpacing: 1, textTransform: "uppercase", color: inkTone("#64748b"), marginBottom: 3 }, children: "Notes" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: inkTone("#334155"), lineHeight: 1.5 }, children: cs2.notes })
-        ] }) : null
-      ] }) : null,
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { wrap: false, style: { marginTop: 6, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: scaledFont(11), color: inkTone("#334155"), textAlign: "center" }, children: [
-        "Thank you for choosing ",
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: companyName })
-      ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 8, borderTopWidth: 0.5, borderColor: monoLine(mode, "#e2e8f0"), paddingTop: 6 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, fontWeight: "bold", color: monoText(mode, "#1e3a8a"), letterSpacing: 0.4 }, children: "DOCUMENT INTEGRITY" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 4, fontSize: 8 * fontScale, color: monoText(mode, "#1e3a8a"), letterSpacing: 0.3 }, children: [
-          "Content hash: ",
-          cs2.contentHash
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 2, fontSize: 8 * fontScale, color: inkTone("#475569"), lineHeight: 1.35 }, children: [
-          "This SHA-256 digest covers the contract identity, the assessment schedule and the fund position; any change to them changes the digest. It is a tamper-evidence fingerprint, not a digital signature. Scan the QR code to view this document's record and verify it with ",
-          companyName,
-          "."
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 8 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-          SecurityFooter,
-          {
-            colorMode: mode,
-            data: cs2,
-            companyName,
-            legalFooterLine1: resolveFooterText(config2, "", false),
-            legalFooterLine2: buildFooterContactLine(config2),
-            fontScale,
-            flowing: true
-          }
-        )
-      ] })
-    ] }) });
+      }
+    );
   }
   if (type === "CONTRACT_COMPLETION_RECEIPT") {
     const cr = data2;
-    const cancelled = isCancelledStatus(String(cr.status || ""), cr);
+    const cancelled = isCancelledStatus(
+      String(cr.status || ""),
+      cr
+    );
     const crCurrency = config2?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || "K";
     const crBodyFontSize = 12;
     const crTitleFontSize = contractPreambleTitleFontSize;
@@ -236599,14 +241572,17 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
     const crNameGutter = contractPreambleNameGutter;
     const crNameFontSize = contractPreambleNameFontSize;
     const crCustomerNameLabel = "Customer Name: ";
-    const crCustomerName = resolveCustomerDisplayName(cr.customerName, cr.schoolName) || "Customer";
+    const crCustomerName = resolveCustomerNameForDocument(cr.customerName, cr.schoolName) || "Customer";
     const crCustomerFontSize = fitFontSize(
       crCustomerName,
-      Math.max(24, RECEIPT_CONTENT_WIDTH - measureTextWidth(crCustomerNameLabel, crBodyFontSize, true)),
+      Math.max(
+        24,
+        RECEIPT_CONTENT_WIDTH - measureTextWidth(crCustomerNameLabel, crBodyFontSize, true)
+      ),
       { maxSize: crBodyFontSize, minSize: 7 }
     );
     const crCustomerKey = crCustomerName.trim().toLowerCase();
-    const crCustomerSubline = stripCustomerIdSuffix(String(cr.schoolName || ""));
+    const crCustomerSubline = resolveSchoolNameForDocument(cr.schoolName) || "";
     const crShowSubline = !!crCustomerSubline && crCustomerSubline.toLowerCase() !== crCustomerKey;
     const crInk = (hex3) => monoText(mode, hex3);
     const crHairline = monoLine(mode, "#cbd5e1");
@@ -236615,159 +241591,677 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
     const crStatusTone = (() => {
       if (mode === "mono") return "#000";
       const key = String(cr.status || "").trim().toLowerCase();
-      if (["active", "completed", "consumed", "closed", "fulfilled"].includes(key)) return "#047857";
-      if (["draft", "pending", "reserved", "scheduled", "processing", "in_progress"].includes(key)) return "#b45309";
-      if (["cancelled", "canceled", "void", "voided"].includes(key)) return "#b91c1c";
+      if (["active", "completed", "consumed", "closed", "fulfilled"].includes(key))
+        return "#047857";
+      if ([
+        "draft",
+        "pending",
+        "reserved",
+        "scheduled",
+        "processing",
+        "in_progress"
+      ].includes(key))
+        return "#b45309";
+      if (["cancelled", "canceled", "void", "voided"].includes(key))
+        return "#b91c1c";
       return "#475569";
     })();
-    const crMetaRow = (label, value2, valueStyle) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: crBodyFontSize, color: crInk("#111111"), marginBottom: 2 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
-        label,
-        ": "
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: valueStyle, children: value2 })
-    ] });
-    const crSectionHeading = (label) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: crBodyFontSize, fontWeight: "bold", color: crInk("#111111"), marginBottom: 3 }, children: label });
-    const crDefRow = (label, value2, withDivider = true) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", paddingVertical: 1.5, ...withDivider ? { borderTopWidth: 0.5, borderColor: crHairline } : null }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: crInk("#475569") }, children: label }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9.5 * fontScale, fontWeight: "bold", color: crInk("#0f172a"), marginLeft: 10, textAlign: "right", flexShrink: 1 }, children: value2 })
-    ] });
-    const crCellText = { fontSize: crBodyFontSize, color: crInk("#111111") };
-    const crCellBold = { fontSize: crBodyFontSize, fontWeight: "bold", color: crInk("#111111") };
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: `Assessment Completion Receipt - ${cr.receiptNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [s4.page, pageStyle], children: [
-      channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
-      cancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-        PaginationFurniture,
-        {
-          colorMode: mode,
-          identity: { title: "Assessment Completion Receipt", number: String(cr.receiptNumber || ""), customer: crCustomerName },
-          companyName
-        }
-      ),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { position: "relative", alignItems: "center", marginBottom: 6, paddingTop: 2 }, children: [
-        !!logo && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Image, { src: logo, style: { position: "absolute", left: 0, top: 0, width: templateSettings.logoWidth } }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "center", width: "100%", paddingLeft: crNameGutter, paddingRight: crNameGutter }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: crNameFontSize, fontWeight: "bold", color: crInk("#000"), textAlign: "center", maxLines: 1, textOverflow: "ellipsis" }, children: companyName }),
-          !!receiptCompanyAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: crBodyFontSize, color: crInk("#334155"), textAlign: "center", marginTop: 2 }, children: receiptCompanyAddress }),
-          !!companyContact && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: crBodyFontSize, color: crInk("#334155"), textAlign: "center", marginTop: 2 }, children: companyContact })
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: crTitleFontSize, fontWeight: "bold", color: crInk("#000"), textAlign: "center", marginTop: 6, marginBottom: 6 }, children: "Assessment Completion Receipt" }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginBottom: 4 } }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 6 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: crBodyFontSize, color: crInk("#111111"), marginBottom: 3, maxLines: 1, textOverflow: "ellipsis" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: crCustomerNameLabel }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: crCustomerFontSize }, children: crCustomerName })
-        ] }),
-        crShowSubline && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: crInk("#64748b") }, children: crCustomerSubline })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", gap: RECEIPT_META_GAP, marginBottom: 8 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-          crMetaRow("Receipt No", String(cr.receiptNumber || "Not stated")),
-          crMetaRow("Contract No", String(cr.contractNumber || "Not stated")),
-          crMetaRow("Version", String(cr.version ?? 1)),
-          crMetaRow("Currency", resolveReceiptCurrencyLabel(crCurrency))
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, paddingLeft: crMetaRightIndent }, children: [
-          crMetaRow("Date", String(cr.date || "Not stated")),
-          crMetaRow("Academic Year", String(cr.academicYear || "Not stated")),
-          crMetaRow("Sequence", `${cr.sequence} of ${cr.totalAssessments}`),
-          crMetaRow("Status", toTitleCase(String(cr.status || "draft")), { fontWeight: "bold", color: crInk(crStatusTone) })
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginBottom: 4 } }),
-      crSectionHeading("Completion Details Table"),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { borderWidth: 0.5, borderColor: monoLine(mode, "#9ca3af"), marginBottom: 8 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellBold, { flex: 3, padding: 4, borderRightWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }], children: "Description" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellBold, { flex: 1, padding: 4, textAlign: "right", borderRightWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }], children: "Price" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellBold, { flex: 1, padding: 4, textAlign: "right" }], children: "Debited" })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 3, padding: 4, borderRightWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellBold, { marginBottom: 1 }], children: cr.item.assessmentName || "Assessment" }),
-            (!!cr.item.grade || !!cr.item.subject) && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: crInk("#64748b"), marginBottom: 1 }, children: [cr.item.grade, cr.item.subject].filter(Boolean).join(" \xB7 ") }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9 * fontScale, color: crInk("#64748b") }, children: [
-              "Consumed: ",
-              cr.item.consumedAt || "Not recorded"
-            ] })
+    const crMetaRow = (label, value2, valueStyle) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+      Text,
+      {
+        style: {
+          fontSize: crBodyFontSize,
+          color: crInk("#111111"),
+          marginBottom: 2
+        },
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
+            label,
+            ": "
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flex: 1, padding: 4, justifyContent: "center", borderRightWidth: 0.5, borderColor: monoLine(mode, "#9ca3af") }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellText, { textAlign: "right" }], children: crMoney(cr.item.unitPrice) }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flex: 1, padding: 4, justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellText, { textAlign: "right" }], children: crMoney(cr.amountDebited) }) })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", padding: 4 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellBold, { flex: 4, textAlign: "right" }], children: "Amount Debited" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellBold, { flex: 1, textAlign: "right" }], children: crMoney(cr.amountDebited) })
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: valueStyle, children: value2 })
+        ]
+      }
+    );
+    const crSectionHeading = (label) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      Text,
+      {
+        style: {
+          fontSize: crBodyFontSize,
+          fontWeight: "bold",
+          color: crInk("#111111"),
+          marginBottom: 3
+        },
+        children: label
+      }
+    );
+    const crDefRow = (label, value2, withDivider = true) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+      View,
+      {
+        style: {
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          paddingVertical: 1.5,
+          ...withDivider ? { borderTopWidth: 0.5, borderColor: crHairline } : null
+        },
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 * fontScale, color: crInk("#475569") }, children: label }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                fontSize: 9.5 * fontScale,
+                fontWeight: "bold",
+                color: crInk("#0f172a"),
+                marginLeft: 10,
+                textAlign: "right",
+                flexShrink: 1
+              },
+              children: value2
+            }
+          )
+        ]
+      }
+    );
+    const crCellText = {
+      fontSize: crBodyFontSize,
+      color: crInk("#111111")
+    };
+    const crCellBold = {
+      fontSize: crBodyFontSize,
+      fontWeight: "bold",
+      color: crInk("#111111")
+    };
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      Document,
+      {
+        title: `Assessment Completion Receipt - ${cr.receiptNumber}`,
+        author: companyName,
+        children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [s4.page, pageStyle], children: [
+          channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
+          cancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            PaginationFurniture,
+            {
+              colorMode: mode,
+              identity: {
+                title: "Assessment Completion Receipt",
+                number: String(cr.receiptNumber || ""),
+                customer: crCustomerName
+              },
+              companyName
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                position: "relative",
+                alignItems: "center",
+                marginBottom: 6,
+                paddingTop: 2
+              },
+              children: [
+                !!logo && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Image,
+                  {
+                    src: logo,
+                    style: {
+                      position: "absolute",
+                      left: 0,
+                      top: 0,
+                      width: templateSettings.logoWidth
+                    }
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      alignItems: "center",
+                      width: "100%",
+                      paddingLeft: crNameGutter,
+                      paddingRight: crNameGutter
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: crNameFontSize,
+                            fontWeight: "bold",
+                            color: crInk("#000"),
+                            textAlign: "center",
+                            maxLines: 1,
+                            textOverflow: "ellipsis"
+                          },
+                          children: companyName
+                        }
+                      ),
+                      !!receiptCompanyAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: crBodyFontSize,
+                            color: crInk("#334155"),
+                            textAlign: "center",
+                            marginTop: 2
+                          },
+                          children: receiptCompanyAddress
+                        }
+                      ),
+                      !!companyContact && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: crBodyFontSize,
+                            color: crInk("#334155"),
+                            textAlign: "center",
+                            marginTop: 2
+                          },
+                          children: companyContact
+                        }
+                      )
+                    ]
+                  }
+                )
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                fontSize: crTitleFontSize,
+                fontWeight: "bold",
+                color: crInk("#000"),
+                textAlign: "center",
+                marginTop: 6,
+                marginBottom: 6
+              },
+              children: "Assessment Completion Receipt"
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            View,
+            {
+              style: {
+                height: 1,
+                backgroundColor: monoLine(mode, "#9ca3af"),
+                marginBottom: 4
+              }
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 6 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+              Text,
+              {
+                style: {
+                  fontSize: crBodyFontSize,
+                  color: crInk("#111111"),
+                  marginBottom: 3,
+                  maxLines: 1,
+                  textOverflow: "ellipsis"
+                },
+                children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: crCustomerNameLabel }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: crCustomerFontSize }, children: crCustomerName })
+                ]
+              }
+            ),
+            crShowSubline && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              Text,
+              {
+                style: { fontSize: 9 * fontScale, color: crInk("#64748b") },
+                children: crCustomerSubline
+              }
+            )
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                flexDirection: "row",
+                gap: RECEIPT_META_GAP,
+                marginBottom: 8
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
+                  crMetaRow(
+                    "Receipt No",
+                    String(cr.receiptNumber || "Not stated")
+                  ),
+                  crMetaRow(
+                    "Contract No",
+                    String(cr.contractNumber || "Not stated")
+                  ),
+                  crMetaRow("Version", String(cr.version ?? 1)),
+                  crMetaRow("Currency", resolveReceiptCurrencyLabel(crCurrency))
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, paddingLeft: crMetaRightIndent }, children: [
+                  crMetaRow("Date", String(cr.date || "Not stated")),
+                  crMetaRow(
+                    "Academic Year",
+                    String(cr.academicYear || "Not stated")
+                  ),
+                  crMetaRow(
+                    "Sequence",
+                    `${cr.sequence} of ${cr.totalAssessments}`
+                  ),
+                  crMetaRow("Status", toTitleCase(String(cr.status || "draft")), {
+                    fontWeight: "bold",
+                    color: crInk(crStatusTone)
+                  })
+                ] })
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            View,
+            {
+              style: {
+                height: 1,
+                backgroundColor: monoLine(mode, "#9ca3af"),
+                marginBottom: 4
+              }
+            }
+          ),
+          crSectionHeading("Completion Details Table"),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                borderWidth: 0.5,
+                borderColor: monoLine(mode, "#9ca3af"),
+                marginBottom: 8
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      borderBottomWidth: 0.5,
+                      borderColor: monoLine(mode, "#9ca3af")
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: [
+                            crCellBold,
+                            {
+                              flex: 3,
+                              padding: 4,
+                              borderRightWidth: 0.5,
+                              borderColor: monoLine(mode, "#9ca3af")
+                            }
+                          ],
+                          children: "Description"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: [
+                            crCellBold,
+                            {
+                              flex: 1,
+                              padding: 4,
+                              textAlign: "right",
+                              borderRightWidth: 0.5,
+                              borderColor: monoLine(mode, "#9ca3af")
+                            }
+                          ],
+                          children: "Price"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: [
+                            crCellBold,
+                            { flex: 1, padding: 4, textAlign: "right" }
+                          ],
+                          children: "Debited"
+                        }
+                      )
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      borderBottomWidth: 0.5,
+                      borderColor: monoLine(mode, "#9ca3af")
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: {
+                            flex: 3,
+                            padding: 4,
+                            borderRightWidth: 0.5,
+                            borderColor: monoLine(mode, "#9ca3af")
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellBold, { marginBottom: 1 }], children: cr.item.assessmentName || "Assessment" }),
+                            (!!cr.item.grade || !!cr.item.subject) && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                              Text,
+                              {
+                                style: {
+                                  fontSize: 9 * fontScale,
+                                  color: crInk("#64748b"),
+                                  marginBottom: 1
+                                },
+                                children: [cr.item.grade, cr.item.subject].filter(Boolean).join(" \xB7 ")
+                              }
+                            ),
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                              Text,
+                              {
+                                style: { fontSize: 9 * fontScale, color: crInk("#64748b") },
+                                children: [
+                                  "Consumed: ",
+                                  cr.item.consumedAt || "Not recorded"
+                                ]
+                              }
+                            )
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        View,
+                        {
+                          style: {
+                            flex: 1,
+                            padding: 4,
+                            justifyContent: "center",
+                            borderRightWidth: 0.5,
+                            borderColor: monoLine(mode, "#9ca3af")
+                          },
+                          children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellText, { textAlign: "right" }], children: crMoney(cr.item.unitPrice) })
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flex: 1, padding: 4, justifyContent: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellText, { textAlign: "right" }], children: crMoney(cr.amountDebited) }) })
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", padding: 4 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellBold, { flex: 4, textAlign: "right" }], children: "Amount Debited" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [crCellBold, { flex: 1, textAlign: "right" }], children: crMoney(cr.amountDebited) })
+                ] })
+              ]
+            }
+          ),
+          crSectionHeading("Completion & Fund Position"),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                flexDirection: "row",
+                borderWidth: 0.8,
+                borderColor: crHairline,
+                borderRadius: 3,
+                marginBottom: 8
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 7 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 8 * fontScale,
+                        fontWeight: "bold",
+                        letterSpacing: 1.2,
+                        textTransform: "uppercase",
+                        color: crInk("#64748b"),
+                        marginBottom: 5
+                      },
+                      children: "Progress"
+                    }
+                  ),
+                  crDefRow(
+                    "Completion Progress",
+                    `${cr.completedToDate} / ${cr.totalAssessments}`,
+                    false
+                  ),
+                  crDefRow(
+                    "Remaining Assessments",
+                    String(cr.remainingAssessments)
+                  ),
+                  crDefRow("Total Assessments", String(cr.totalAssessments))
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flex: 1,
+                      padding: 7,
+                      borderLeftWidth: 0.6,
+                      borderColor: crHairline
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 8 * fontScale,
+                            fontWeight: "bold",
+                            letterSpacing: 1.2,
+                            textTransform: "uppercase",
+                            color: crInk("#64748b"),
+                            marginBottom: 5
+                          },
+                          children: "Fund Position"
+                        }
+                      ),
+                      crDefRow("Contract Value", crMoney(cr.contractValue), false),
+                      crDefRow("Consumed to Date", crMoney(cr.totalConsumedToDate)),
+                      crDefRow("Reserved Funds", crMoney(cr.remainingReservedFunds)),
+                      crDefRow("Unallocated Funds", crMoney(cr.unallocatedFunds)),
+                      crDefRow("Wallet Balance After", crMoney(cr.walletBalanceAfter))
+                    ]
+                  }
+                )
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            View,
+            {
+              style: {
+                height: 1,
+                backgroundColor: monoLine(mode, "#9ca3af"),
+                marginBottom: 4
+              }
+            }
+          ),
+          crSectionHeading("Canonical Linkage"),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                borderWidth: 0.8,
+                borderColor: crHairline,
+                borderRadius: 3,
+                padding: 6,
+                backgroundColor: crSoftFill,
+                marginBottom: 6
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: crBodyFontSize,
+                      color: crInk("#111111"),
+                      marginBottom: 2
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Wallet Transaction: " }),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: cr.walletTransactionId || "Not recorded" })
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: crBodyFontSize,
+                      color: crInk("#111111"),
+                      marginBottom: 3
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Ledger Entry: " }),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: cr.ledgerEntryId || "Not recorded" })
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 8.5 * fontScale,
+                      color: crInk("#64748b"),
+                      lineHeight: 1.35
+                    },
+                    children: "These references tie this receipt to the wallet movement and ledger entry that recognised the debit."
+                  }
+                )
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 2 }, children: [
+            crSectionHeading("Notes Section"),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              View,
+              {
+                style: {
+                  padding: 7,
+                  backgroundColor: crSoftFill,
+                  borderRadius: 8
+                },
+                children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: crBodyFontSize,
+                      lineHeight: 1.5,
+                      color: crInk("#334155")
+                    },
+                    children: String(cr.notes || "").trim() || "No additional notes are recorded on this contract."
+                  }
+                )
+              }
+            )
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            View,
+            {
+              style: {
+                height: 1,
+                backgroundColor: monoLine(mode, "#9ca3af"),
+                marginTop: 5,
+                marginBottom: 5
+              }
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { wrap: false, style: { marginTop: 4, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            Text,
+            {
+              style: {
+                fontSize: scaledFont(11),
+                color: crInk("#334155"),
+                textAlign: "center"
+              },
+              children: [
+                "Thank you for choosing",
+                " ",
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: companyName })
+              ]
+            }
+          ) }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              wrap: false,
+              style: {
+                marginTop: 6,
+                borderTopWidth: 0.5,
+                borderColor: monoLine(mode, "#e2e8f0"),
+                paddingTop: 5
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 10 * fontScale,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#1e3a8a"),
+                      letterSpacing: 0.4
+                    },
+                    children: "DOCUMENT INTEGRITY"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      marginTop: 3,
+                      fontSize: 8 * fontScale,
+                      color: monoText(mode, "#1e3a8a"),
+                      letterSpacing: 0.3
+                    },
+                    children: [
+                      "Content hash: ",
+                      cr.contentHash
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      marginTop: 2,
+                      fontSize: 8 * fontScale,
+                      color: crInk("#475569"),
+                      lineHeight: 1.35
+                    },
+                    children: [
+                      "SHA-256 digest of the completed assessment, its progress and the fund position \u2014 scan the QR code to verify this record with",
+                      " ",
+                      companyName,
+                      "."
+                    ]
+                  }
+                )
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 6 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              SecurityFooter,
+              {
+                colorMode: mode,
+                data: cr,
+                companyName,
+                legalFooterLine1: resolveFooterText(config2, "", false),
+                legalFooterLine2: buildFooterContactLine(config2),
+                fontScale,
+                flowing: true
+              }
+            )
+          ] })
         ] })
-      ] }),
-      crSectionHeading("Completion & Fund Position"),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderWidth: 0.8, borderColor: crHairline, borderRadius: 3, marginBottom: 8 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 7 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", letterSpacing: 1.2, textTransform: "uppercase", color: crInk("#64748b"), marginBottom: 5 }, children: "Progress" }),
-          crDefRow("Completion Progress", `${cr.completedToDate} / ${cr.totalAssessments}`, false),
-          crDefRow("Remaining Assessments", String(cr.remainingAssessments)),
-          crDefRow("Total Assessments", String(cr.totalAssessments))
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 7, borderLeftWidth: 0.6, borderColor: crHairline }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8 * fontScale, fontWeight: "bold", letterSpacing: 1.2, textTransform: "uppercase", color: crInk("#64748b"), marginBottom: 5 }, children: "Fund Position" }),
-          crDefRow("Contract Value", crMoney(cr.contractValue), false),
-          crDefRow("Consumed to Date", crMoney(cr.totalConsumedToDate)),
-          crDefRow("Reserved Funds", crMoney(cr.remainingReservedFunds)),
-          crDefRow("Unallocated Funds", crMoney(cr.unallocatedFunds)),
-          crDefRow("Wallet Balance After", crMoney(cr.walletBalanceAfter))
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginBottom: 4 } }),
-      crSectionHeading("Canonical Linkage"),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { borderWidth: 0.8, borderColor: crHairline, borderRadius: 3, padding: 6, backgroundColor: crSoftFill, marginBottom: 6 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: crBodyFontSize, color: crInk("#111111"), marginBottom: 2 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Wallet Transaction: " }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: cr.walletTransactionId || "Not recorded" })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: crBodyFontSize, color: crInk("#111111"), marginBottom: 3 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Ledger Entry: " }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: cr.ledgerEntryId || "Not recorded" })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8.5 * fontScale, color: crInk("#64748b"), lineHeight: 1.35 }, children: "These references tie this receipt to the wallet movement and ledger entry that recognised the debit." })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 2 }, children: [
-        crSectionHeading("Notes Section"),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { padding: 7, backgroundColor: crSoftFill, borderRadius: 8 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: crBodyFontSize, lineHeight: 1.5, color: crInk("#334155") }, children: String(cr.notes || "").trim() || "No additional notes are recorded on this contract." }) })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { height: 1, backgroundColor: monoLine(mode, "#9ca3af"), marginTop: 5, marginBottom: 5 } }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { wrap: false, style: { marginTop: 4, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: scaledFont(11), color: crInk("#334155"), textAlign: "center" }, children: [
-        "Thank you for choosing ",
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: companyName })
-      ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 6, borderTopWidth: 0.5, borderColor: monoLine(mode, "#e2e8f0"), paddingTop: 5 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10 * fontScale, fontWeight: "bold", color: monoText(mode, "#1e3a8a"), letterSpacing: 0.4 }, children: "DOCUMENT INTEGRITY" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 3, fontSize: 8 * fontScale, color: monoText(mode, "#1e3a8a"), letterSpacing: 0.3 }, children: [
-          "Content hash: ",
-          cr.contentHash
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 2, fontSize: 8 * fontScale, color: crInk("#475569"), lineHeight: 1.35 }, children: [
-          "SHA-256 digest of the completed assessment, its progress and the fund position \u2014 scan the QR code to verify this record with ",
-          companyName,
-          "."
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 6 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-          SecurityFooter,
-          {
-            colorMode: mode,
-            data: cr,
-            companyName,
-            legalFooterLine1: resolveFooterText(config2, "", false),
-            legalFooterLine2: buildFooterContactLine(config2),
-            fontScale,
-            flowing: true
-          }
-        )
-      ] })
-    ] }) });
+      }
+    );
   }
   if (type === "SUPPLIER_PAYMENT") {
     const sp = data2;
@@ -236775,121 +242269,435 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
     const spNumber = String(sp.paymentNumber || sp.paymentId);
     const spStatusDisplay = (() => {
       const s5 = String(sp.status || "").toLowerCase().trim();
-      if (["void", "voided", "cancelled", "canceled"].includes(s5)) return "VOID";
+      if (["void", "voided", "cancelled", "canceled"].includes(s5))
+        return "VOID";
       if (["paid", "cleared", "completed", ""].includes(s5)) return "PAID";
       return String(sp.status).toUpperCase();
     })();
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: `Supplier Payment Receipt - ${spNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [s4.page, pageStyle], children: [
-      channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
-      isCancelled2 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-        PaginationFurniture,
-        {
-          colorMode: mode,
-          identity: paginationIdentity(type, sp, resolvedRecipientName || ""),
-          companyName
-        }
-      ),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.headerSection, { marginBottom: 10 }], children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.headerLeft, children: renderBrandMark("left") }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.headerLeft, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.title, titleStyle], children: "Supplier Payment Receipt" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.infoText, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Payment Number : ",
-              spNumber
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Date : ",
-              sp.date
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Supplier : ",
-              sp.supplierName
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Amount : ",
-              currency,
-              " ",
-              formatAmount2(sp.amountPaid)
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Method : ",
-              sp.paymentMethod
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Status : ",
-              spStatusDisplay
-            ] })
-          ] })
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: [s4.billingSection, { marginTop: 0, marginBottom: 0 }], children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", marginBottom: 5, fontSize: 10, textTransform: "uppercase", color: monoText(mode, "#64748b") }, children: "Paid To" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold" }, children: sp.supplierName })
-      ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 5, padding: 15, backgroundColor: monoFill(mode, "#f8fafc"), borderRadius: 8 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 12, lineHeight: 1.6, color: monoText(mode, "#334155") }, children: sp.narrative || `This voucher confirms payment of ${currency} ${formatAmount2(sp.amountPaid)} to ${sp.supplierName}.` }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 30 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.tableHeader, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3 }, children: "Description" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Amount Paid" })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.row, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 3 }, children: [
-            "Payment against Invoices: ",
-            (sp.appliedInvoices || []).join(", ")
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      Document,
+      {
+        title: `Supplier Payment Receipt - ${spNumber}`,
+        author: companyName,
+        children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [s4.page, pageStyle], children: [
+          channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
+          isCancelled2 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            PaginationFurniture,
+            {
+              colorMode: mode,
+              identity: paginationIdentity(
+                type,
+                sp,
+                resolvedRecipientName || ""
+              ),
+              companyName
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                position: "relative",
+                alignItems: "center",
+                marginBottom: 6,
+                paddingTop: 2
+              },
+              children: [
+                !!logo && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Image,
+                  {
+                    src: logo,
+                    style: {
+                      position: "absolute",
+                      left: 0,
+                      top: 0,
+                      width: templateSettings.logoWidth
+                    }
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "center", width: "100%" }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: contractPreambleNameFontSize,
+                        fontWeight: "bold",
+                        color: monoText(mode, "#000"),
+                        textAlign: "center"
+                      },
+                      children: companyName
+                    }
+                  ),
+                  !!companyAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 12,
+                        color: monoText(mode, "#334155"),
+                        textAlign: "center",
+                        marginTop: 2
+                      },
+                      children: companyAddress
+                    }
+                  ),
+                  !!companyContact && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 12,
+                        color: monoText(mode, "#334155"),
+                        textAlign: "center",
+                        marginTop: 2
+                      },
+                      children: companyContact
+                    }
+                  )
+                ] })
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                fontSize: contractPreambleTitleFontSize,
+                fontWeight: "bold",
+                color: monoText(mode, "#000"),
+                textAlign: "center",
+                marginTop: 8,
+                marginBottom: 8
+              },
+              children: "Supplier Payment Receipt"
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            View,
+            {
+              style: {
+                height: 1,
+                backgroundColor: monoLine(mode, "#9ca3af"),
+                marginBottom: 10
+              }
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 8 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              Text,
+              {
+                style: {
+                  fontSize: 10 * fontScale,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#64748b"),
+                  textTransform: "uppercase",
+                  marginBottom: 4
+                },
+                children: "Paid To"
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+              Text,
+              {
+                style: {
+                  fontSize: 12 * fontScale,
+                  fontWeight: "bold",
+                  color: monoText(mode, "#111111")
+                },
+                children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Customer Name: " }),
+                  sp.supplierName
+                ]
+              }
+            )
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1, textAlign: "right" }, children: [
-            currency,
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", gap: 12, marginBottom: 10 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                Text,
+                {
+                  style: {
+                    fontSize: 11 * fontScale,
+                    color: monoText(mode, "#111111"),
+                    marginBottom: 4
+                  },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Payment No: " }),
+                    spNumber
+                  ]
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                Text,
+                {
+                  style: {
+                    fontSize: 11 * fontScale,
+                    color: monoText(mode, "#111111"),
+                    marginBottom: 4
+                  },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Reference: " }),
+                    (sp.appliedInvoices || []).join(", ") || "\u2014"
+                  ]
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                Text,
+                {
+                  style: {
+                    fontSize: 11 * fontScale,
+                    color: monoText(mode, "#111111"),
+                    marginBottom: 4
+                  },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Currency: " }),
+                    currency
+                  ]
+                }
+              )
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, paddingLeft: 24 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                Text,
+                {
+                  style: {
+                    fontSize: 11 * fontScale,
+                    color: monoText(mode, "#111111"),
+                    marginBottom: 4
+                  },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Date: " }),
+                    sp.date
+                  ]
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                Text,
+                {
+                  style: {
+                    fontSize: 11 * fontScale,
+                    color: monoText(mode, "#111111"),
+                    marginBottom: 4
+                  },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Method: " }),
+                    sp.paymentMethod
+                  ]
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                Text,
+                {
+                  style: {
+                    fontSize: 11 * fontScale,
+                    color: monoText(mode, "#111111"),
+                    marginBottom: 4
+                  },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Status: " }),
+                    spStatusDisplay
+                  ]
+                }
+              )
+            ] })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            View,
+            {
+              style: {
+                height: 1,
+                backgroundColor: monoLine(mode, "#9ca3af"),
+                marginBottom: 10
+              }
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                fontSize: 11 * fontScale,
+                fontWeight: "bold",
+                color: monoText(mode, "#111111"),
+                marginBottom: 6
+              },
+              children: "Payment Details"
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: {
+                borderWidth: 0.5,
+                borderColor: monoLine(mode, "#9ca3af"),
+                marginBottom: 10
+              },
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      borderBottomWidth: 0.5,
+                      borderColor: monoLine(mode, "#9ca3af")
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            flex: 3,
+                            fontSize: 11 * fontScale,
+                            fontWeight: "bold",
+                            color: monoText(mode, "#111111"),
+                            padding: 5,
+                            borderRightWidth: 0.5,
+                            borderColor: monoLine(mode, "#9ca3af")
+                          },
+                          children: "Description"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            flex: 1,
+                            fontSize: 11 * fontScale,
+                            fontWeight: "bold",
+                            color: monoText(mode, "#111111"),
+                            padding: 5,
+                            textAlign: "right"
+                          },
+                          children: "Amount Paid"
+                        }
+                      )
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      borderBottomWidth: 0.5,
+                      borderColor: monoLine(mode, "#9ca3af")
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            flex: 3,
+                            fontSize: 11 * fontScale,
+                            color: monoText(mode, "#111111"),
+                            padding: 5,
+                            borderRightWidth: 0.5,
+                            borderColor: monoLine(mode, "#9ca3af")
+                          },
+                          children: [
+                            "Payment to ",
+                            sp.supplierName,
+                            (sp.appliedInvoices || []).length > 0 ? ` \u2014 ${(sp.appliedInvoices || []).join(", ")}` : ""
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            flex: 1,
+                            fontSize: 11 * fontScale,
+                            color: monoText(mode, "#111111"),
+                            padding: 5,
+                            textAlign: "right"
+                          },
+                          children: [
+                            currency,
+                            " ",
+                            formatAmount2(sp.amountPaid)
+                          ]
+                        }
+                      )
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", padding: 5 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        flex: 3,
+                        fontSize: 11 * fontScale,
+                        fontWeight: "bold",
+                        color: monoText(mode, "#111111"),
+                        textAlign: "right"
+                      },
+                      children: "Total Paid"
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    Text,
+                    {
+                      style: {
+                        flex: 1,
+                        fontSize: 11 * fontScale,
+                        fontWeight: "bold",
+                        color: monoText(mode, "#111111"),
+                        textAlign: "right"
+                      },
+                      children: [
+                        currency,
+                        " ",
+                        formatAmount2(sp.amountPaid)
+                      ]
+                    }
+                  )
+                ] })
+              ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            View,
+            {
+              style: {
+                height: 1,
+                backgroundColor: monoLine(mode, "#9ca3af"),
+                marginBottom: 10
+              }
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 4, marginBottom: 10 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            Text,
+            {
+              style: {
+                fontSize: 11 * fontScale,
+                color: monoText(mode, "#334155"),
+                lineHeight: 1.6
+              },
+              children: sp.narrative || `This voucher confirms payment of ${currency} ${formatAmount2(sp.amountPaid)} to ${sp.supplierName}.`
+            }
+          ) }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.footerContainer, wrap: false, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: [s4.thankYouText, { fontSize: scaledFont(12) }], children: [
+            "Authorized by",
             " ",
-            formatAmount2(sp.amountPaid)
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", fontSize: scaledFont(14) }, children: companyName })
+          ] }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              SecurityFooter,
+              {
+                colorMode: mode,
+                data: sp,
+                companyName,
+                legalFooterLine1: "This is a computer-generated payment voucher. For enquiries contact Prime Printing Service, Along M5 Road, Mtakataka, Phone +265992528222.",
+                legalFooterLine2: `Issued securely by ${companyName}.`,
+                fontScale,
+                flowing: true
+              }
+            )
           ] })
         ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.summaryContainer, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.summaryBox, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.totalRow, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: "Total Paid" }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
-          currency,
-          " ",
-          formatAmount2(sp.amountPaid)
-        ] })
-      ] }) }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.footerContainer, wrap: false, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: [s4.thankYouText, { fontSize: scaledFont(12) }], children: [
-          "Authorized by ",
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", fontSize: scaledFont(14) }, children: companyName })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.footerLine }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.companyName, { fontSize: scaledFont(12) }], children: companyName }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.footerDetail, { fontSize: scaledFont(12) }], children: companyAddress }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.footerDetail, { fontSize: scaledFont(12) }], children: companyContact })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.signatureBlock, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.sigLine }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: "Authorized Signatory" })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.sigLine }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: "Received By" })
-        ] })
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-          SecurityFooter,
-          {
-            colorMode: mode,
-            data: sp,
-            companyName,
-            legalFooterLine1: "This is a computer-generated payment voucher. For enquiries contact Prime Printing Service, Along M5 Road, Mtakataka, Phone +265992528222.",
-            legalFooterLine2: `Issued securely by ${companyName}.`,
-            fontScale,
-            flowing: true
-          }
-        )
-      ] })
-    ] }) });
+      }
+    );
   }
   if (type === "POS_RECEIPT") {
     const r4 = data2;
@@ -236900,99 +242708,475 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
     const smallFontSize = 6.4 * scale2;
     const mediumFontSize = 8.4 * scale2;
     const posReceiptAddress = buildReceiptCompanyAddress(config2);
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: `Receipt - ${r4.receiptNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [s4.page, pageStyle, { padding: 0, backgroundColor: monoFill(mode, "#f9fafb"), fontFamily: templateSettings.fontFamily }], children: [
-      channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
-      isCancelled2 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.posA4Wrapper, { width: 250 * scale2, paddingVertical: 24 * scale2, paddingHorizontal: 8 * scale2 }], children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "center", marginBottom: 12 * scale2 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", fontSize: 14 * scale2, textAlign: "center", marginBottom: 3 * scale2, color: "#000" }, children: companyName }),
-          !!posReceiptAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, textAlign: "center", marginBottom: 2 * scale2, color: "#000" }, children: posReceiptAddress }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, textAlign: "center", color: "#000" }, children: companyContact })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 12 * scale2, borderBottomWidth: 1, borderBottomColor: "#000", borderBottomStyle: "dashed", paddingBottom: 8 * scale2 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 2 * scale2 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: "Date:" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: r4.date })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 2 * scale2 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: "Receipt #:" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", fontSize: baseFontSize, color: "#000" }, children: r4.receiptNumber })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 2 * scale2 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: "Cashier:" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: (() => {
-              const cashier = String(r4.cashierName || "").trim();
-              const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cashier);
-              return cashier && !isUuid ? cashier : "System User";
-            })() })
-          ] }),
-          !!r4.customerName && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: "Customer:" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: r4.customerName })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flexDirection: "row", justifyContent: "center", marginTop: 6 * scale2 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { paddingVertical: 3 * scale2, paddingHorizontal: 8 * scale2, borderRadius: 3 * scale2, borderWidth: 1, borderColor: "#000", backgroundColor: "#fff" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000", fontWeight: "bold", letterSpacing: 1 * scale2 }, children: "PAID" }) }) })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 15 * scale2 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#000", paddingBottom: 3 * scale2, marginBottom: 5 * scale2 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3, fontWeight: "bold", fontSize: baseFontSize, color: "#000" }, children: "Description" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontWeight: "bold", fontSize: baseFontSize, textAlign: "right", color: "#000" }, children: "Total" })
-          ] }),
-          r4.items.map((item, i2) => {
-            const receiptQP = isQuickPhotocopyItem(item) ? getQuickPhotocopyLineDisplay(item, currency) : null;
-            return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 6 * scale2 }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: mediumFontSize, fontWeight: "normal", color: "#000" }, children: receiptQP ? receiptQP.name : item.desc }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 1 * scale2 }, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: receiptQP ? `${receiptQP.qty} x ${receiptQP.rate}` : `${item.qty} x ${formatAmount2(item.price)}` }),
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: mediumFontSize, color: "#000" }, children: formatAmount2(item.total) })
-              ] })
-            ] }, i2);
-          })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { borderTopWidth: 1, borderTopColor: "#000", borderTopStyle: "dashed", paddingTop: 8 * scale2, gap: 3 * scale2 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: mediumFontSize, color: "#000" }, children: "Subtotal" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: mediumFontSize, color: "#000" }, children: formatAmount2(r4.subtotal) })
-          ] }),
-          r4.discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: mediumFontSize, color: "#000" }, children: "Discount" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: mediumFontSize, color: "#000" }, children: [
-              "-",
-              formatAmount2(r4.discount)
-            ] })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 * scale2, paddingTop: 4 * scale2, borderTopWidth: 0.5, borderTopColor: "#000" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", fontSize: largeFontSize, color: "#000" }, children: "TOTAL" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold", fontSize: largeFontSize, color: "#000" }, children: [
-              currency,
-              " ",
-              formatAmount2(r4.totalAmount)
-            ] })
-          ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 12 * scale2, borderTopWidth: 1, borderTopColor: "#000", borderTopStyle: "dashed", paddingTop: 8 * scale2, gap: 3 * scale2 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: "Method" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: r4.paymentMethod })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: "Cash Tendered" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: formatAmount2(r4.amountTendered) })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: "Change Given" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", fontSize: baseFontSize, color: "#000" }, children: formatAmount2(r4.changeGiven) })
-          ] })
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 18 * scale2, alignItems: "center" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold", textAlign: "center", fontSize: mediumFontSize, color: "#000" }, children: "Thank you for your business!" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { textAlign: "center", fontSize: smallFontSize, marginTop: 6 * scale2, color: "#000", textTransform: "uppercase", letterSpacing: 0.6 * scale2 }, children: "Powered by Prime ERP" })
-        ] }),
-        !!resolvePdfQrCodeSource(String(r4.securityQrCodeDataUrl || "")) && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 10 * scale2, borderTopWidth: 1, borderTopColor: "#000", borderTopStyle: "dashed", paddingTop: 10 * scale2, alignItems: "center" }, children: renderQrImage(String(r4.securityQrCodeDataUrl || ""), VERIFICATION_QR_SIZE) })
-      ] })
-    ] }) });
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Document, { title: `Receipt - ${r4.receiptNumber}`, author: companyName, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+      Page,
+      {
+        size: "A4",
+        style: [
+          s4.page,
+          pageStyle,
+          {
+            padding: 0,
+            backgroundColor: monoFill(mode, "#f9fafb"),
+            fontFamily: templateSettings.fontFamily
+          }
+        ],
+        children: [
+          channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
+          isCancelled2 && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+            View,
+            {
+              style: [
+                s4.posA4Wrapper,
+                {
+                  width: 250 * scale2,
+                  paddingVertical: 24 * scale2,
+                  paddingHorizontal: 8 * scale2
+                }
+              ],
+              children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "center", marginBottom: 12 * scale2 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontWeight: "bold",
+                        fontSize: 14 * scale2,
+                        textAlign: "center",
+                        marginBottom: 3 * scale2,
+                        color: "#000"
+                      },
+                      children: companyName
+                    }
+                  ),
+                  !!posReceiptAddress && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: baseFontSize,
+                        textAlign: "center",
+                        marginBottom: 2 * scale2,
+                        color: "#000"
+                      },
+                      children: posReceiptAddress
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: baseFontSize,
+                        textAlign: "center",
+                        color: "#000"
+                      },
+                      children: companyContact
+                    }
+                  )
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      marginBottom: 12 * scale2,
+                      borderBottomWidth: 1,
+                      borderBottomColor: "#000",
+                      borderBottomStyle: "dashed",
+                      paddingBottom: 8 * scale2
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: {
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                            marginBottom: 2 * scale2
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: "Date:" }),
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: r4.date })
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: {
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                            marginBottom: 2 * scale2
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: "Receipt #:" }),
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                              Text,
+                              {
+                                style: {
+                                  fontWeight: "bold",
+                                  fontSize: baseFontSize,
+                                  color: "#000"
+                                },
+                                children: r4.receiptNumber
+                              }
+                            )
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: {
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                            marginBottom: 2 * scale2
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: "Cashier:" }),
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: (() => {
+                              const cashier = String(r4.cashierName || "").trim();
+                              const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                                cashier
+                              );
+                              return cashier && !isUuid ? cashier : "System User";
+                            })() })
+                          ]
+                        }
+                      ),
+                      !!r4.customerName && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: {
+                            flexDirection: "row",
+                            justifyContent: "space-between"
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: "Customer:" }),
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: r4.customerName })
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        View,
+                        {
+                          style: {
+                            flexDirection: "row",
+                            justifyContent: "center",
+                            marginTop: 6 * scale2
+                          },
+                          children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            View,
+                            {
+                              style: {
+                                paddingVertical: 3 * scale2,
+                                paddingHorizontal: 8 * scale2,
+                                borderRadius: 3 * scale2,
+                                borderWidth: 1,
+                                borderColor: "#000",
+                                backgroundColor: "#fff"
+                              },
+                              children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                                Text,
+                                {
+                                  style: {
+                                    fontSize: baseFontSize,
+                                    color: "#000",
+                                    fontWeight: "bold",
+                                    letterSpacing: 1 * scale2
+                                  },
+                                  children: "PAID"
+                                }
+                              )
+                            }
+                          )
+                        }
+                      )
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 15 * scale2 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    View,
+                    {
+                      style: {
+                        flexDirection: "row",
+                        borderBottomWidth: 0.5,
+                        borderBottomColor: "#000",
+                        paddingBottom: 3 * scale2,
+                        marginBottom: 5 * scale2
+                      },
+                      children: [
+                        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                          Text,
+                          {
+                            style: {
+                              flex: 3,
+                              fontWeight: "bold",
+                              fontSize: baseFontSize,
+                              color: "#000"
+                            },
+                            children: "Description"
+                          }
+                        ),
+                        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                          Text,
+                          {
+                            style: {
+                              flex: 1,
+                              fontWeight: "bold",
+                              fontSize: baseFontSize,
+                              textAlign: "right",
+                              color: "#000"
+                            },
+                            children: "Total"
+                          }
+                        )
+                      ]
+                    }
+                  ),
+                  r4.items.map((item, i2) => {
+                    const receiptQP = isQuickPhotocopyItem(item) ? getQuickPhotocopyLineDisplay(item, currency) : null;
+                    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 6 * scale2 }, children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: mediumFontSize,
+                            fontWeight: "normal",
+                            color: "#000"
+                          },
+                          children: receiptQP ? receiptQP.name : item.desc
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: {
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                            marginTop: 1 * scale2
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: receiptQP ? `${receiptQP.qty} x ${receiptQP.rate}` : `${item.qty} x ${formatAmount2(item.price)}` }),
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: mediumFontSize, color: "#000" }, children: formatAmount2(item.total) })
+                          ]
+                        }
+                      )
+                    ] }, i2);
+                  })
+                ] }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      borderTopWidth: 1,
+                      borderTopColor: "#000",
+                      borderTopStyle: "dashed",
+                      paddingTop: 8 * scale2,
+                      gap: 3 * scale2
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: {
+                            flexDirection: "row",
+                            justifyContent: "space-between"
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: mediumFontSize, color: "#000" }, children: "Subtotal" }),
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: mediumFontSize, color: "#000" }, children: formatAmount2(r4.subtotal) })
+                          ]
+                        }
+                      ),
+                      r4.discount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: {
+                            flexDirection: "row",
+                            justifyContent: "space-between"
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: mediumFontSize, color: "#000" }, children: "Discount" }),
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: mediumFontSize, color: "#000" }, children: [
+                              "-",
+                              formatAmount2(r4.discount)
+                            ] })
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: {
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                            marginTop: 6 * scale2,
+                            paddingTop: 4 * scale2,
+                            borderTopWidth: 0.5,
+                            borderTopColor: "#000"
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                              Text,
+                              {
+                                style: {
+                                  fontWeight: "bold",
+                                  fontSize: largeFontSize,
+                                  color: "#000"
+                                },
+                                children: "TOTAL"
+                              }
+                            ),
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                              Text,
+                              {
+                                style: {
+                                  fontWeight: "bold",
+                                  fontSize: largeFontSize,
+                                  color: "#000"
+                                },
+                                children: [
+                                  currency,
+                                  " ",
+                                  formatAmount2(r4.totalAmount)
+                                ]
+                              }
+                            )
+                          ]
+                        }
+                      )
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      marginTop: 12 * scale2,
+                      borderTopWidth: 1,
+                      borderTopColor: "#000",
+                      borderTopStyle: "dashed",
+                      paddingTop: 8 * scale2,
+                      gap: 3 * scale2
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: {
+                            flexDirection: "row",
+                            justifyContent: "space-between"
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: "Method" }),
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: r4.paymentMethod })
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: {
+                            flexDirection: "row",
+                            justifyContent: "space-between"
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: "Cash Tendered" }),
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: formatAmount2(r4.amountTendered) })
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: {
+                            flexDirection: "row",
+                            justifyContent: "space-between"
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: baseFontSize, color: "#000" }, children: "Change Given" }),
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                              Text,
+                              {
+                                style: {
+                                  fontWeight: "bold",
+                                  fontSize: baseFontSize,
+                                  color: "#000"
+                                },
+                                children: formatAmount2(r4.changeGiven)
+                              }
+                            )
+                          ]
+                        }
+                      )
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 18 * scale2, alignItems: "center" }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        fontWeight: "bold",
+                        textAlign: "center",
+                        fontSize: mediumFontSize,
+                        color: "#000"
+                      },
+                      children: "Thank you for your business!"
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    Text,
+                    {
+                      style: {
+                        textAlign: "center",
+                        fontSize: smallFontSize,
+                        marginTop: 6 * scale2,
+                        color: "#000",
+                        textTransform: "uppercase",
+                        letterSpacing: 0.6 * scale2
+                      },
+                      children: "Powered by Prime ERP"
+                    }
+                  )
+                ] }),
+                !!resolvePdfQrCodeSource(
+                  String(r4.securityQrCodeDataUrl || "")
+                ) && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  View,
+                  {
+                    style: {
+                      marginTop: 10 * scale2,
+                      borderTopWidth: 1,
+                      borderTopColor: "#000",
+                      borderTopStyle: "dashed",
+                      paddingTop: 10 * scale2,
+                      alignItems: "center"
+                    },
+                    children: renderQrImage(
+                      String(r4.securityQrCodeDataUrl || ""),
+                      VERIFICATION_QR_SIZE
+                    )
+                  }
+                )
+              ]
+            }
+          )
+        ]
+      }
+    ) });
   }
   if ((type === "ACCOUNT_STATEMENT_SUMMARY" || type === "ACCOUNT_STATEMENT") && "finalBalance" in data2) {
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(StatementSummaryTemplate, { data: data2, configOverride: config2, channel, colorMode: mode });
+    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+      StatementSummaryTemplate,
+      {
+        data: data2,
+        configOverride: config2,
+        channel,
+        colorMode: mode
+      }
+    );
   }
   const isConverted = "isConverted" in data2 && data2.isConverted;
   const conversionDetails = isConverted && "conversionDetails" in data2 ? dataAny.conversionDetails || null : null;
@@ -237041,811 +243225,2488 @@ var PrimeDocument = ({ type, data: data2, configOverride = null, customers = [],
       subject: "ERP Generated Document",
       creator: "Prime ERP System",
       keywords: `${type}, ERP, Business Document`,
-      children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Page, { size: "A4", style: [s4.page, pageStyle, type === "INVOICE" ? { paddingBottom: 64 } : null], children: [
-        channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
-        isCancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
-        paginated && paginationId && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PaginationFurniture, { colorMode: mode, identity: paginationId, companyName }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: [s4.headerSection, { marginBottom: 10 }], children: isRightAligned ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.headerLeft, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.title, titleStyle, type === "INVOICE" ? { fontSize: 22 * fontScale, height: "auto" } : null], children: title }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.infoText, children: type === "INVOICE" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                "Invoice No. ",
-                String("invoiceNumber" in data2 && dataAny.invoiceNumber || ("number" in data2 ? dataAny.number : "INV"))
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                "Invoice Date: ",
-                String("date" in data2 ? dataAny.date : "N/A")
-              ] }),
-              Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                "Due Date: ",
-                formatDateOnly(String(data2.dueDate))
-              ] }),
-              showConversionHistory && isFromQuotation && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 8, color: monoText(mode, "#64748b"), marginTop: 2 }, children: [
-                "Order Ref: ",
-                String(conversionDetails?.sourceNumber || "N/A")
-              ] }),
-              showConversionHistory && isFromOrder && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 8, color: monoText(mode, "#64748b"), marginTop: 2 }, children: [
-                "Original Order: ",
-                String(conversionDetails?.sourceNumber || "N/A")
-              ] })
-            ] }) : type === "ORDER" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                "Order No. ",
-                String("orderNumber" in data2 && dataAny.orderNumber || ("number" in data2 ? dataAny.number : "ORD"))
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                "Order Date: ",
-                String("date" in data2 ? dataAny.date : "N/A")
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 8, color: monoText(mode, "#64748b"), marginTop: 2 }, children: [
-                "Order Ref: ",
-                String(showConversionHistory && isFromQuotation && conversionDetails?.sourceNumber ? conversionDetails.sourceNumber : "orderNumber" in data2 && dataAny.orderNumber || "N/A")
-              ] }),
-              Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                "Due Date: ",
-                formatDateOnly(String(data2.dueDate))
-              ] })
-            ] }) : type === "SALES_ORDER" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                "Sales Order No. ",
-                String("orderNumber" in data2 && dataAny.orderNumber || ("number" in data2 ? dataAny.number : "SO"))
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                "Sales Order Date: ",
-                String("date" in data2 ? dataAny.date : "N/A")
-              ] }),
-              Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                "Due Date: ",
-                formatDateOnly(String(data2.dueDate))
-              ] })
-            ] }) : type === "EXAMINATION_INVOICE" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                "Exam Invoice No. ",
-                String("number" in data2 ? dataAny.number : "INV")
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                "Exam Invoice Date: ",
-                String("date" in data2 ? dataAny.date : "N/A")
-              ] }),
-              Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                "Due Date: ",
-                formatDateOnly(String(data2.dueDate))
-              ] })
-            ] }) : type === "SUBSCRIPTION" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                "Recurring Inv. No. ",
-                String("number" in data2 ? dataAny.number : "SUB")
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                "Issue Date: ",
-                String("date" in data2 ? dataAny.date : "N/A")
-              ] }),
-              "billingPeriodStart" in data2 && "billingPeriodEnd" in data2 && !!dataAny.billingPeriodStart && !!dataAny.billingPeriodEnd && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 2 }, children: [
-                "Period: ",
-                String(dataAny.billingPeriodStart),
-                " to ",
-                String(dataAny.billingPeriodEnd)
-              ] }),
-              "frequency" in data2 && !!dataAny.frequency && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                "Frequency: ",
-                toTitleCase(String(dataAny.frequency))
-              ] }),
-              "nextRunDate" in data2 && !!dataAny.nextRunDate && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 2, fontWeight: "bold" }, children: [
-                "Next Run: ",
-                String(dataAny.nextRunDate)
-              ] })
-            ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                toTitleCase(type),
-                " No. ",
-                String("number" in data2 ? dataAny.number : "receiptNumber" in data2 ? dataAny.receiptNumber : "STATEMENT")
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                toTitleCase(type),
-                " Date: ",
-                String("date" in data2 ? dataAny.date : "N/A")
-              ] }),
-              type === "QUOTATION" && Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                "Valid Until: ",
-                formatDateOnly(String(data2.dueDate))
-              ] })
-            ] }) })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.headerRight, children: renderBrandMark("right") })
-        ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.headerLeft, { alignItems: "flex-start" }], children: [
-            renderBrandMark("left"),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.title, titleStyle], children: title }),
-            type !== "FISCAL_REPORT" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.infoText, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                toTitleCase(type),
-                " No. ",
-                String("number" in data2 ? dataAny.number : "receiptNumber" in data2 ? dataAny.receiptNumber : "STATEMENT")
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                toTitleCase(type),
-                " Date: ",
-                String("date" in data2 ? dataAny.date : "N/A")
-              ] })
-            ] })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.headerRight })
-        ] }) }),
-        shouldRenderRecipientSection && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.billingSection, s4.recipientSectionTight, { alignItems: "flex-start", justifyContent: "space-between" }], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, flexDirection: "row" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 80, fontWeight: "bold" }, children: recipientLabel }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.recipientInfoText, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientName, children: resolvedRecipientName || "N/A" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientDetail, children: resolvedRecipientAddress || "N/A" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientPhone, children: resolvedRecipientPhone || "N/A" })
-            ] })
-          ] }),
-          showConversionHistory && ("isConverted" in data2 && !!data2.isConverted) && (!!conversionDetails || type === "QUOTATION") && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: [s4.conversionBox, { marginLeft: 20 }], children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.conversionTitle, children: type === "QUOTATION" ? "Acceptance Details" : "Conversion History" }),
-            type === "QUOTATION" && "date" in data2 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_jsx_runtime4.Fragment, { children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Accepted on ",
-              formatDateOnly(String(dataAny.date || "")),
-              " by ",
-              resolvedRecipientName || "N/A"
-            ] }) }) : conversionDetails ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_jsx_runtime4.Fragment, { children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-              "Converted from ",
-              resolveConversionSourceNumber(dataAny),
-              " on ",
-              formatDateOnly(String(conversionDetails.date)),
-              " as accepted by ",
-              String(conversionDetails.acceptedBy || resolvedRecipientName || "N/A")
-            ] }) }) : null
-          ] })
-        ] }),
-        type !== "DELIVERY_NOTE" && type !== "WORK_ORDER" && type !== "ACCOUNT_STATEMENT" && type !== "EXAMINATION_INVOICE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
-          isFinancial && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.tableSectionTight, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.tableHeader, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: "SN" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: "Description" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colQty, children: "Qty" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colPrice, children: "Price" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colTotal, children: "Amount" })
-            ] }),
-            ("items" in data2 ? dataAny.items : []).map((item, i2) => {
-              const isQPDefault = isQuickPhotocopyItem(item);
-              if (isQPDefault) {
-                const qp = getQuickPhotocopyTotals(item);
-                const qpDisplay = getQuickPhotocopyLineDisplay(item, currency);
-                return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.row, paginated ? { paddingVertical: 4 } : null], wrap: paginated ? false : void 0, children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: i2 + 1 }),
-                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: qpDisplay.name }),
-                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colQty, children: qpDisplay.qty }),
-                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colPrice, children: qpDisplay.rate }),
-                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: s4.colTotal, children: [
-                    currency,
+      children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+        Page,
+        {
+          size: "A4",
+          style: [
+            s4.page,
+            pageStyle,
+            type === "INVOICE" ? { paddingBottom: 64 } : null
+          ],
+          children: [
+            channel === "portal" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PortalCopyWatermark, { colorMode: mode }),
+            isCancelled && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(CancelledWatermark, { colorMode: mode }),
+            paginated && paginationId && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              PaginationFurniture,
+              {
+                colorMode: mode,
+                identity: paginationId,
+                companyName
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: [s4.headerSection, { marginBottom: 10 }], children: isRightAligned ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.headerLeft, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: [
+                      s4.title,
+                      titleStyle,
+                      type === "INVOICE" ? { fontSize: 22 * fontScale, height: "auto" } : null
+                    ],
+                    children: title
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.infoText, children: type === "INVOICE" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    "Invoice No.",
                     " ",
-                    formatAmount2(Number(item.total) > 0 ? Number(item.total) : qp.lineTotal)
+                    String(
+                      "invoiceNumber" in data2 && dataAny.invoiceNumber || ("number" in data2 ? dataAny.number : "INV")
+                    )
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    "Invoice Date:",
+                    " ",
+                    String("date" in data2 ? dataAny.date : "N/A")
+                  ] }),
+                  Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    "Due Date: ",
+                    formatDateOnly(String(data2.dueDate))
+                  ] }),
+                  showConversionHistory && isFromQuotation && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 8,
+                        color: monoText(mode, "#64748b"),
+                        marginTop: 2
+                      },
+                      children: [
+                        "Order Ref:",
+                        " ",
+                        String(conversionDetails?.sourceNumber || "N/A")
+                      ]
+                    }
+                  ),
+                  showConversionHistory && isFromOrder && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 8,
+                        color: monoText(mode, "#64748b"),
+                        marginTop: 2
+                      },
+                      children: [
+                        "Original Order:",
+                        " ",
+                        String(conversionDetails?.sourceNumber || "N/A")
+                      ]
+                    }
+                  )
+                ] }) : type === "ORDER" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    "Order No.",
+                    " ",
+                    String(
+                      "orderNumber" in data2 && dataAny.orderNumber || ("number" in data2 ? dataAny.number : "ORD")
+                    )
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    "Order Date:",
+                    " ",
+                    String("date" in data2 ? dataAny.date : "N/A")
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    Text,
+                    {
+                      style: {
+                        fontSize: 8,
+                        color: monoText(mode, "#64748b"),
+                        marginTop: 2
+                      },
+                      children: [
+                        "Order Ref:",
+                        " ",
+                        String(
+                          showConversionHistory && isFromQuotation && conversionDetails?.sourceNumber ? conversionDetails.sourceNumber : "orderNumber" in data2 && dataAny.orderNumber || "N/A"
+                        )
+                      ]
+                    }
+                  ),
+                  Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    "Due Date: ",
+                    formatDateOnly(String(data2.dueDate))
                   ] })
-                ] }, i2);
-              }
-              const isService = item.category === "service" || item.type === "service" || item.isService === true;
-              const useSimplifiedFormat = isService && (type === "INVOICE" || type === "ORDER" || type === "SALES_ORDER" || type === "QUOTATION");
-              let formattedDesc = String(item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || "");
-              if (useSimplifiedFormat) {
-                const totalPages = Number(item.totalPages || item.pages || 0);
-                const copies = Number(item.copies || item.qty || 1);
-                const itemName = String(item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || "Service");
-                formattedDesc = `${itemName} (${totalPages} pages \xD7 ${copies} copies)`;
-              }
-              return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.row, paginated ? { paddingVertical: 4 } : null], wrap: paginated ? false : void 0, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: i2 + 1 }),
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: formattedDesc }),
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colQty, children: Number(item.qty) }),
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: s4.colPrice, children: [
-                  currency,
-                  " ",
-                  formatAmount2(Number(item.price))
-                ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: s4.colTotal, children: [
-                  currency,
-                  " ",
-                  formatAmount2(Number(item.total))
+                ] }) : type === "SALES_ORDER" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    "Sales Order No.",
+                    " ",
+                    String(
+                      "orderNumber" in data2 && dataAny.orderNumber || ("number" in data2 ? dataAny.number : "SO")
+                    )
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    "Sales Order Date:",
+                    " ",
+                    String("date" in data2 ? dataAny.date : "N/A")
+                  ] }),
+                  Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    "Due Date: ",
+                    formatDateOnly(String(data2.dueDate))
+                  ] })
+                ] }) : type === "EXAMINATION_INVOICE" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    "Exam Invoice No.",
+                    " ",
+                    String("number" in data2 ? dataAny.number : "INV")
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    "Exam Invoice Date:",
+                    " ",
+                    String("date" in data2 ? dataAny.date : "N/A")
+                  ] }),
+                  Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    "Due Date: ",
+                    formatDateOnly(String(data2.dueDate))
+                  ] })
+                ] }) : type === "SUBSCRIPTION" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    "Recurring Inv. No.",
+                    " ",
+                    String("number" in data2 ? dataAny.number : "SUB")
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    "Issue Date:",
+                    " ",
+                    String("date" in data2 ? dataAny.date : "N/A")
+                  ] }),
+                  "billingPeriodStart" in data2 && "billingPeriodEnd" in data2 && !!dataAny.billingPeriodStart && !!dataAny.billingPeriodEnd && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 2 }, children: [
+                    "Period: ",
+                    String(dataAny.billingPeriodStart),
+                    " to",
+                    " ",
+                    String(dataAny.billingPeriodEnd)
+                  ] }),
+                  "frequency" in data2 && !!dataAny.frequency && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    "Frequency: ",
+                    toTitleCase(String(dataAny.frequency))
+                  ] }),
+                  "nextRunDate" in data2 && !!dataAny.nextRunDate && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { marginTop: 2, fontWeight: "bold" }, children: [
+                    "Next Run: ",
+                    String(dataAny.nextRunDate)
+                  ] })
+                ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    toTitleCase(type),
+                    " No.",
+                    " ",
+                    String(
+                      "number" in data2 ? dataAny.number : "receiptNumber" in data2 ? dataAny.receiptNumber : "STATEMENT"
+                    )
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    toTitleCase(type),
+                    " Date:",
+                    " ",
+                    String("date" in data2 ? dataAny.date : "N/A")
+                  ] }),
+                  type === "QUOTATION" && Boolean(showDueDate) && "dueDate" in data2 && !!data2.dueDate && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    "Valid Until: ",
+                    formatDateOnly(String(data2.dueDate))
+                  ] })
+                ] }) })
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.headerRight, children: renderBrandMark("right") })
+            ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.headerLeft, { alignItems: "flex-start" }], children: [
+                renderBrandMark("left"),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: [s4.title, titleStyle], children: title }),
+                type !== "FISCAL_REPORT" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.infoText, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    toTitleCase(type),
+                    " No.",
+                    " ",
+                    String(
+                      "number" in data2 ? dataAny.number : "receiptNumber" in data2 ? dataAny.receiptNumber : "STATEMENT"
+                    )
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                    toTitleCase(type),
+                    " Date:",
+                    " ",
+                    String("date" in data2 ? dataAny.date : "N/A")
+                  ] })
                 ] })
-              ] }, i2);
-            }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.headerRight })
+            ] }) }),
+            shouldRenderRecipientSection && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
               View,
               {
                 style: [
-                  s4.summaryContainer,
-                  type === "QUOTATION" ? { justifyContent: "flex-end" } : null,
-                  type === "PO" ? { justifyContent: "flex-end" } : null
+                  s4.billingSection,
+                  s4.recipientSectionTight,
+                  { alignItems: "flex-start", justifyContent: "space-between" }
                 ],
                 children: [
-                  (type === "INVOICE" || type === "ORDER" || type === "SALES_ORDER" || type === "SUBSCRIPTION") && "status" in data2 && !!data2.status && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.summaryLeft, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: [s4.statusBox, { borderLeftColor: monoLine(mode, getStatusTone(data2.status, mode).border) }], children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 16, fontWeight: "bold", color: monoText(mode, getStatusTone(data2.status, mode).text) }, children: data2.status.toUpperCase() }) }) }),
-                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.summaryRight, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.summaryBox, wrap: paginated ? false : void 0, children: [
-                    (() => {
-                      const itemsArr = "items" in data2 ? data2.items : [];
-                      const itemsSum = itemsArr.length > 0 ? itemsArr.reduce((s5, i2) => s5 + Number(i2.total || 0), 0) : null;
-                      const displaySubtotal = itemsSum !== null ? itemsSum : "subtotal" in data2 ? Number(data2.subtotal) : 0;
-                      const displayDiscount = "discount" in data2 ? Number(data2.discount) : 0;
-                      const displayTotal = itemsSum !== null ? itemsSum - displayDiscount : "totalAmount" in data2 ? Number(data2.totalAmount) : 0;
-                      const displayAmountPaid = "amountPaid" in data2 ? Number(data2.amountPaid) : 0;
-                      const displayDiscountPct = displaySubtotal > 0 ? Number((displayDiscount / displaySubtotal * 100).toFixed(2)) : 0;
-                      const displayDiscountLabel = displayDiscountPct > 0 ? `Discount (${displayDiscountPct}%)` : "Discount";
-                      return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
-                        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.summaryRow, children: [
-                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontWeight: "bold" }, children: "Subtotal" }),
-                          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
-                            currency,
-                            " ",
-                            formatAmount2(displaySubtotal)
-                          ] })
-                        ] }),
-                        displayDiscount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.summaryRow, children: [
-                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1 }, children: displayDiscountLabel }),
-                          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
-                            "-",
-                            currency,
-                            " ",
-                            formatAmount2(displayDiscount)
-                          ] })
-                        ] }),
-                        type === "QUOTATION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.totalRow, children: [
-                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontWeight: "bold" }, children: "Quoted Amount:" }),
-                          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right", paddingLeft: 8 }, children: [
-                            currency,
-                            " ",
-                            formatAmount2(displayTotal)
-                          ] })
-                        ] }),
-                        type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
-                          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.summaryRow, children: [
-                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontWeight: "bold" }, children: "Amount Paid" }),
-                            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
-                              currency,
-                              " ",
-                              formatAmount2(displayAmountPaid)
-                            ] })
-                          ] }),
-                          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.totalRow, children: [
-                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1 }, children: "Due Balance" }),
-                            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
-                              currency,
-                              " ",
-                              formatAmount2(("totalAmount" in data2 ? Number(data2.totalAmount) : 0) - displayAmountPaid)
-                            ] })
-                          ] })
-                        ] })
-                      ] });
-                    })(),
-                    type !== "INVOICE" && type !== "ORDER" && type !== "QUOTATION" && type !== "SUBSCRIPTION" && type !== "PO" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.summaryRow, children: [
-                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Total Amount" }),
-                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
-                        currency,
-                        " ",
-                        formatAmount2("totalAmount" in data2 ? data2.totalAmount : 0)
-                      ] })
-                    ] }),
-                    type === "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.totalRow, children: [
-                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: "Recurring Total" }),
-                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
-                        currency,
-                        " ",
-                        formatAmount2("totalAmount" in data2 ? data2.totalAmount : 0)
-                      ] })
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, flexDirection: "row" }, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 80, fontWeight: "bold" }, children: recipientLabel }),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.recipientInfoText, children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientName, children: resolvedRecipientName || "N/A" }),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientDetail, children: resolvedRecipientAddress || "N/A" }),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.recipientPhone, children: resolvedRecipientPhone || "N/A" })
                     ] })
-                  ] }) })
+                  ] }),
+                  showConversionHistory && "isConverted" in data2 && !!data2.isConverted && (!!conversionDetails || type === "QUOTATION") && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    View,
+                    {
+                      wrap: false,
+                      style: [s4.conversionBox, { marginLeft: 20 }],
+                      children: [
+                        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.conversionTitle, children: type === "QUOTATION" ? "Acceptance Details" : "Conversion History" }),
+                        type === "QUOTATION" && "date" in data2 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_jsx_runtime4.Fragment, { children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                          "Accepted on ",
+                          formatDateOnly(String(dataAny.date || "")),
+                          " ",
+                          "by ",
+                          resolvedRecipientName || "N/A"
+                        ] }) }) : conversionDetails ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_jsx_runtime4.Fragment, { children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                          "Converted from ",
+                          resolveConversionSourceNumber(dataAny),
+                          " ",
+                          "on ",
+                          formatDateOnly(String(conversionDetails.date)),
+                          " as accepted by",
+                          " ",
+                          String(
+                            conversionDetails.acceptedBy || resolvedRecipientName || "N/A"
+                          )
+                        ] }) }) : null
+                      ]
+                    }
+                  )
                 ]
               }
             ),
-            type === "INVOICE" && showInvoiceBalances && Number(dataAny?.totalCustomerOutstanding || 0) > 0 && (() => {
-              const totalOutstanding = Number(dataAny.totalCustomerOutstanding || 0);
-              const todayStr = (/* @__PURE__ */ new Date()).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-              return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: type === "INVOICE" ? 10 : 15, padding: 8, backgroundColor: monoFill(mode, "#f0f9ff"), borderRadius: 4, borderLeftWidth: 3, borderLeftColor: monoLine(mode, "#0ea5e9") }, wrap: false, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: scaledFont(10), color: monoText(mode, "#0369a1"), lineHeight: 1.4 }, children: [
-                "Your overall outstanding balance is ",
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
-                  currency,
-                  " ",
-                  totalOutstanding.toLocaleString("en-US", { minimumFractionDigits: 2 })
+            type !== "DELIVERY_NOTE" && type !== "WORK_ORDER" && type !== "ACCOUNT_STATEMENT" && type !== "EXAMINATION_INVOICE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+              isFinancial && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.tableSectionTight, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.tableHeader, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: "SN" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: "Description" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colQty, children: "Qty" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colPrice, children: "Price" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colTotal, children: "Amount" })
                 ] }),
-                ` as of ${todayStr}`
-              ] }) });
-            })(),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { wrap: false, style: { marginTop: type === "INVOICE" ? 10 : 15, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: scaledFont(12), color: monoText(mode, "#334155") }, children: [
-              "Thank you for choosing ",
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: companyName })
-            ] }) }),
-            type === "QUOTATION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { wrap: false, style: { marginTop: 15, padding: 8, backgroundColor: monoFill(mode, "#f0f9ff"), borderRadius: 4, borderLeftWidth: 3, borderLeftColor: monoLine(mode, "#0ea5e9") }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: scaledFont(9), color: monoText(mode, "#0369a1"), lineHeight: 1.4 }, children: "Note: Acceptance of this quotation converts it into a formal Sales Order subject to our standard terms and conditions." }) }),
-            Boolean(showPaymentTerms) && !!paymentTermsLabel && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                ("items" in data2 ? dataAny.items : []).map((item, i2) => {
+                  const isQPDefault = isQuickPhotocopyItem(item);
+                  if (isQPDefault) {
+                    const qp = getQuickPhotocopyTotals(item);
+                    const qpDisplay = getQuickPhotocopyLineDisplay(
+                      item,
+                      currency
+                    );
+                    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                      View,
+                      {
+                        style: [
+                          s4.row,
+                          paginated ? { paddingVertical: 4 } : null
+                        ],
+                        wrap: paginated ? false : void 0,
+                        children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: i2 + 1 }),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: qpDisplay.name }),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colQty, children: qpDisplay.qty }),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colPrice, children: qpDisplay.rate }),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: s4.colTotal, children: [
+                            currency,
+                            " ",
+                            formatAmount2(
+                              Number(item.total) > 0 ? Number(item.total) : qp.lineTotal
+                            )
+                          ] })
+                        ]
+                      },
+                      i2
+                    );
+                  }
+                  const isService = item.category === "service" || item.type === "service" || item.isService === true;
+                  const useSimplifiedFormat = isService && (type === "INVOICE" || type === "ORDER" || type === "SALES_ORDER" || type === "QUOTATION");
+                  let formattedDesc = String(
+                    item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || ""
+                  );
+                  if (useSimplifiedFormat) {
+                    const totalPages = Number(
+                      item.totalPages || item.pages || 0
+                    );
+                    const copies = Number(item.copies || item.qty || 1);
+                    const itemName = String(
+                      item.name || item.productName || item.product_name || item.itemName || item.item_name || item.title || item.label || item.desc || item.description || "Service"
+                    );
+                    formattedDesc = `${itemName} (${totalPages} pages \xD7 ${copies} copies)`;
+                  }
+                  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    View,
+                    {
+                      style: [
+                        s4.row,
+                        paginated ? { paddingVertical: 4 } : null
+                      ],
+                      wrap: paginated ? false : void 0,
+                      children: [
+                        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: i2 + 1 }),
+                        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: formattedDesc }),
+                        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colQty, children: Number(item.qty) }),
+                        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: s4.colPrice, children: [
+                          currency,
+                          " ",
+                          formatAmount2(Number(item.price))
+                        ] }),
+                        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: s4.colTotal, children: [
+                          currency,
+                          " ",
+                          formatAmount2(Number(item.total))
+                        ] })
+                      ]
+                    },
+                    i2
+                  );
+                }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: [
+                      s4.summaryContainer,
+                      type === "QUOTATION" ? { justifyContent: "flex-end" } : null,
+                      type === "PO" ? { justifyContent: "flex-end" } : null
+                    ],
+                    children: [
+                      (type === "INVOICE" || type === "ORDER" || type === "SALES_ORDER" || type === "SUBSCRIPTION") && "status" in data2 && !!data2.status && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.summaryLeft, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        View,
+                        {
+                          style: [
+                            s4.statusBox,
+                            {
+                              borderLeftColor: monoLine(
+                                mode,
+                                getStatusTone(data2.status, mode).border
+                              )
+                            }
+                          ],
+                          children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                fontSize: 16,
+                                fontWeight: "bold",
+                                color: monoText(
+                                  mode,
+                                  getStatusTone(data2.status, mode).text
+                                )
+                              },
+                              children: data2.status.toUpperCase()
+                            }
+                          )
+                        }
+                      ) }),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.summaryRight, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: s4.summaryBox,
+                          wrap: paginated ? false : void 0,
+                          children: [
+                            (() => {
+                              const itemsArr = "items" in data2 ? data2.items : [];
+                              const itemsSum = itemsArr.length > 0 ? itemsArr.reduce(
+                                (s5, i2) => s5 + Number(i2.total || 0),
+                                0
+                              ) : null;
+                              const displaySubtotal = itemsSum !== null ? itemsSum : "subtotal" in data2 ? Number(data2.subtotal) : 0;
+                              const displayDiscount = "discount" in data2 ? Number(data2.discount) : 0;
+                              const displayTotal = itemsSum !== null ? itemsSum - displayDiscount : "totalAmount" in data2 ? Number(data2.totalAmount) : 0;
+                              const displayAmountPaid = "amountPaid" in data2 ? Number(data2.amountPaid) : 0;
+                              const displayDiscountPct = displaySubtotal > 0 ? Number(
+                                (displayDiscount / displaySubtotal * 100).toFixed(2)
+                              ) : 0;
+                              const displayDiscountLabel = displayDiscountPct > 0 ? `Discount (${displayDiscountPct}%)` : "Discount";
+                              return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+                                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.summaryRow, children: [
+                                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontWeight: "bold" }, children: "Subtotal" }),
+                                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
+                                    currency,
+                                    " ",
+                                    formatAmount2(displaySubtotal)
+                                  ] })
+                                ] }),
+                                displayDiscount > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.summaryRow, children: [
+                                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1 }, children: displayDiscountLabel }),
+                                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
+                                    "-",
+                                    currency,
+                                    " ",
+                                    formatAmount2(displayDiscount)
+                                  ] })
+                                ] }),
+                                type === "QUOTATION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.totalRow, children: [
+                                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontWeight: "bold" }, children: "Quoted Amount:" }),
+                                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                                    Text,
+                                    {
+                                      style: {
+                                        textAlign: "right",
+                                        paddingLeft: 8
+                                      },
+                                      children: [
+                                        currency,
+                                        " ",
+                                        formatAmount2(displayTotal)
+                                      ]
+                                    }
+                                  )
+                                ] }),
+                                type !== "QUOTATION" && type !== "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+                                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.summaryRow, children: [
+                                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                                      Text,
+                                      {
+                                        style: { flex: 1, fontWeight: "bold" },
+                                        children: "Amount Paid"
+                                      }
+                                    ),
+                                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
+                                      currency,
+                                      " ",
+                                      formatAmount2(displayAmountPaid)
+                                    ] })
+                                  ] }),
+                                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.totalRow, children: [
+                                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1 }, children: "Due Balance" }),
+                                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
+                                      currency,
+                                      " ",
+                                      formatAmount2(
+                                        ("totalAmount" in data2 ? Number(data2.totalAmount) : 0) - displayAmountPaid
+                                      )
+                                    ] })
+                                  ] })
+                                ] })
+                              ] });
+                            })(),
+                            type !== "INVOICE" && type !== "ORDER" && type !== "QUOTATION" && type !== "SUBSCRIPTION" && type !== "PO" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.summaryRow, children: [
+                              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Total Amount" }),
+                              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
+                                currency,
+                                " ",
+                                formatAmount2(
+                                  "totalAmount" in data2 ? data2.totalAmount : 0
+                                )
+                              ] })
+                            ] }),
+                            type === "SUBSCRIPTION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.totalRow, children: [
+                              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: "Recurring Total" }),
+                              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { textAlign: "right" }, children: [
+                                currency,
+                                " ",
+                                formatAmount2(
+                                  "totalAmount" in data2 ? data2.totalAmount : 0
+                                )
+                              ] })
+                            ] })
+                          ]
+                        }
+                      ) })
+                    ]
+                  }
+                ),
+                type === "INVOICE" && showInvoiceBalances && Number(dataAny?.totalCustomerOutstanding || 0) > 0 && (() => {
+                  const totalOutstanding = Number(
+                    dataAny.totalCustomerOutstanding || 0
+                  );
+                  const todayStr = (/* @__PURE__ */ new Date()).toLocaleDateString("en-GB", {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric"
+                  });
+                  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                    View,
+                    {
+                      style: {
+                        marginTop: type === "INVOICE" ? 10 : 15,
+                        padding: 8,
+                        backgroundColor: monoFill(mode, "#f0f9ff"),
+                        borderRadius: 4,
+                        borderLeftWidth: 3,
+                        borderLeftColor: monoLine(mode, "#0ea5e9")
+                      },
+                      wrap: false,
+                      children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: scaledFont(10),
+                            color: monoText(mode, "#0369a1"),
+                            lineHeight: 1.4
+                          },
+                          children: [
+                            "Your overall outstanding balance is ",
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
+                              currency,
+                              " ",
+                              totalOutstanding.toLocaleString("en-US", {
+                                minimumFractionDigits: 2
+                              })
+                            ] }),
+                            ` as of ${todayStr}`
+                          ]
+                        }
+                      )
+                    }
+                  );
+                })(),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  View,
+                  {
+                    wrap: false,
+                    style: {
+                      marginTop: type === "INVOICE" ? 10 : 15,
+                      alignItems: "center"
+                    },
+                    children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                      Text,
+                      {
+                        style: {
+                          fontSize: scaledFont(12),
+                          color: monoText(mode, "#334155")
+                        },
+                        children: [
+                          "Thank you for choosing",
+                          " ",
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: companyName })
+                        ]
+                      }
+                    )
+                  }
+                ),
+                type === "QUOTATION" && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  View,
+                  {
+                    wrap: false,
+                    style: {
+                      marginTop: 15,
+                      padding: 8,
+                      backgroundColor: monoFill(mode, "#f0f9ff"),
+                      borderRadius: 4,
+                      borderLeftWidth: 3,
+                      borderLeftColor: monoLine(mode, "#0ea5e9")
+                    },
+                    children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                      Text,
+                      {
+                        style: {
+                          fontSize: scaledFont(9),
+                          color: monoText(mode, "#0369a1"),
+                          lineHeight: 1.4
+                        },
+                        children: "Note: Acceptance of this quotation converts it into a formal Sales Order subject to our standard terms and conditions."
+                      }
+                    )
+                  }
+                ),
+                Boolean(showPaymentTerms) && !!paymentTermsLabel && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    wrap: false,
+                    style: {
+                      marginTop: 14,
+                      padding: 10,
+                      backgroundColor: monoFill(mode, "#f8fafc"),
+                      borderRadius: 6,
+                      borderLeftWidth: 3,
+                      borderLeftColor: monoLine(
+                        mode,
+                        templateSettings.accentColor
+                      )
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: scaledFont(9),
+                            fontWeight: "bold",
+                            color: monoText(mode, "#475569"),
+                            textTransform: "uppercase"
+                          },
+                          children: "Payment Terms"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: scaledFont(10),
+                            color: monoText(mode, "#334155"),
+                            marginTop: 4,
+                            lineHeight: 1.45
+                          },
+                          children: [
+                            paymentTermsLabel,
+                            showDueDate && dataAny?.dueDate ? ` | Due by ${formatDateOnly(String(dataAny.dueDate))}` : ""
+                          ]
+                        }
+                      )
+                    ]
+                  }
+                )
+              ] }),
+              !isFinancial && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.tableHeader, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: "SN" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: "Description / Instructions" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colQty, children: "Qty" })
+                ] }),
+                ("items" in data2 ? data2.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.row, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: i2 + 1 }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: item.desc }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colQty, children: item.qty })
+                ] }, i2))
+              ] })
+            ] }),
+            type === "WORK_ORDER" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 20 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                View,
+                {
+                  style: {
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    marginBottom: 15,
+                    padding: 10,
+                    backgroundColor: monoFill(mode, "#f8fafc"),
+                    borderRadius: 4,
+                    borderLeftWidth: 3,
+                    borderLeftColor: monoLine(
+                      mode,
+                      dataAny.priority === "Critical" ? "#e11d48" : dataAny.priority === "High" ? "#f59e0b" : "#3b82f6"
+                    )
+                  },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 10,
+                            color: monoText(mode, "#64748b"),
+                            fontWeight: "bold",
+                            textTransform: "uppercase"
+                          },
+                          children: "Priority Level"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 14,
+                            fontWeight: "bold",
+                            color: monoText(
+                              mode,
+                              dataAny.priority === "Critical" ? "#e11d48" : "#0f172a"
+                            )
+                          },
+                          children: String(dataAny.priority || "Normal")
+                        }
+                      )
+                    ] }),
+                    "technician" in data2 && !!data2.technician && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { textAlign: "right" }, children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 10,
+                            color: monoText(mode, "#64748b"),
+                            fontWeight: "bold",
+                            textTransform: "uppercase"
+                          },
+                          children: "Technician"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold" }, children: String(data2.technician) })
+                    ] })
+                  ]
+                }
+              ),
+              "technicalSpecs" in data2 && !!data2.technicalSpecs && Object.keys(data2.technicalSpecs).length > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 20 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 10,
+                      fontWeight: "bold",
+                      marginBottom: 8,
+                      color: monoText(mode, "#475569"),
+                      textTransform: "uppercase",
+                      letterSpacing: 1
+                    },
+                    children: "Technical Specifications"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  View,
+                  {
+                    style: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+                    children: Object.entries(data2.technicalSpecs).map(
+                      ([key, value2], i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: {
+                            width: "30%",
+                            padding: 8,
+                            backgroundColor: "#fff",
+                            borderWidth: 0.5,
+                            borderColor: monoLine(mode, "#e2e8f0"),
+                            borderRadius: 4
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                              Text,
+                              {
+                                style: {
+                                  fontSize: 8,
+                                  color: monoText(mode, "#94a3b8"),
+                                  fontWeight: "bold",
+                                  textTransform: "uppercase",
+                                  marginBottom: 2
+                                },
+                                children: key
+                              }
+                            ),
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                              Text,
+                              {
+                                style: {
+                                  fontSize: 10,
+                                  fontWeight: "bold",
+                                  color: monoText(mode, "#1e293b")
+                                },
+                                children: String(value2)
+                              }
+                            )
+                          ]
+                        },
+                        i2
+                      )
+                    )
+                  }
+                )
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                View,
+                {
+                  style: {
+                    backgroundColor: monoFill(mode, "#f1f5f9"),
+                    padding: 12,
+                    marginBottom: 20,
+                    borderRadius: 4
+                  },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                      Text,
+                      {
+                        style: {
+                          fontSize: 10,
+                          fontWeight: "bold",
+                          marginBottom: 5,
+                          color: monoText(mode, "#475569"),
+                          textTransform: "uppercase"
+                        },
+                        children: "Manufacturing Instructions:"
+                      }
+                    ),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                      Text,
+                      {
+                        style: {
+                          fontSize: 11,
+                          color: monoText(mode, "#334155"),
+                          lineHeight: 1.4
+                        },
+                        children: ("instructions" in data2 ? data2.instructions : null) || "Standard operating procedure required. Ensure quality check before release."
+                      }
+                    )
+                  ]
+                }
+              ),
+              "materialChecklist" in data2 && Array.isArray(data2.materialChecklist) && data2.materialChecklist.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 20 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 10,
+                      fontWeight: "bold",
+                      marginBottom: 8,
+                      color: monoText(mode, "#475569"),
+                      textTransform: "uppercase",
+                      letterSpacing: 1
+                    },
+                    children: "Materials Checklist"
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  View,
+                  {
+                    style: {
+                      borderTopWidth: 1,
+                      borderColor: monoLine(mode, "#e2e8f0")
+                    },
+                    children: data2.materialChecklist.map((m3, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                      View,
+                      {
+                        style: {
+                          flexDirection: "row",
+                          alignItems: "center",
+                          paddingVertical: 6,
+                          borderBottomWidth: 0.5,
+                          borderColor: monoLine(mode, "#f1f5f9")
+                        },
+                        children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            View,
+                            {
+                              style: {
+                                width: 12,
+                                height: 12,
+                                borderWidth: 1,
+                                borderColor: monoLine(mode, "#cbd5e1"),
+                                marginRight: 10,
+                                borderRadius: 2
+                              }
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                fontSize: 10,
+                                color: monoText(mode, "#334155")
+                              },
+                              children: m3
+                            }
+                          )
+                        ]
+                      },
+                      i2
+                    ))
+                  }
+                )
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                Text,
+                {
+                  style: {
+                    fontSize: 10,
+                    fontWeight: "bold",
+                    marginBottom: 8,
+                    color: monoText(mode, "#475569"),
+                    textTransform: "uppercase",
+                    letterSpacing: 1
+                  },
+                  children: "Production Checklist"
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.tableHeader, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: "SN" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: "Service / Process Details" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colQty, children: "Completion" })
+              ] }),
+              ("items" in data2 ? data2.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.row, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: i2 + 1 }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: item.desc }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flex: 1,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center"
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        View,
+                        {
+                          style: {
+                            width: 12,
+                            height: 12,
+                            borderWidth: 1,
+                            borderColor: "#000",
+                            marginRight: 5
+                          }
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 }, children: "Initial" })
+                    ]
+                  }
+                )
+              ] }, i2))
+            ] }),
+            type === "DELIVERY_NOTE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 20 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                Text,
+                {
+                  style: { fontSize: 12, fontWeight: "bold", marginBottom: 10 },
+                  children: "DELIVERY ITEMS CHECKLIST"
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.tableHeader, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: "SN" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: "Description" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colQty, children: "Qty Shipped" })
+              ] }),
+              ("items" in data2 ? data2.items : []).map((item, i2) => {
+                const isQPDN = isQuickPhotocopyItem(item);
+                const qpDN = isQPDN ? getQuickPhotocopyTotals(item) : null;
+                return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.row, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: i2 + 1 }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: isQPDN && qpDN ? getQuickPhotocopyLineDisplay(item, currency).name : item.desc }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colQty, children: isQPDN && qpDN ? formatQuickPhotocopyQty(qpDN.totalPages) : item.qty })
+                ] }, i2);
+              }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.remarksBox, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.remarksTitle, children: "Receiver's Remarks" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9, color: monoText(mode, "#666") }, children: String(
+                  dataAny.notes || pod?.remarks || pod?.notes || "Please note any discrepancies or comments regarding the delivery here..."
+                ) })
+              ] })
+            ] }),
+            type === "ACCOUNT_STATEMENT" && "transactions" in data2 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 16 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "center", marginBottom: 16 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 16,
+                      fontWeight: "bold",
+                      color: monoText(mode, "#0f172a"),
+                      letterSpacing: 1,
+                      textTransform: "uppercase"
+                    },
+                    children: "Customer Statement"
+                  }
+                ),
+                data2.statementNumber && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  Text,
+                  {
+                    style: {
+                      fontSize: 9,
+                      color: monoText(mode, "#64748b"),
+                      marginTop: 2
+                    },
+                    children: [
+                      "Statement No. ",
+                      data2.statementNumber
+                    ]
+                  }
+                )
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", marginBottom: 16, gap: 12 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flex: 1,
+                      padding: 10,
+                      backgroundColor: monoFill(mode, "#f8fafc"),
+                      borderRadius: 6,
+                      borderLeftWidth: 3,
+                      borderLeftColor: monoLine(mode, "#1f8577")
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 8,
+                            fontWeight: "bold",
+                            color: monoText(mode, "#64748b"),
+                            textTransform: "uppercase",
+                            letterSpacing: 0.5,
+                            marginBottom: 4
+                          },
+                          children: "Statement To"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 11,
+                            fontWeight: "bold",
+                            color: monoText(mode, "#0f172a")
+                          },
+                          children: data2.customerName
+                        }
+                      ),
+                      data2.customerCode && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 9,
+                            color: monoText(mode, "#64748b"),
+                            marginTop: 1
+                          },
+                          children: [
+                            "Code: ",
+                            data2.customerCode
+                          ]
+                        }
+                      ),
+                      data2.address && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 9,
+                            color: monoText(mode, "#475569"),
+                            marginTop: 2
+                          },
+                          children: data2.address
+                        }
+                      ),
+                      data2.phone && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 9,
+                            color: monoText(mode, "#475569"),
+                            marginTop: 1
+                          },
+                          children: [
+                            "Tel: ",
+                            data2.phone
+                          ]
+                        }
+                      ),
+                      data2.email && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 9,
+                            color: monoText(mode, "#475569"),
+                            marginTop: 1
+                          },
+                          children: [
+                            "Email: ",
+                            data2.email
+                          ]
+                        }
+                      )
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flex: 1,
+                      padding: 10,
+                      backgroundColor: monoFill(mode, "#f8fafc"),
+                      borderRadius: 6,
+                      borderLeftWidth: 3,
+                      borderLeftColor: monoLine(mode, "#64748b")
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            fontSize: 8,
+                            fontWeight: "bold",
+                            color: monoText(mode, "#64748b"),
+                            textTransform: "uppercase",
+                            letterSpacing: 0.5,
+                            marginBottom: 4
+                          },
+                          children: "Statement Details"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: {
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                            marginBottom: 3
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                              Text,
+                              {
+                                style: { fontSize: 9, color: monoText(mode, "#64748b") },
+                                children: "Statement Date:"
+                              }
+                            ),
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                              Text,
+                              {
+                                style: {
+                                  fontSize: 9,
+                                  fontWeight: "600",
+                                  color: monoText(mode, "#0f172a")
+                                },
+                                children: data2.date
+                              }
+                            )
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: {
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                            marginBottom: 3
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                              Text,
+                              {
+                                style: { fontSize: 9, color: monoText(mode, "#64748b") },
+                                children: "Period:"
+                              }
+                            ),
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                              Text,
+                              {
+                                style: {
+                                  fontSize: 9,
+                                  fontWeight: "600",
+                                  color: monoText(mode, "#0f172a")
+                                },
+                                children: [
+                                  data2.startDate,
+                                  " to ",
+                                  data2.endDate
+                                ]
+                              }
+                            )
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: {
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                            marginBottom: 3
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                              Text,
+                              {
+                                style: { fontSize: 9, color: monoText(mode, "#64748b") },
+                                children: "Opening Balance:"
+                              }
+                            ),
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                              Text,
+                              {
+                                style: {
+                                  fontSize: 9,
+                                  fontWeight: "bold",
+                                  color: monoText(mode, "#0f172a")
+                                },
+                                children: [
+                                  currency,
+                                  formatAmount2(data2.openingBalance)
+                                ]
+                              }
+                            )
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        View,
+                        {
+                          style: {
+                            flexDirection: "row",
+                            justifyContent: "space-between"
+                          },
+                          children: [
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                              Text,
+                              {
+                                style: { fontSize: 9, color: monoText(mode, "#64748b") },
+                                children: "Currency:"
+                              }
+                            ),
+                            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                              Text,
+                              {
+                                style: {
+                                  fontSize: 9,
+                                  fontWeight: "600",
+                                  color: monoText(mode, "#0f172a")
+                                },
+                                children: currency
+                              }
+                            )
+                          ]
+                        }
+                      )
+                    ]
+                  }
+                )
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                View,
+                {
+                  style: {
+                    borderWidth: 1,
+                    borderColor: monoLine(mode, "#e2e8f0"),
+                    borderRadius: 6,
+                    overflow: "hidden"
+                  },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                      View,
+                      {
+                        style: {
+                          flexDirection: "row",
+                          backgroundColor: monoFill(mode, "#0f172a"),
+                          paddingVertical: 8,
+                          paddingHorizontal: 10
+                        },
+                        children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1.2,
+                                fontSize: 8,
+                                fontWeight: "bold",
+                                color: monoText(mode, "#fff"),
+                                textTransform: "uppercase",
+                                letterSpacing: 0.5
+                              },
+                              children: "Date"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 2.5,
+                                fontSize: 8,
+                                fontWeight: "bold",
+                                color: monoText(mode, "#fff"),
+                                textTransform: "uppercase",
+                                letterSpacing: 0.5
+                              },
+                              children: "Particulars"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1.2,
+                                fontSize: 8,
+                                fontWeight: "bold",
+                                color: monoText(mode, "#fff"),
+                                textTransform: "uppercase",
+                                letterSpacing: 0.5
+                              },
+                              children: "Voucher No."
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1,
+                                fontSize: 8,
+                                fontWeight: "bold",
+                                color: monoText(mode, "#fff"),
+                                textTransform: "uppercase",
+                                letterSpacing: 0.5
+                              },
+                              children: "Ref No."
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1,
+                                fontSize: 8,
+                                fontWeight: "bold",
+                                color: monoText(mode, "#fff"),
+                                textTransform: "uppercase",
+                                letterSpacing: 0.5
+                              },
+                              children: "Type"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1.1,
+                                fontSize: 8,
+                                fontWeight: "bold",
+                                color: monoText(mode, "#fff"),
+                                textTransform: "uppercase",
+                                letterSpacing: 0.5,
+                                textAlign: "right"
+                              },
+                              children: "Debit"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1.1,
+                                fontSize: 8,
+                                fontWeight: "bold",
+                                color: monoText(mode, "#fff"),
+                                textTransform: "uppercase",
+                                letterSpacing: 0.5,
+                                textAlign: "right"
+                              },
+                              children: "Credit"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1.3,
+                                fontSize: 8,
+                                fontWeight: "bold",
+                                color: monoText(mode, "#fff"),
+                                textTransform: "uppercase",
+                                letterSpacing: 0.5,
+                                textAlign: "right"
+                              },
+                              children: "Balance"
+                            }
+                          )
+                        ]
+                      }
+                    ),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                      View,
+                      {
+                        style: {
+                          flexDirection: "row",
+                          paddingVertical: 7,
+                          paddingHorizontal: 10,
+                          backgroundColor: monoFill(mode, "#f1f5f9"),
+                          borderBottomWidth: 1,
+                          borderBottomColor: monoLine(mode, "#e2e8f0")
+                        },
+                        children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1.2,
+                                fontSize: 9,
+                                fontWeight: "600",
+                                color: monoText(mode, "#475569")
+                              },
+                              children: data2.startDate
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 2.5,
+                                fontSize: 9,
+                                fontWeight: "bold",
+                                color: monoText(mode, "#1e293b")
+                              },
+                              children: "Opening Balance"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1.2,
+                                fontSize: 9,
+                                color: monoText(mode, "#94a3b8")
+                              },
+                              children: "\u2014"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1,
+                                fontSize: 9,
+                                color: monoText(mode, "#94a3b8")
+                              },
+                              children: "\u2014"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1,
+                                fontSize: 9,
+                                color: monoText(mode, "#94a3b8")
+                              },
+                              children: "\u2014"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1.1,
+                                fontSize: 9,
+                                color: monoText(mode, "#94a3b8"),
+                                textAlign: "right"
+                              },
+                              children: "\u2014"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1.1,
+                                fontSize: 9,
+                                color: monoText(mode, "#94a3b8"),
+                                textAlign: "right"
+                              },
+                              children: "\u2014"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1.3,
+                                fontSize: 9,
+                                fontWeight: "bold",
+                                color: monoText(mode, "#1e293b"),
+                                textAlign: "right"
+                              },
+                              children: [
+                                currency,
+                                formatAmount2(data2.openingBalance)
+                              ]
+                            }
+                          )
+                        ]
+                      }
+                    ),
+                    data2.transactions.map((txn, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                      View,
+                      {
+                        style: {
+                          flexDirection: "row",
+                          paddingVertical: 6,
+                          paddingHorizontal: 10,
+                          borderBottomWidth: i2 < data2.transactions.length - 1 ? 1 : 0,
+                          borderBottomColor: monoLine(mode, "#f1f5f9"),
+                          backgroundColor: monoFill(
+                            mode,
+                            i2 % 2 === 0 ? "#fff" : "#fafafa"
+                          )
+                        },
+                        children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1.2,
+                                fontSize: 9,
+                                color: monoText(mode, "#334155")
+                              },
+                              children: txn.date
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 2.5,
+                                fontSize: 9,
+                                color: monoText(mode, "#1e293b")
+                              },
+                              children: txn.memo || txn.reference || "\u2014"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1.2,
+                                fontSize: 8,
+                                fontFamily: "Courier",
+                                color: monoText(mode, "#334155")
+                              },
+                              children: txn.reference || "\u2014"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1,
+                                fontSize: 8,
+                                fontFamily: "Courier",
+                                color: monoText(mode, "#94a3b8")
+                              },
+                              children: "\u2014"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1,
+                                fontSize: 8,
+                                color: monoText(mode, "#64748b")
+                              },
+                              children: "\u2014"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1.1,
+                                fontSize: 9,
+                                color: monoText(mode, "#dc2626"),
+                                textAlign: "right",
+                                fontWeight: "600"
+                              },
+                              children: txn.debit > 0 ? currency + formatAmount2(txn.debit) : "\u2014"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1.1,
+                                fontSize: 9,
+                                color: monoText(mode, "#16a34a"),
+                                textAlign: "right",
+                                fontWeight: "600"
+                              },
+                              children: txn.credit > 0 ? currency + formatAmount2(txn.credit) : "\u2014"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1.3,
+                                fontSize: 9,
+                                fontWeight: "bold",
+                                color: monoText(mode, "#0f172a"),
+                                textAlign: "right"
+                              },
+                              children: [
+                                currency,
+                                formatAmount2(txn.runningBalance)
+                              ]
+                            }
+                          )
+                        ]
+                      },
+                      i2
+                    )),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                      View,
+                      {
+                        style: {
+                          flexDirection: "row",
+                          paddingVertical: 10,
+                          paddingHorizontal: 10,
+                          backgroundColor: monoFill(mode, "#0f172a"),
+                          borderTopWidth: 2,
+                          borderTopColor: monoLine(mode, "#334155")
+                        },
+                        children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                            View,
+                            {
+                              style: {
+                                flex: 5.7,
+                                flexDirection: "row",
+                                justifyContent: "space-between",
+                                paddingRight: 8
+                              },
+                              children: [
+                                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                                  Text,
+                                  {
+                                    style: {
+                                      fontSize: 9,
+                                      fontWeight: "bold",
+                                      color: monoText(mode, "#fff"),
+                                      textTransform: "uppercase",
+                                      letterSpacing: 0.5
+                                    },
+                                    children: "Totals"
+                                  }
+                                ),
+                                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                                  Text,
+                                  {
+                                    style: {
+                                      fontSize: 9,
+                                      fontWeight: "bold",
+                                      color: monoText(mode, "#f87171")
+                                    },
+                                    children: [
+                                      "DR: ",
+                                      currency,
+                                      formatAmount2(
+                                        Number(
+                                          "totalInvoiced" in data2 ? dataAny.totalInvoiced : 0
+                                        )
+                                      )
+                                    ]
+                                  }
+                                ),
+                                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                                  Text,
+                                  {
+                                    style: {
+                                      fontSize: 9,
+                                      fontWeight: "bold",
+                                      color: monoText(mode, "#4ade80")
+                                    },
+                                    children: [
+                                      "CR: ",
+                                      currency,
+                                      formatAmount2(
+                                        Number(
+                                          "totalReceived" in data2 ? dataAny.totalReceived : 0
+                                        )
+                                      )
+                                    ]
+                                  }
+                                )
+                              ]
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flex: 1.3, alignItems: "flex-end" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                            Text,
+                            {
+                              style: {
+                                fontSize: 10,
+                                fontWeight: "black",
+                                color: monoText(
+                                  mode,
+                                  Number("finalBalance" in data2 ? data2.finalBalance : 0) > 0 ? "#f87171" : "#4ade80"
+                                )
+                              },
+                              children: [
+                                currency,
+                                formatAmount2(
+                                  Number("finalBalance" in data2 ? data2.finalBalance : 0)
+                                )
+                              ]
+                            }
+                          ) })
+                        ]
+                      }
+                    ),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                      View,
+                      {
+                        style: {
+                          flexDirection: "row",
+                          paddingVertical: 8,
+                          paddingHorizontal: 10,
+                          backgroundColor: monoFill(mode, "#fef08a"),
+                          borderTopWidth: 2,
+                          borderTopColor: monoLine(mode, "#ca8a04")
+                        },
+                        children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                flex: 7.7,
+                                fontSize: 10,
+                                fontWeight: "black",
+                                color: monoText(mode, "#1e293b"),
+                                textTransform: "uppercase",
+                                letterSpacing: 0.5
+                              },
+                              children: "Closing Balance"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                            Text,
+                            {
+                              style: {
+                                flex: 1.3,
+                                fontSize: 11,
+                                fontWeight: "black",
+                                color: monoText(mode, "#1e293b"),
+                                textAlign: "right"
+                              },
+                              children: [
+                                currency,
+                                formatAmount2(
+                                  Number("finalBalance" in data2 ? data2.finalBalance : 0)
+                                )
+                              ]
+                            }
+                          )
+                        ]
+                      }
+                    )
+                  ]
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 12, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 8, color: monoText(mode, "#94a3b8") }, children: [
+                "Generated by Prime ERP \u2014 ",
+                companyName
+              ] }) })
+            ] }),
+            type === "FISCAL_REPORT" && "sections" in data2 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                View,
+                {
+                  style: {
+                    marginBottom: 14,
+                    paddingBottom: 10,
+                    borderBottomWidth: 1,
+                    borderBottomColor: monoLine(mode, "#e2e8f0")
+                  },
+                  children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    View,
+                    {
+                      style: {
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "flex-end"
+                      },
+                      children: [
+                        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                fontSize: 7,
+                                color: monoText(mode, "#64748b"),
+                                textTransform: "uppercase",
+                                letterSpacing: 2,
+                                fontWeight: "bold"
+                              },
+                              children: "Report Period"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                fontSize: 10,
+                                fontWeight: "bold",
+                                color: monoText(mode, "#0f172a"),
+                                marginTop: 2
+                              },
+                              children: data2.period
+                            }
+                          )
+                        ] }),
+                        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { alignItems: "flex-end" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                          Text,
+                          {
+                            style: { fontSize: 7, color: monoText(mode, "#64748b") },
+                            children: [
+                              "Currency: ",
+                              data2.currency
+                            ]
+                          }
+                        ) })
+                      ]
+                    }
+                  )
+                }
+              ),
+              data2.sections.map((section, idx) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 16 }, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      alignItems: "center",
+                      backgroundColor: monoFill(mode, "#0f172a"),
+                      paddingVertical: 6,
+                      paddingHorizontal: 10
+                    },
+                    children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                      Text,
+                      {
+                        style: {
+                          fontSize: 9,
+                          fontWeight: "bold",
+                          color: monoText(mode, "#ffffff"),
+                          textTransform: "uppercase",
+                          letterSpacing: 1.2,
+                          flex: 1
+                        },
+                        children: section.title
+                      }
+                    )
+                  }
+                ),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      paddingVertical: 5,
+                      paddingHorizontal: 10,
+                      backgroundColor: monoFill(mode, "#e2e8f0"),
+                      borderBottomWidth: 1,
+                      borderBottomColor: monoLine(mode, "#cbd5e1")
+                    },
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            flex: 1,
+                            fontSize: 7,
+                            fontWeight: "bold",
+                            color: monoText(mode, "#475569"),
+                            textTransform: "uppercase",
+                            letterSpacing: 0.5
+                          },
+                          children: "Account / Description"
+                        }
+                      ),
+                      data2.sections.some(
+                        (s5) => s5.rows.some((r4) => r4.prevAmount !== void 0)
+                      ) && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            width: 70,
+                            fontSize: 7,
+                            fontWeight: "bold",
+                            color: monoText(mode, "#475569"),
+                            textTransform: "uppercase",
+                            letterSpacing: 0.5,
+                            textAlign: "right"
+                          },
+                          children: "Prior Period"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                        Text,
+                        {
+                          style: {
+                            width: 80,
+                            fontSize: 7,
+                            fontWeight: "bold",
+                            color: monoText(mode, "#475569"),
+                            textTransform: "uppercase",
+                            letterSpacing: 0.5,
+                            textAlign: "right"
+                          },
+                          children: [
+                            "Amount (",
+                            data2.currency,
+                            ")"
+                          ]
+                        }
+                      )
+                    ]
+                  }
+                ),
+                section.rows.map((row, rowIdx) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                  View,
+                  {
+                    style: {
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingVertical: row.isTotal ? 6 : 4,
+                      paddingHorizontal: 10,
+                      backgroundColor: monoFill(
+                        mode,
+                        row.isTotal ? "#f1f5f9" : rowIdx % 2 === 0 ? "#ffffff" : "#fafbfc"
+                      ),
+                      borderBottomWidth: row.isTotal ? 2 : 1,
+                      borderColor: monoLine(
+                        mode,
+                        row.isTotal ? "#0f172a" : "#f1f5f9"
+                      ),
+                      borderTopWidth: row.isTotal ? 2 : 0,
+                      marginTop: row.isTotal ? 3 : 0
+                    },
+                    wrap: false,
+                    children: [
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, marginLeft: row.indent ? 14 : 0 }, children: [
+                        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                          Text,
+                          {
+                            style: {
+                              fontSize: row.isTotal ? 9 : 8.5,
+                              fontWeight: row.isTotal ? "bold" : "normal",
+                              color: monoText(
+                                mode,
+                                row.isTotal ? "#0f172a" : "#334155"
+                              )
+                            },
+                            children: row.label
+                          }
+                        ),
+                        !!row.subText && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                          Text,
+                          {
+                            style: {
+                              fontSize: 7,
+                              color: monoText(mode, "#94a3b8"),
+                              marginTop: 1
+                            },
+                            children: row.subText
+                          }
+                        )
+                      ] }),
+                      data2.sections.some(
+                        (s5) => s5.rows.some((r4) => r4.prevAmount !== void 0)
+                      ) && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            width: 70,
+                            fontSize: row.isTotal ? 9 : 8,
+                            color: monoText(
+                              mode,
+                              row.isTotal ? "#475569" : "#94a3b8"
+                            ),
+                            textAlign: "right"
+                          },
+                          children: row.prevAmount !== void 0 ? `${formatAmount2(row.prevAmount)}` : "\u2014"
+                        }
+                      ),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                        Text,
+                        {
+                          style: {
+                            width: 80,
+                            fontSize: row.isTotal ? 9 : 8.5,
+                            fontWeight: row.isTotal ? "bold" : "normal",
+                            color: monoText(
+                              mode,
+                              row.isTotal ? "#0f172a" : "#1e293b"
+                            ),
+                            textAlign: "right"
+                          },
+                          children: row.amount < 0 ? `(${formatAmount2(Math.abs(row.amount))})` : `${formatAmount2(row.amount)}`
+                        }
+                      )
+                    ]
+                  },
+                  rowIdx
+                ))
+              ] }, idx)),
+              !!data2.netPerformance && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                View,
+                {
+                  style: {
+                    marginTop: 20,
+                    padding: 12,
+                    backgroundColor: monoFill(mode, "#0f172a"),
+                    borderTopWidth: 3,
+                    borderTopColor: monoLine(mode, "#2563eb")
+                  },
+                  children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    View,
+                    {
+                      style: {
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "center"
+                      },
+                      children: [
+                        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                color: monoText(mode, "#94a3b8"),
+                                fontSize: 7,
+                                textTransform: "uppercase",
+                                letterSpacing: 1.5,
+                                fontWeight: "bold"
+                              },
+                              children: "Key Performance Indicator"
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                color: monoText(mode, "#ffffff"),
+                                fontSize: 11,
+                                fontWeight: "bold",
+                                marginTop: 3
+                              },
+                              children: data2.netPerformance.label
+                            }
+                          )
+                        ] }),
+                        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "flex-end" }, children: [
+                          data2.netPerformance.prevAmount !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                            Text,
+                            {
+                              style: {
+                                color: monoText(mode, "#94a3b8"),
+                                fontSize: 8,
+                                marginBottom: 3
+                              },
+                              children: [
+                                "Prior: ",
+                                formatAmount2(data2.netPerformance.prevAmount)
+                              ]
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                color: monoText(
+                                  mode,
+                                  data2.netPerformance.amount >= 0 ? "#4ade80" : "#f87171"
+                                ),
+                                fontSize: 14,
+                                fontWeight: "bold",
+                                textAlign: "right"
+                              },
+                              children: data2.netPerformance.amount < 0 ? `(${formatAmount2(Math.abs(data2.netPerformance.amount))})` : `${formatAmount2(data2.netPerformance.amount)}`
+                            }
+                          )
+                        ] })
+                      ]
+                    }
+                  )
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                View,
+                {
+                  style: {
+                    marginTop: 20,
+                    paddingTop: 8,
+                    borderTopWidth: 1,
+                    borderTopColor: monoLine(mode, "#e2e8f0")
+                  },
+                  children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    View,
+                    {
+                      style: {
+                        flexDirection: "row",
+                        justifyContent: "space-between"
+                      },
+                      children: [
+                        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                            Text,
+                            {
+                              style: { fontSize: 7, color: monoText(mode, "#94a3b8") },
+                              children: [
+                                "Generated:",
+                                " ",
+                                (/* @__PURE__ */ new Date()).toLocaleString("en-US", {
+                                  dateStyle: "medium",
+                                  timeStyle: "short"
+                                })
+                              ]
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: {
+                                fontSize: 7,
+                                color: monoText(mode, "#94a3b8"),
+                                marginTop: 1
+                              },
+                              children: "Prime ERP \u2014 Financial Reporting Module"
+                            }
+                          )
+                        ] }),
+                        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "flex-end" }, children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            Text,
+                            {
+                              style: { fontSize: 7, color: monoText(mode, "#94a3b8") },
+                              children: data2.reportName
+                            }
+                          ),
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                            Text,
+                            {
+                              style: {
+                                fontSize: 7,
+                                color: monoText(mode, "#94a3b8"),
+                                marginTop: 1,
+                                fontStyle: "italic"
+                              },
+                              children: [
+                                "All amounts in ",
+                                data2.currency
+                              ]
+                            }
+                          )
+                        ] })
+                      ]
+                    }
+                  )
+                }
+              )
+            ] }),
+            type === "EXAMINATION_INVOICE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 20 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.tableHeader, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, textAlign: "center" }, children: "SN" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3 }, children: "Description" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Qty" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Price" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.5, textAlign: "right" }, children: "Amount" })
+              ] }),
+              ("items" in data2 ? dataAny.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.row, children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, textAlign: "center", fontSize: 12 }, children: i2 + 1 }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flex: 3 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "normal", fontSize: 12 }, children: String(item.desc) }) }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right", fontSize: 12 }, children: Number(item.qty) }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right", fontSize: 12 }, children: formatAmount2(Number(item.price)) }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.5, textAlign: "right", fontSize: 12 }, children: formatAmount2(Number(item.total)) })
+              ] }, i2)),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.summaryContainer, children: [
+                "status" in data2 && !!data2.status && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.summaryLeft, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                  View,
+                  {
+                    style: [
+                      s4.statusBox,
+                      {
+                        borderLeftColor: monoLine(
+                          mode,
+                          getStatusTone(data2.status, mode).border
+                        )
+                      }
+                    ],
+                    children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                      Text,
+                      {
+                        style: {
+                          fontSize: 16,
+                          fontWeight: "bold",
+                          color: monoText(
+                            mode,
+                            getStatusTone(data2.status, mode).text
+                          )
+                        },
+                        children: data2.status.toUpperCase()
+                      }
+                    )
+                  }
+                ) }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.summaryRight, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.summaryBox, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.summaryRow, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Subtotal" }),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                      currency,
+                      " ",
+                      formatAmount2(
+                        Number(
+                          dataAny.preRoundingTotalAmount || dataAny.subtotal || 0
+                        )
+                      )
+                    ] })
+                  ] }),
+                  dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.summaryRow, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
+                      "Rounding",
+                      String(
+                        dataAny.roundingMethod ? ` (${String(dataAny.roundingMethod)})` : ""
+                      )
+                    ] }),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                      currency,
+                      " ",
+                      formatAmount2(Number(dataAny.roundingDifference))
+                    ] })
+                  ] }) : null,
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                    View,
+                    {
+                      style: [
+                        s4.summaryRow,
+                        {
+                          borderTopWidth: 1,
+                          borderTopColor: monoLine(mode, "#e2e8f0"),
+                          paddingTop: 4,
+                          marginTop: 4
+                        }
+                      ],
+                      children: [
+                        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Grand Total" }),
+                        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                          currency,
+                          " ",
+                          formatAmount2(
+                            Number("totalAmount" in data2 ? dataAny.totalAmount : 0)
+                          )
+                        ] })
+                      ]
+                    }
+                  ),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.summaryRow, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Amount Paid" }),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                      currency,
+                      " ",
+                      formatAmount2(
+                        Number("amountPaid" in data2 ? dataAny.amountPaid : 0)
+                      )
+                    ] })
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.totalRow, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: "Balance Due" }),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+                      currency,
+                      " ",
+                      formatAmount2(
+                        Number(
+                          "totalAmount" in data2 ? dataAny.totalAmount : 0
+                        ) - Number("amountPaid" in data2 ? dataAny.amountPaid : 0)
+                      )
+                    ] })
+                  ] })
+                ] }) })
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { wrap: false, style: { marginTop: 12, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                Text,
+                {
+                  style: {
+                    fontSize: scaledFont(12),
+                    color: monoText(mode, "#334155")
+                  },
+                  children: [
+                    "Thank you for choosing",
+                    " ",
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: companyName })
+                  ]
+                }
+              ) }),
+              Boolean(showPaymentTerms) && !!paymentTermsLabel && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                View,
+                {
+                  wrap: false,
+                  style: {
+                    marginTop: type === "INVOICE" ? 10 : 14,
+                    padding: 10,
+                    backgroundColor: monoFill(mode, "#f8fafc"),
+                    borderRadius: 6,
+                    borderLeftWidth: 3,
+                    borderLeftColor: monoLine(mode, templateSettings.accentColor)
+                  },
+                  children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                      Text,
+                      {
+                        style: {
+                          fontSize: scaledFont(9),
+                          fontWeight: "bold",
+                          color: monoText(mode, "#475569"),
+                          textTransform: "uppercase"
+                        },
+                        children: "Payment Terms"
+                      }
+                    ),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                      Text,
+                      {
+                        style: {
+                          fontSize: scaledFont(10),
+                          color: monoText(mode, "#334155"),
+                          marginTop: 4,
+                          lineHeight: 1.45
+                        },
+                        children: [
+                          paymentTermsLabel,
+                          showDueDate && dataAny?.dueDate ? ` | Due by ${formatDateOnly(String(dataAny.dueDate))}` : ""
+                        ]
+                      }
+                    )
+                  ]
+                }
+              )
+            ] }),
+            !isFinancial && type !== "DELIVERY_NOTE" && type !== "EXAMINATION_INVOICE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.signatureBlock, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.sigLine }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: "Issued By (Prime)" })
+              ] }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.sigLine }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: "Received By (Client)" })
+              ] })
+            ] }),
+            type === "DELIVERY_NOTE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
               View,
               {
-                wrap: false,
-                style: {
-                  marginTop: 14,
-                  padding: 10,
-                  backgroundColor: monoFill(mode, "#f8fafc"),
-                  borderRadius: 6,
-                  borderLeftWidth: 3,
-                  borderLeftColor: monoLine(mode, templateSettings.accentColor)
-                },
+                style: [
+                  s4.signatureBlock,
+                  { marginTop: 40, alignItems: "flex-start" }
+                ],
                 children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: scaledFont(9), fontWeight: "bold", color: monoText(mode, "#475569"), textTransform: "uppercase" }, children: "Payment Terms" }),
-                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: scaledFont(10), color: monoText(mode, "#334155"), marginTop: 4, lineHeight: 1.45 }, children: [
-                    paymentTermsLabel,
-                    showDueDate && dataAny?.dueDate ? ` | Due by ${formatDateOnly(String(dataAny.dueDate))}` : ""
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, alignItems: "flex-start" }, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                      Text,
+                      {
+                        style: { fontSize: 10, fontWeight: "bold", marginBottom: 5 },
+                        children: "Logistics Details"
+                      }
+                    ),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9, marginBottom: 3 }, children: [
+                      "Driver Name:",
+                      " ",
+                      "driverName" in data2 ? data2.driverName : "____________________"
+                    ] }),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9, marginBottom: 3 }, children: [
+                      "Vehicle No:",
+                      " ",
+                      "vehicleNo" in data2 ? data2.vehicleNo : "____________________"
+                    ] }),
+                    (() => {
+                      const locStamp = conversionDetails?.locationStamp || pod?.locationStamp;
+                      const lat = Number(locStamp?.lat);
+                      const lng = Number(locStamp?.lng);
+                      if (lat || lng) {
+                        return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                          Text,
+                          {
+                            style: {
+                              fontSize: 7,
+                              color: monoText(mode, "#666"),
+                              marginTop: 5
+                            },
+                            children: [
+                              "GPS: ",
+                              lat.toFixed(4),
+                              ", ",
+                              lng.toFixed(4)
+                            ]
+                          }
+                        );
+                      }
+                      return null;
+                    })()
+                  ] }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, alignItems: "flex-end" }, children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+                      View,
+                      {
+                        style: {
+                          position: "relative",
+                          width: 180,
+                          height: 45,
+                          marginBottom: 5
+                        },
+                        children: [
+                          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                            View,
+                            {
+                              style: {
+                                position: "absolute",
+                                bottom: 0,
+                                left: 0,
+                                right: 0,
+                                borderTopWidth: 1,
+                                borderColor: "#000"
+                              }
+                            }
+                          ),
+                          (() => {
+                            const raw = String(
+                              dataAny.signatureDataUrl || pod?.signatureDataUrl || ""
+                            );
+                            const validated = normalizeSignatureDataUrl(raw);
+                            const mime = (validated?.match(/^data:([^;]+);base64,/i)?.[1] || "").toLowerCase();
+                            const renderable = validated && (mime === "image/png" || mime === "image/jpeg" || mime === "image/jpg") ? validated : null;
+                            return renderable ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                              Image,
+                              {
+                                src: renderable,
+                                style: {
+                                  position: "absolute",
+                                  bottom: 0,
+                                  // Center the 100-wide signature over the 180-wide
+                                  // signature line: (180 - 100) / 2 = 40.
+                                  left: 40,
+                                  width: 100,
+                                  height: 40,
+                                  objectFit: "contain"
+                                }
+                              }
+                            ) : null;
+                          })()
+                        ]
+                      }
+                    ),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9 }, children: [
+                      "Received By:",
+                      " ",
+                      String(
+                        dataAny.receivedBy || pod?.receivedBy || conversionDetails?.acceptedBy || "____________________"
+                      )
+                    ] }),
+                    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7, color: monoText(mode, "#666") }, children: "Stamp & Signature" })
                   ] })
                 ]
               }
-            )
-          ] }),
-          !isFinancial && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.tableHeader, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: "SN" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: "Description / Instructions" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colQty, children: "Qty" })
-            ] }),
-            ("items" in data2 ? data2.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.row, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: i2 + 1 }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: item.desc }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colQty, children: item.qty })
-            ] }, i2))
-          ] })
-        ] }),
-        type === "WORK_ORDER" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 20 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 15, padding: 10, backgroundColor: monoFill(mode, "#f8fafc"), borderRadius: 4, borderLeftWidth: 3, borderLeftColor: monoLine(mode, dataAny.priority === "Critical" ? "#e11d48" : dataAny.priority === "High" ? "#f59e0b" : "#3b82f6") }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, color: monoText(mode, "#64748b"), fontWeight: "bold", textTransform: "uppercase" }, children: "Priority Level" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 14, fontWeight: "bold", color: monoText(mode, dataAny.priority === "Critical" ? "#e11d48" : "#0f172a") }, children: String(dataAny.priority || "Normal") })
-            ] }),
-            "technician" in data2 && !!data2.technician && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { textAlign: "right" }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, color: monoText(mode, "#64748b"), fontWeight: "bold", textTransform: "uppercase" }, children: "Technician" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold" }, children: String(data2.technician) })
-            ] })
-          ] }),
-          "technicalSpecs" in data2 && !!data2.technicalSpecs && Object.keys(data2.technicalSpecs).length > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 20 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 8, color: monoText(mode, "#475569"), textTransform: "uppercase", letterSpacing: 1 }, children: "Technical Specifications" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flexDirection: "row", flexWrap: "wrap", gap: 10 }, children: Object.entries(data2.technicalSpecs).map(([key, value2], i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { width: "30%", padding: 8, backgroundColor: "#fff", borderWidth: 0.5, borderColor: monoLine(mode, "#e2e8f0"), borderRadius: 4 }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8, color: monoText(mode, "#94a3b8"), fontWeight: "bold", textTransform: "uppercase", marginBottom: 2 }, children: key }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", color: monoText(mode, "#1e293b") }, children: String(value2) })
-            ] }, i2)) })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { backgroundColor: monoFill(mode, "#f1f5f9"), padding: 12, marginBottom: 20, borderRadius: 4 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 5, color: monoText(mode, "#475569"), textTransform: "uppercase" }, children: "Manufacturing Instructions:" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11, color: monoText(mode, "#334155"), lineHeight: 1.4 }, children: ("instructions" in data2 ? data2.instructions : null) || "Standard operating procedure required. Ensure quality check before release." })
-          ] }),
-          "materialChecklist" in data2 && Array.isArray(data2.materialChecklist) && data2.materialChecklist.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 20 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 8, color: monoText(mode, "#475569"), textTransform: "uppercase", letterSpacing: 1 }, children: "Materials Checklist" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { borderTopWidth: 1, borderColor: monoLine(mode, "#e2e8f0") }, children: data2.materialChecklist.map((m3, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", alignItems: "center", paddingVertical: 6, borderBottomWidth: 0.5, borderColor: monoLine(mode, "#f1f5f9") }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: 12, height: 12, borderWidth: 1, borderColor: monoLine(mode, "#cbd5e1"), marginRight: 10, borderRadius: 2 } }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, color: monoText(mode, "#334155") }, children: m3 })
-            ] }, i2)) })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 8, color: monoText(mode, "#475569"), textTransform: "uppercase", letterSpacing: 1 }, children: "Production Checklist" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.tableHeader, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: "SN" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: "Service / Process Details" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colQty, children: "Completion" })
-          ] }),
-          ("items" in data2 ? data2.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.row, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: i2 + 1 }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: item.desc }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center" }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { width: 12, height: 12, borderWidth: 1, borderColor: "#000", marginRight: 5 } }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9 }, children: "Initial" })
-            ] })
-          ] }, i2))
-        ] }),
-        type === "DELIVERY_NOTE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 20 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 12, fontWeight: "bold", marginBottom: 10 }, children: "DELIVERY ITEMS CHECKLIST" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.tableHeader, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: "SN" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: "Description" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colQty, children: "Qty Shipped" })
-          ] }),
-          ("items" in data2 ? data2.items : []).map((item, i2) => {
-            const isQPDN = isQuickPhotocopyItem(item);
-            const qpDN = isQPDN ? getQuickPhotocopyTotals(item) : null;
-            return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.row, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colSn, children: i2 + 1 }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colDesc, children: isQPDN && qpDN ? getQuickPhotocopyLineDisplay(item, currency).name : item.desc }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.colQty, children: isQPDN && qpDN ? formatQuickPhotocopyQty(qpDN.totalPages) : item.qty })
-            ] }, i2);
-          }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.remarksBox, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: s4.remarksTitle, children: "Receiver's Remarks" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9, color: monoText(mode, "#666") }, children: String(dataAny.notes || pod?.remarks || pod?.notes || "Please note any discrepancies or comments regarding the delivery here...") })
-          ] })
-        ] }),
-        type === "ACCOUNT_STATEMENT" && "transactions" in data2 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 16 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "center", marginBottom: 16 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 16, fontWeight: "bold", color: monoText(mode, "#0f172a"), letterSpacing: 1, textTransform: "uppercase" }, children: "Customer Statement" }),
-            data2.statementNumber && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9, color: monoText(mode, "#64748b"), marginTop: 2 }, children: [
-              "Statement No. ",
-              data2.statementNumber
-            ] })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", marginBottom: 16, gap: 12 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 10, backgroundColor: monoFill(mode, "#f8fafc"), borderRadius: 6, borderLeftWidth: 3, borderLeftColor: monoLine(mode, "#1f8577") }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8, fontWeight: "bold", color: monoText(mode, "#64748b"), textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }, children: "Statement To" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 11, fontWeight: "bold", color: monoText(mode, "#0f172a") }, children: data2.customerName }),
-              data2.customerCode && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9, color: monoText(mode, "#64748b"), marginTop: 1 }, children: [
-                "Code: ",
-                data2.customerCode
-              ] }),
-              data2.address && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9, color: monoText(mode, "#475569"), marginTop: 2 }, children: data2.address }),
-              data2.phone && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9, color: monoText(mode, "#475569"), marginTop: 1 }, children: [
-                "Tel: ",
-                data2.phone
-              ] }),
-              data2.email && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9, color: monoText(mode, "#475569"), marginTop: 1 }, children: [
-                "Email: ",
-                data2.email
-              ] })
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, padding: 10, backgroundColor: monoFill(mode, "#f8fafc"), borderRadius: 6, borderLeftWidth: 3, borderLeftColor: monoLine(mode, "#64748b") }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 8, fontWeight: "bold", color: monoText(mode, "#64748b"), textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }, children: "Statement Details" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 3 }, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9, color: monoText(mode, "#64748b") }, children: "Statement Date:" }),
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9, fontWeight: "600", color: monoText(mode, "#0f172a") }, children: data2.date })
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 3 }, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9, color: monoText(mode, "#64748b") }, children: "Period:" }),
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9, fontWeight: "600", color: monoText(mode, "#0f172a") }, children: [
-                  data2.startDate,
-                  " to ",
-                  data2.endDate
-                ] })
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", marginBottom: 3 }, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9, color: monoText(mode, "#64748b") }, children: "Opening Balance:" }),
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9, fontWeight: "bold", color: monoText(mode, "#0f172a") }, children: [
-                  currency,
-                  formatAmount2(data2.openingBalance)
-                ] })
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9, color: monoText(mode, "#64748b") }, children: "Currency:" }),
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9, fontWeight: "600", color: monoText(mode, "#0f172a") }, children: currency })
-              ] })
-            ] })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { borderWidth: 1, borderColor: monoLine(mode, "#e2e8f0"), borderRadius: 6, overflow: "hidden" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", backgroundColor: monoFill(mode, "#0f172a"), paddingVertical: 8, paddingHorizontal: 10 }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.2, fontSize: 8, fontWeight: "bold", color: monoText(mode, "#fff"), textTransform: "uppercase", letterSpacing: 0.5 }, children: "Date" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2.5, fontSize: 8, fontWeight: "bold", color: monoText(mode, "#fff"), textTransform: "uppercase", letterSpacing: 0.5 }, children: "Particulars" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.2, fontSize: 8, fontWeight: "bold", color: monoText(mode, "#fff"), textTransform: "uppercase", letterSpacing: 0.5 }, children: "Voucher No." }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 8, fontWeight: "bold", color: monoText(mode, "#fff"), textTransform: "uppercase", letterSpacing: 0.5 }, children: "Ref No." }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 8, fontWeight: "bold", color: monoText(mode, "#fff"), textTransform: "uppercase", letterSpacing: 0.5 }, children: "Type" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.1, fontSize: 8, fontWeight: "bold", color: monoText(mode, "#fff"), textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }, children: "Debit" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.1, fontSize: 8, fontWeight: "bold", color: monoText(mode, "#fff"), textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }, children: "Credit" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.3, fontSize: 8, fontWeight: "bold", color: monoText(mode, "#fff"), textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }, children: "Balance" })
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 7, paddingHorizontal: 10, backgroundColor: monoFill(mode, "#f1f5f9"), borderBottomWidth: 1, borderBottomColor: monoLine(mode, "#e2e8f0") }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.2, fontSize: 9, fontWeight: "600", color: monoText(mode, "#475569") }, children: data2.startDate }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2.5, fontSize: 9, fontWeight: "bold", color: monoText(mode, "#1e293b") }, children: "Opening Balance" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.2, fontSize: 9, color: monoText(mode, "#94a3b8") }, children: "\u2014" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 9, color: monoText(mode, "#94a3b8") }, children: "\u2014" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 9, color: monoText(mode, "#94a3b8") }, children: "\u2014" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.1, fontSize: 9, color: monoText(mode, "#94a3b8"), textAlign: "right" }, children: "\u2014" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.1, fontSize: 9, color: monoText(mode, "#94a3b8"), textAlign: "right" }, children: "\u2014" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1.3, fontSize: 9, fontWeight: "bold", color: monoText(mode, "#1e293b"), textAlign: "right" }, children: [
-                currency,
-                formatAmount2(data2.openingBalance)
-              ] })
-            ] }),
-            data2.transactions.map((txn, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 6, paddingHorizontal: 10, borderBottomWidth: i2 < data2.transactions.length - 1 ? 1 : 0, borderBottomColor: monoLine(mode, "#f1f5f9"), backgroundColor: monoFill(mode, i2 % 2 === 0 ? "#fff" : "#fafafa") }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.2, fontSize: 9, color: monoText(mode, "#334155") }, children: txn.date }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 2.5, fontSize: 9, color: monoText(mode, "#1e293b") }, children: txn.memo || txn.reference || "\u2014" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.2, fontSize: 8, fontFamily: "Courier", color: monoText(mode, "#334155") }, children: txn.reference || "\u2014" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 8, fontFamily: "Courier", color: monoText(mode, "#94a3b8") }, children: "\u2014" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 8, color: monoText(mode, "#64748b") }, children: "\u2014" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.1, fontSize: 9, color: monoText(mode, "#dc2626"), textAlign: "right", fontWeight: "600" }, children: txn.debit > 0 ? currency + formatAmount2(txn.debit) : "\u2014" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.1, fontSize: 9, color: monoText(mode, "#16a34a"), textAlign: "right", fontWeight: "600" }, children: txn.credit > 0 ? currency + formatAmount2(txn.credit) : "\u2014" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1.3, fontSize: 9, fontWeight: "bold", color: monoText(mode, "#0f172a"), textAlign: "right" }, children: [
-                currency,
-                formatAmount2(txn.runningBalance)
-              ] })
-            ] }, i2)),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 10, paddingHorizontal: 10, backgroundColor: monoFill(mode, "#0f172a"), borderTopWidth: 2, borderTopColor: monoLine(mode, "#334155") }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 5.7, flexDirection: "row", justifyContent: "space-between", paddingRight: 8 }, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9, fontWeight: "bold", color: monoText(mode, "#fff"), textTransform: "uppercase", letterSpacing: 0.5 }, children: "Totals" }),
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9, fontWeight: "bold", color: monoText(mode, "#f87171") }, children: [
-                  "DR: ",
-                  currency,
-                  formatAmount2(Number("totalInvoiced" in data2 ? dataAny.totalInvoiced : 0))
-                ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9, fontWeight: "bold", color: monoText(mode, "#4ade80") }, children: [
-                  "CR: ",
-                  currency,
-                  formatAmount2(Number("totalReceived" in data2 ? dataAny.totalReceived : 0))
-                ] })
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flex: 1.3, alignItems: "flex-end" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 10, fontWeight: "black", color: monoText(mode, Number("finalBalance" in data2 ? data2.finalBalance : 0) > 0 ? "#f87171" : "#4ade80") }, children: [
-                currency,
-                formatAmount2(Number("finalBalance" in data2 ? data2.finalBalance : 0))
-              ] }) })
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 8, paddingHorizontal: 10, backgroundColor: monoFill(mode, "#fef08a"), borderTopWidth: 2, borderTopColor: monoLine(mode, "#ca8a04") }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 7.7, fontSize: 10, fontWeight: "black", color: monoText(mode, "#1e293b"), textTransform: "uppercase", letterSpacing: 0.5 }, children: "Closing Balance" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { flex: 1.3, fontSize: 11, fontWeight: "black", color: monoText(mode, "#1e293b"), textAlign: "right" }, children: [
-                currency,
-                formatAmount2(Number("finalBalance" in data2 ? data2.finalBalance : 0))
-              ] })
-            ] })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 12, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 8, color: monoText(mode, "#94a3b8") }, children: [
-            "Generated by Prime ERP \u2014 ",
-            companyName
-          ] }) })
-        ] }),
-        type === "FISCAL_REPORT" && "sections" in data2 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginBottom: 14, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: monoLine(mode, "#e2e8f0") }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7, color: monoText(mode, "#64748b"), textTransform: "uppercase", letterSpacing: 2, fontWeight: "bold" }, children: "Report Period" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", color: monoText(mode, "#0f172a"), marginTop: 2 }, children: data2.period })
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { alignItems: "flex-end" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 7, color: monoText(mode, "#64748b") }, children: [
-              "Currency: ",
-              data2.currency
-            ] }) })
-          ] }) }),
-          data2.sections.map((section, idx) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginBottom: 16 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flexDirection: "row", alignItems: "center", backgroundColor: monoFill(mode, "#0f172a"), paddingVertical: 6, paddingHorizontal: 10 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 9, fontWeight: "bold", color: monoText(mode, "#ffffff"), textTransform: "uppercase", letterSpacing: 1.2, flex: 1 }, children: section.title }) }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", paddingVertical: 5, paddingHorizontal: 10, backgroundColor: monoFill(mode, "#e2e8f0"), borderBottomWidth: 1, borderBottomColor: monoLine(mode, "#cbd5e1") }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, fontSize: 7, fontWeight: "bold", color: monoText(mode, "#475569"), textTransform: "uppercase", letterSpacing: 0.5 }, children: "Account / Description" }),
-              data2.sections.some((s5) => s5.rows.some((r4) => r4.prevAmount !== void 0)) && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 70, fontSize: 7, fontWeight: "bold", color: monoText(mode, "#475569"), textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }, children: "Prior Period" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { width: 80, fontSize: 7, fontWeight: "bold", color: monoText(mode, "#475569"), textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }, children: [
-                "Amount (",
-                data2.currency,
-                ")"
-              ] })
-            ] }),
-            section.rows.map((row, rowIdx) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: {
-              flexDirection: "row",
-              alignItems: "center",
-              paddingVertical: row.isTotal ? 6 : 4,
-              paddingHorizontal: 10,
-              backgroundColor: monoFill(mode, row.isTotal ? "#f1f5f9" : rowIdx % 2 === 0 ? "#ffffff" : "#fafbfc"),
-              borderBottomWidth: row.isTotal ? 2 : 1,
-              borderColor: monoLine(mode, row.isTotal ? "#0f172a" : "#f1f5f9"),
-              borderTopWidth: row.isTotal ? 2 : 0,
-              marginTop: row.isTotal ? 3 : 0
-            }, wrap: false, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, marginLeft: row.indent ? 14 : 0 }, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: {
-                  fontSize: row.isTotal ? 9 : 8.5,
-                  fontWeight: row.isTotal ? "bold" : "normal",
-                  color: monoText(mode, row.isTotal ? "#0f172a" : "#334155")
-                }, children: row.label }),
-                !!row.subText && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7, color: monoText(mode, "#94a3b8"), marginTop: 1 }, children: row.subText })
-              ] }),
-              data2.sections.some((s5) => s5.rows.some((r4) => r4.prevAmount !== void 0)) && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 70, fontSize: row.isTotal ? 9 : 8, color: monoText(mode, row.isTotal ? "#475569" : "#94a3b8"), textAlign: "right" }, children: row.prevAmount !== void 0 ? `${formatAmount2(row.prevAmount)}` : "\u2014" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: {
-                width: 80,
-                fontSize: row.isTotal ? 9 : 8.5,
-                fontWeight: row.isTotal ? "bold" : "normal",
-                color: monoText(mode, row.isTotal ? "#0f172a" : "#1e293b"),
-                textAlign: "right"
-              }, children: row.amount < 0 ? `(${formatAmount2(Math.abs(row.amount))})` : `${formatAmount2(row.amount)}` })
-            ] }, rowIdx))
-          ] }, idx)),
-          !!data2.netPerformance && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 20, padding: 12, backgroundColor: monoFill(mode, "#0f172a"), borderTopWidth: 3, borderTopColor: monoLine(mode, "#2563eb") }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#94a3b8"), fontSize: 7, textTransform: "uppercase", letterSpacing: 1.5, fontWeight: "bold" }, children: "Key Performance Indicator" }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { color: monoText(mode, "#ffffff"), fontSize: 11, fontWeight: "bold", marginTop: 3 }, children: data2.netPerformance.label })
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "flex-end" }, children: [
-              data2.netPerformance.prevAmount !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { color: monoText(mode, "#94a3b8"), fontSize: 8, marginBottom: 3 }, children: [
-                "Prior: ",
-                formatAmount2(data2.netPerformance.prevAmount)
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: {
-                color: monoText(mode, data2.netPerformance.amount >= 0 ? "#4ade80" : "#f87171"),
-                fontSize: 14,
-                fontWeight: "bold",
-                textAlign: "right"
-              }, children: data2.netPerformance.amount < 0 ? `(${formatAmount2(Math.abs(data2.netPerformance.amount))})` : `${formatAmount2(data2.netPerformance.amount)}` })
-            ] })
-          ] }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { marginTop: 20, paddingTop: 8, borderTopWidth: 1, borderTopColor: monoLine(mode, "#e2e8f0") }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 7, color: monoText(mode, "#94a3b8") }, children: [
-                "Generated: ",
-                (/* @__PURE__ */ new Date()).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7, color: monoText(mode, "#94a3b8"), marginTop: 1 }, children: "Prime ERP \u2014 Financial Reporting Module" })
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { alignItems: "flex-end" }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7, color: monoText(mode, "#94a3b8") }, children: data2.reportName }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 7, color: monoText(mode, "#94a3b8"), marginTop: 1, fontStyle: "italic" }, children: [
-                "All amounts in ",
-                data2.currency
-              ] })
-            ] })
-          ] }) })
-        ] }),
-        type === "EXAMINATION_INVOICE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { marginTop: 20 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.tableHeader, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, textAlign: "center" }, children: "SN" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 3 }, children: "Description" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Qty" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right" }, children: "Price" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.5, textAlign: "right" }, children: "Amount" })
-          ] }),
-          ("items" in data2 ? dataAny.items : []).map((item, i2) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.row, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { width: 44, textAlign: "center", fontSize: 12 }, children: i2 + 1 }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { flex: 3 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "normal", fontSize: 12 }, children: String(item.desc) }) }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right", fontSize: 12 }, children: Number(item.qty) }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1, textAlign: "right", fontSize: 12 }, children: formatAmount2(Number(item.price)) }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { flex: 1.5, textAlign: "right", fontSize: 12 }, children: formatAmount2(Number(item.total)) })
-          ] }, i2)),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.summaryContainer, children: [
-            "status" in data2 && !!data2.status && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.summaryLeft, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: [s4.statusBox, { borderLeftColor: monoLine(mode, getStatusTone(data2.status, mode).border) }], children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 16, fontWeight: "bold", color: monoText(mode, getStatusTone(data2.status, mode).text) }, children: data2.status.toUpperCase() }) }) }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.summaryRight, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.summaryBox, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.summaryRow, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Subtotal" }),
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                  currency,
-                  " ",
-                  formatAmount2(Number(dataAny.preRoundingTotalAmount || dataAny.subtotal || 0))
-                ] })
-              ] }),
-              dataAny.roundingDifference ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.summaryRow, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontWeight: "bold" }, children: [
-                  "Rounding",
-                  String(dataAny.roundingMethod ? ` (${String(dataAny.roundingMethod)})` : "")
-                ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                  currency,
-                  " ",
-                  formatAmount2(Number(dataAny.roundingDifference))
-                ] })
-              ] }) : null,
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.summaryRow, { borderTopWidth: 1, borderTopColor: monoLine(mode, "#e2e8f0"), paddingTop: 4, marginTop: 4 }], children: [
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Grand Total" }),
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                  currency,
-                  " ",
-                  formatAmount2(Number("totalAmount" in data2 ? dataAny.totalAmount : 0))
-                ] })
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.summaryRow, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: "Amount Paid" }),
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                  currency,
-                  " ",
-                  formatAmount2(Number("amountPaid" in data2 ? dataAny.amountPaid : 0))
-                ] })
-              ] }),
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.totalRow, children: [
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: "Balance Due" }),
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-                  currency,
-                  " ",
-                  formatAmount2(Number("totalAmount" in data2 ? dataAny.totalAmount : 0) - Number("amountPaid" in data2 ? dataAny.amountPaid : 0))
-                ] })
-              ] })
-            ] }) })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { wrap: false, style: { marginTop: 12, alignItems: "center" }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: scaledFont(12), color: monoText(mode, "#334155") }, children: [
-            "Thank you for choosing ",
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontWeight: "bold" }, children: companyName })
-          ] }) }),
-          Boolean(showPaymentTerms) && !!paymentTermsLabel && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
-            View,
-            {
-              wrap: false,
-              style: {
-                marginTop: type === "INVOICE" ? 10 : 14,
-                padding: 10,
-                backgroundColor: monoFill(mode, "#f8fafc"),
-                borderRadius: 6,
-                borderLeftWidth: 3,
-                borderLeftColor: monoLine(mode, templateSettings.accentColor)
-              },
-              children: [
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: scaledFont(9), fontWeight: "bold", color: monoText(mode, "#475569"), textTransform: "uppercase" }, children: "Payment Terms" }),
-                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: scaledFont(10), color: monoText(mode, "#334155"), marginTop: 4, lineHeight: 1.45 }, children: [
-                  paymentTermsLabel,
-                  showDueDate && dataAny?.dueDate ? ` | Due by ${formatDateOnly(String(dataAny.dueDate))}` : ""
-                ] })
-              ]
-            }
-          )
-        ] }),
-        !isFinancial && type !== "DELIVERY_NOTE" && type !== "EXAMINATION_INVOICE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: s4.signatureBlock, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.sigLine }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: "Issued By (Prime)" })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.sigLine }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: "Received By (Client)" })
-          ] })
-        ] }),
-        type === "DELIVERY_NOTE" && /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: [s4.signatureBlock, { marginTop: 40, alignItems: "flex-start" }], children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, alignItems: "flex-start" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 10, fontWeight: "bold", marginBottom: 5 }, children: "Logistics Details" }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9, marginBottom: 3 }, children: [
-              "Driver Name: ",
-              "driverName" in data2 ? data2.driverName : "____________________"
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9, marginBottom: 3 }, children: [
-              "Vehicle No: ",
-              "vehicleNo" in data2 ? data2.vehicleNo : "____________________"
-            ] }),
-            (() => {
-              const locStamp = conversionDetails?.locationStamp || pod?.locationStamp;
-              const lat = Number(locStamp?.lat);
-              const lng = Number(locStamp?.lng);
-              if (lat || lng) {
-                return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 7, color: monoText(mode, "#666"), marginTop: 5 }, children: [
-                  "GPS: ",
-                  lat.toFixed(4),
-                  ", ",
-                  lng.toFixed(4)
-                ] });
+            ),
+            !paginated && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.footerContainer, wrap: false, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.footerLine }) }),
+            paginated ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10 }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale }),
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+                SecurityFooter,
+                {
+                  colorMode: mode,
+                  data: dataAny,
+                  companyName,
+                  legalFooterLine1,
+                  legalFooterLine2,
+                  fontScale,
+                  flowing: true
+                }
+              )
+            ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+              SecurityFooter,
+              {
+                colorMode: mode,
+                data: dataAny,
+                companyName,
+                legalFooterLine1,
+                legalFooterLine2,
+                fontScale
               }
-              return null;
-            })()
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { flex: 1, alignItems: "flex-end" }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { style: { position: "relative", width: 180, height: 45, marginBottom: 5 }, children: [
-              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: { position: "absolute", bottom: 0, left: 0, right: 0, borderTopWidth: 1, borderColor: "#000" } }),
-              (() => {
-                const raw = String(dataAny.signatureDataUrl || pod?.signatureDataUrl || "");
-                const validated = normalizeSignatureDataUrl(raw);
-                const mime = (validated?.match(/^data:([^;]+);base64,/i)?.[1] || "").toLowerCase();
-                const renderable = validated && (mime === "image/png" || mime === "image/jpeg" || mime === "image/jpg") ? validated : null;
-                return renderable ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-                  Image,
-                  {
-                    src: renderable,
-                    style: {
-                      position: "absolute",
-                      bottom: 0,
-                      // Center the 100-wide signature over the 180-wide
-                      // signature line: (180 - 100) / 2 = 40.
-                      left: 40,
-                      width: 100,
-                      height: 40,
-                      objectFit: "contain"
-                    }
-                  }
-                ) : null;
-              })()
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { style: { fontSize: 9 }, children: [
-              "Received By: ",
-              String(dataAny.receivedBy || pod?.receivedBy || conversionDetails?.acceptedBy || "____________________")
-            ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { style: { fontSize: 7, color: monoText(mode, "#666") }, children: "Stamp & Signature" })
-          ] })
-        ] }),
-        !paginated && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.footerContainer, wrap: false, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(View, { style: s4.footerLine }) }),
-        paginated ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(View, { wrap: false, style: { marginTop: 10 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(VerificationLabel, { fontScale }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-            SecurityFooter,
-            {
-              colorMode: mode,
-              data: dataAny,
-              companyName,
-              legalFooterLine1,
-              legalFooterLine2,
-              fontScale,
-              flowing: true
-            }
-          )
-        ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-          SecurityFooter,
-          {
-            colorMode: mode,
-            data: dataAny,
-            companyName,
-            legalFooterLine1,
-            legalFooterLine2,
-            fontScale
-          }
-        )
-      ] })
+            )
+          ]
+        }
+      )
     }
   );
 };
@@ -237879,6 +245740,16 @@ var resolveCreatedAt = (data2) => String(
 ).trim();
 var buildSecurityQrPayload = (data2, companyName) => {
   const docType = detectVerifiableDocumentType(data2);
+  if (docType === "printing_contract") {
+    const hash2 = String(data2?.contentHash || "").trim();
+    if (/^[0-9a-f]{64}$/i.test(hash2)) {
+      const contractUrl = buildContractVerificationUrl(
+        resolveVerifiableDocumentNumber(data2, docType),
+        hash2
+      );
+      if (contractUrl) return contractUrl;
+    }
+  }
   const verificationUrl = docType ? buildDocumentVerificationUrl({
     documentType: docType,
     documentNumber: resolveVerifiableDocumentNumber(data2, docType),
@@ -237946,9 +245817,21 @@ var validateDocumentData = (type, data2) => {
   if (!data2 || typeof data2 !== "object") {
     return { valid: false, error: "Document data is empty or invalid" };
   }
-  const ANY_INVOICE = ["INVOICE", "ORDER", "SALES_ORDER", "SUBSCRIPTION", "QUOTATION", "EXAMINATION_INVOICE"];
+  const ANY_INVOICE = [
+    "INVOICE",
+    "ORDER",
+    "SALES_ORDER",
+    "SUBSCRIPTION",
+    "QUOTATION",
+    "EXAMINATION_INVOICE"
+  ];
   if (type === "RECEIPT") {
-    const r1 = requireFields(data2, ["receiptNumber", "customerName", "paymentMethod"], "Receipt", ["Receipt number", "Customer name", "Payment method"]);
+    const r1 = requireFields(
+      data2,
+      ["receiptNumber", "customerName", "paymentMethod"],
+      "Receipt",
+      ["Receipt number", "Customer name", "Payment method"]
+    );
     if (r1) return { valid: false, error: r1 };
     const amt = data2.amountReceived ?? data2.amount_received ?? data2.amount ?? data2.totalAmount ?? data2.total;
     if (amt === void 0 || amt === null || typeof amt !== "number" && !String(amt).trim()) {
@@ -237957,16 +245840,32 @@ var validateDocumentData = (type, data2) => {
     return { valid: true };
   }
   if (type === "POS_RECEIPT") {
-    const r1 = requireFields(data2, ["receiptNumber", "cashierName", "paymentMethod"], "POS Receipt", ["Receipt number", "Cashier name", "Payment method"]);
+    const r1 = requireFields(
+      data2,
+      ["receiptNumber", "cashierName", "paymentMethod"],
+      "POS Receipt",
+      ["Receipt number", "Cashier name", "Payment method"]
+    );
     if (r1) return { valid: false, error: r1 };
-    if (resolveAmount(data2) === void 0) return { valid: false, error: "POS Receipt is missing a total amount" };
+    if (resolveAmount(data2) === void 0)
+      return { valid: false, error: "POS Receipt is missing a total amount" };
     const r22 = checkArray(data2, "items", "POS Receipt", "line items");
     if (r22) return { valid: false, error: r22 };
     return { valid: true };
   }
   if (type === "SUPPLIER_PAYMENT") {
-    const r1 = requireFields(data2, ["paymentId", "supplierName"], "Supplier Payment", ["Payment ID", "Supplier name"]);
-    if (r1) return { valid: false, error: r1 };
+    const paymentId = data2.paymentId || data2.id || data2.payment_id || data2.paymentNumber || data2.payment_number;
+    if (!paymentId)
+      return {
+        valid: false,
+        error: "Supplier Payment is missing required field: Payment ID"
+      };
+    const supplierName = data2.supplierName || data2.supplier_name || data2.supplier || "";
+    if (!supplierName)
+      return {
+        valid: false,
+        error: "Supplier Payment is missing required field: Supplier name"
+      };
     const amt = data2.amountPaid ?? data2.amount_paid ?? data2.amount ?? data2.totalAmount ?? data2.total;
     if (amt === void 0 || amt === null || typeof amt !== "number" && !String(amt).trim()) {
       return { valid: false, error: "Supplier Payment is missing an amount" };
@@ -237974,58 +245873,125 @@ var validateDocumentData = (type, data2) => {
     return { valid: true };
   }
   if (type === "SALES_EXCHANGE") {
-    const r1 = requireFields(data2, ["exchangeNumber", "customerName", "invoiceNumber", "reason"], "Sales Exchange", ["Exchange number", "Customer name", "Reference invoice", "Reason"]);
+    const r1 = requireFields(
+      data2,
+      ["exchangeNumber", "customerName", "invoiceNumber", "reason"],
+      "Sales Exchange",
+      ["Exchange number", "Customer name", "Reference invoice", "Reason"]
+    );
     if (r1) return { valid: false, error: r1 };
     return { valid: true };
   }
   if (type === "PRINTING_CONTRACT") {
-    const r1 = requireFields(data2, ["contractNumber", "customerName", "contentHash"], "Printing Contract", ["Contract number", "Customer name", "Content hash"]);
+    const r1 = requireFields(
+      data2,
+      ["contractNumber", "customerName", "contentHash"],
+      "Printing Contract",
+      ["Contract number", "Customer name", "Content hash"]
+    );
     if (r1) return { valid: false, error: r1 };
     if (data2.prepaidAmount === void 0 || data2.prepaidAmount === null) {
-      return { valid: false, error: "Printing Contract is missing a prepaid amount" };
+      return {
+        valid: false,
+        error: "Printing Contract is missing a prepaid amount"
+      };
     }
-    const r22 = checkArray(data2, "lines", "Printing Contract", "commercial lines");
+    const r22 = checkArray(
+      data2,
+      "lines",
+      "Printing Contract",
+      "commercial lines"
+    );
     if (r22) return { valid: false, error: r22 };
     return { valid: true };
   }
   if (type === "CONTRACT_SCHEDULE") {
-    const r1 = requireFields(data2, ["contractNumber", "customerName", "contentHash"], "Contract Schedule", ["Contract number", "Customer name", "Content hash"]);
+    const r1 = requireFields(
+      data2,
+      ["contractNumber", "customerName", "contentHash"],
+      "Contract Schedule",
+      ["Contract number", "Customer name", "Content hash"]
+    );
     if (r1) return { valid: false, error: r1 };
-    const r22 = checkArray(data2, "schedule", "Contract Schedule", "schedule rows");
+    const r22 = checkArray(
+      data2,
+      "schedule",
+      "Contract Schedule",
+      "schedule rows"
+    );
     if (r22) return { valid: false, error: r22 };
     return { valid: true };
   }
   if (type === "CONTRACT_COMPLETION_RECEIPT") {
-    const r1 = requireFields(data2, ["receiptNumber", "contractNumber", "customerName", "contentHash"], "Completion Receipt", ["Receipt number", "Contract number", "Customer name", "Content hash"]);
+    const r1 = requireFields(
+      data2,
+      ["receiptNumber", "contractNumber", "customerName", "contentHash"],
+      "Completion Receipt",
+      ["Receipt number", "Contract number", "Customer name", "Content hash"]
+    );
     if (r1) return { valid: false, error: r1 };
     if (!data2.item || !String(data2.item.assessmentName || "").trim()) {
-      return { valid: false, error: "Completion Receipt is missing the completed assessment" };
+      return {
+        valid: false,
+        error: "Completion Receipt is missing the completed assessment"
+      };
     }
     return { valid: true };
   }
   if (type === "WORK_ORDER") {
-    const r1 = requireFields(data2, ["number", "instructions"], "Work Order", ["Order number", "Instructions"]);
+    const r1 = requireFields(data2, ["number", "instructions"], "Work Order", [
+      "Order number",
+      "Instructions"
+    ]);
     if (r1) return { valid: false, error: r1 };
     return { valid: true };
   }
   if (type === "DELIVERY_NOTE") {
     const noteNumber = data2.number || data2.dnNumber || data2.deliveryNoteNumber || data2.id?.toString() || data2.invoiceId;
     const clientName = data2.clientName || data2.customerName;
-    if (!noteNumber) return { valid: false, error: "Delivery Note is missing required field: Note number" };
-    if (!clientName) return { valid: false, error: "Delivery Note is missing required field: Client name" };
+    if (!noteNumber)
+      return {
+        valid: false,
+        error: "Delivery Note is missing required field: Note number"
+      };
+    if (!clientName)
+      return {
+        valid: false,
+        error: "Delivery Note is missing required field: Client name"
+      };
     const r22 = checkArray(data2, "items", "Delivery Note", "delivery items");
     if (r22) return { valid: false, error: r22 };
     return { valid: true };
   }
   if (type === "ACCOUNT_STATEMENT" || type === "ACCOUNT_STATEMENT_SUMMARY") {
-    const r1 = requireFields(data2, ["customerName", "startDate", "endDate", "openingBalance", "finalBalance"], "Statement", ["Customer name", "Start date", "End date", "Opening balance", "Closing balance"]);
+    const r1 = requireFields(
+      data2,
+      [
+        "customerName",
+        "startDate",
+        "endDate",
+        "openingBalance",
+        "finalBalance"
+      ],
+      "Statement",
+      [
+        "Customer name",
+        "Start date",
+        "End date",
+        "Opening balance",
+        "Closing balance"
+      ]
+    );
     if (r1) return { valid: false, error: r1 };
     const r22 = checkArray(data2, "transactions", "Statement", "transactions");
     if (r22) return { valid: false, error: r22 };
     return { valid: true };
   }
   if (type === "FISCAL_REPORT") {
-    const r1 = requireFields(data2, ["reportName", "period"], "Fiscal Report", ["Report name", "Period"]);
+    const r1 = requireFields(data2, ["reportName", "period"], "Fiscal Report", [
+      "Report name",
+      "Period"
+    ]);
     if (r1) return { valid: false, error: r1 };
     const r22 = checkArray(data2, "sections", "Fiscal Report", "sections");
     if (r22) return { valid: false, error: r22 };
@@ -238033,35 +245999,68 @@ var validateDocumentData = (type, data2) => {
   }
   if (type === "PO") {
     const poName = data2.supplierName || data2.vendorName || data2.supplier_name || data2.vendor_name || data2.supplierId || data2.vendorId || data2.supplier_id || data2.vendor_id || data2.customerName || data2.customer_name || data2.clientName || data2.client_name || data2.schoolName || data2.school_name;
-    if (!poName) return { valid: false, error: "Purchase Order is missing required field: Supplier name" };
-    if (!resolveDocumentNumber2(data2)) return { valid: false, error: "Purchase Order is missing a document number" };
-    if (resolveAmount(data2) === void 0) return { valid: false, error: "Purchase Order is missing a total amount" };
+    if (!poName)
+      return {
+        valid: false,
+        error: "Purchase Order is missing required field: Supplier name"
+      };
+    if (!resolveDocumentNumber2(data2))
+      return {
+        valid: false,
+        error: "Purchase Order is missing a document number"
+      };
+    if (resolveAmount(data2) === void 0)
+      return {
+        valid: false,
+        error: "Purchase Order is missing a total amount"
+      };
     const r22 = checkArray(data2, "items", "Purchase Order", "line items");
     if (r22) return { valid: false, error: r22 };
     return { valid: true };
   }
   if (ANY_INVOICE.includes(type)) {
     const label = type === "QUOTATION" ? "Quotation" : type === "SUBSCRIPTION" ? "Subscription" : type === "EXAMINATION_INVOICE" ? "Examination Invoice" : type === "ORDER" ? "Order" : "Invoice";
-    if (!resolveDocumentNumber2(data2)) return { valid: false, error: `${label} is missing a document number` };
-    if (resolveAmount(data2) === void 0) return { valid: false, error: `${label} is missing a total or subtotal amount` };
+    if (!resolveDocumentNumber2(data2))
+      return { valid: false, error: `${label} is missing a document number` };
+    if (resolveAmount(data2) === void 0)
+      return {
+        valid: false,
+        error: `${label} is missing a total or subtotal amount`
+      };
     const r22 = checkArray(data2, "items", label, "line items");
     if (r22) return { valid: false, error: r22 };
     const items = data2.items || [];
     const itemHasText = (it) => {
       if (!it) return false;
-      const candidates = [it.desc, it.name, it.productName, it.product_name, it.description, it.title, it.label];
-      return candidates.some((c2) => c2 !== void 0 && c2 !== null && String(c2).trim() !== "");
+      const candidates = [
+        it.desc,
+        it.name,
+        it.productName,
+        it.product_name,
+        it.description,
+        it.title,
+        it.label
+      ];
+      return candidates.some(
+        (c2) => c2 !== void 0 && c2 !== null && String(c2).trim() !== ""
+      );
     };
     const allEmpty = items.every((it) => !itemHasText(it));
     if (items.length > 0 && allEmpty) {
-      return { valid: false, error: `${label} items have no descriptions \u2014 document will render blank` };
+      return {
+        valid: false,
+        error: `${label} items have no descriptions \u2014 document will render blank`
+      };
     }
     return { valid: true };
   }
   const hasArray = Array.isArray(data2.items) ? data2.items.length > 0 ? null : "has empty items" : "has no items";
   const hasName = data2.clientName || data2.customerName || data2.number || "no identifier";
   if (hasArray && !hasName) {
-    return { valid: false, error: `Document has no identifiable content (no items, no client)` };
+    return {
+      valid: false,
+      error: `Document has no identifiable content (no items, no client)`
+    };
   }
   return { valid: true };
 };

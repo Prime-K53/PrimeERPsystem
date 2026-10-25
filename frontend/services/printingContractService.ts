@@ -3,6 +3,7 @@ import { roundMoney } from '../utils/roundingUtils';
 import { readContractProfile, summarisePrintSpec } from '../utils/contractProfile';
 import { isMainBranchValue } from './customerAccountScope';
 import { compareIsoDateOnly, isIsoDateWithin, toIsoDateOnly, toIsoDateOnlyOrEmpty } from '../utils/isoDate';
+import { isPlaceholderCustomerName } from '../utils/customerDisplay';
 
 export interface PrintingContractDocLine {
   desc: string;
@@ -436,12 +437,18 @@ export const buildPrintingContractDoc = async (
   // the ERP persists these party fields before printing so the server can
   // recompute exactly what the client block shows.
   const storedCustomer = String(snapshot.customerName || '').trim();
-  const storedSchool = snapshot.schoolName ? String(snapshot.schoolName) : '';
-  const schoolName = storedSchool || stripCustomerIdSuffix(String(input.schoolName || '')) || undefined;
-  const customerName = resolveCustomerDisplayName(
-    storedCustomer && storedCustomer !== 'Customer' ? storedCustomer : input.customerName,
-    schoolName,
-  ) || 'Customer';
+  // DISPLAY ONLY (never hashed): the stored snapshot name is used when it is a
+  // real name; a stored placeholder / id / the snapshot's own "Customer"
+  // fallback falls through to the caller-resolved party name.
+  const schoolName = resolveSchoolNameForDocument(String(snapshot.schoolName || ''))
+    || resolveSchoolNameForDocument(input.schoolName);
+  // Precedence: stored real name → caller-resolved customer → school fallback.
+  // The school must be tried LAST so an explicitly resolved customer name is
+  // never masked by the school name.
+  const customerName = resolveCustomerNameForDocument(storedCustomer)
+    || resolveCustomerNameForDocument(input.customerName)
+    || resolveCustomerNameForDocument(undefined, schoolName)
+    || 'Customer';
   const doc: Omit<PrintingContractDocData, 'contentHash'> = {
     documentType: 'printing_contract',
     verificationToken: String((contract as any)?.verificationToken || '').trim() || undefined,
@@ -720,6 +727,12 @@ export const stripCustomerIdSuffix = (name: string): string => {
  * the internal id. This is the resolver both the document builders and the
  * renderer use, so an already-issued document whose stored name is just
  * "CUST-0033" still prints the school name without mutating hashed content.
+ *
+ * HASH-CRITICAL: `buildContractIntegritySnapshot` calls this function and the
+ * result is part of the stored contract digest, which the server recomputes in
+ * `backend/services/documentIntegrity.cjs`. Its semantics MUST NOT change for
+ * already-issued records — placeholder rejection belongs in
+ * `resolveCustomerNameForDocument` (display only), never here.
  */
 export const resolveCustomerDisplayName = (
   customerName?: string | null,
@@ -727,6 +740,33 @@ export const resolveCustomerDisplayName = (
 ): string =>
   stripCustomerIdSuffix(String(customerName || ''))
   || stripCustomerIdSuffix(String(schoolName || ''));
+
+/**
+ * Display-only resolver for customer-facing documents (contract, schedule,
+ * receipt, public verification). Same id-stripping as
+ * `resolveCustomerDisplayName`, but a placeholder (`_`, `-`, `—`, `n/a`,
+ * `Customer`, …) is treated as "no name" and the fallback is used instead —
+ * a placeholder is a missing reference, not a party.
+ *
+ * NOT part of any stored digest: safe to tighten without invalidating
+ * already-issued documents.
+ */
+export const resolveCustomerNameForDocument = (
+  customerName?: string | null,
+  schoolName?: string | null,
+): string => {
+  const clean = (value?: string | null): string => {
+    const stripped = stripCustomerIdSuffix(String(value || '')).trim();
+    return stripped && !isPlaceholderCustomerName(stripped) ? stripped : '';
+  };
+  return clean(customerName) || clean(schoolName) || '';
+};
+
+/** School/branch name for a document: id-stripped, placeholder-free, or undefined. */
+export const resolveSchoolNameForDocument = (schoolName?: string | null): string | undefined => {
+  const stripped = stripCustomerIdSuffix(String(schoolName || '')).trim();
+  return stripped && !isPlaceholderCustomerName(stripped) ? stripped : undefined;
+};
 
 /** Label printed when the contract is billed to the customer's main account. */
 const BILLED_BRANCH_MAIN = 'Main Account';
@@ -971,8 +1011,8 @@ export const buildContractScheduleDoc = async (
     date: toIsoDateOnlyOrEmpty(input.issuedAtIso),
     version: Number(contract.version) || 1,
     status: String(contract.status || 'draft'),
-    customerName: resolveCustomerDisplayName(input.customerName, input.schoolName) || 'Customer',
-    schoolName: stripCustomerIdSuffix(String(input.schoolName || '')) || undefined,
+    customerName: resolveCustomerNameForDocument(input.customerName, input.schoolName) || 'Customer',
+    schoolName: resolveSchoolNameForDocument(input.schoolName),
     schoolZone: String((contract as any)?.data?.school_zone || (contract as any)?.data?.zone || '').trim() || undefined,
     customerPhone: String((contract as any)?.data?.customer_phone || (contract as any)?.data?.phone || '').trim() || undefined,
     billedBranch: resolveBilledBranch(profile),
@@ -1233,8 +1273,8 @@ export const buildAssessmentCompletionReceiptDoc = async (
     // the display name as "Mtakataka CCAP School (CUST-0033)" or fall back to
     // the bare id. That id must never reach a customer-facing receipt, so
     // resolve the name (falling back to the school) before hashing.
-    customerName: resolveCustomerDisplayName(input.customerName, input.schoolName) || 'Customer',
-    schoolName: stripCustomerIdSuffix(String(input.schoolName || '')) || undefined,
+    customerName: resolveCustomerNameForDocument(input.customerName, input.schoolName) || 'Customer',
+    schoolName: resolveSchoolNameForDocument(input.schoolName),
     // Academic year of the engagement — recorded on the contract, else derived
     // from its window (same rule as the schedule). ALWAYS a defined string:
     // this field is covered by the content hash and JSONB drops undefined

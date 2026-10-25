@@ -25,6 +25,8 @@
  * no client's optimistic-concurrency base is invalidated by the cascade.
  */
 
+const customerDisplay = require('./customerDisplay.cjs');
+
 const CLOUD_CASCADE_TABLES = [
   { table: 'sales', idFields: ['customerId'], nameFields: ['customerName', 'customer_name'] },
   { table: 'invoices', idFields: ['customerId'], nameFields: ['customerName', 'customer_name'] },
@@ -49,12 +51,16 @@ const isSameName = (a, b) => normalizeName(a).toLowerCase() === normalizeName(b)
 /**
  * Authoritative customer/business display name for a cloud `data` envelope.
  * Mirrors the frontend resolver (businessName → companyName → legacy name).
+ *
+ * A placeholder (`_`, `-`, `—`, `n/a`, …) is a missing reference, not a name:
+ * it is skipped so a real name in a later field is still found, and a rename
+ * FROM or TO a placeholder never sets up a bogus cascade.
  */
 function resolveCloudDisplayName(data) {
   const row = data && typeof data === 'object' ? data : {};
   for (const field of ['businessName', 'business_name', 'companyName', 'company_name', 'name']) {
     const value = normalizeName(row[field]);
-    if (value) return value;
+    if (value && !customerDisplay.isPlaceholderCustomerName(value)) return value;
   }
   return '';
 }
