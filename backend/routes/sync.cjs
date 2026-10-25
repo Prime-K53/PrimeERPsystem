@@ -19,17 +19,12 @@
 const express = require('express');
 const cloudSyncStore = require('../services/cloudSyncStore.cjs');
 let examinationInvoiceNumbering = null;
-try {
-  examinationInvoiceNumbering = require('../services/examinationInvoiceNumbering.cjs');
-} catch (err) {
-  // Degrade loudly-but-safely: the claim endpoint returns 503 rather than ever
-  // letting a client fall back to a locally minted identity.
-  console.error('[sync] examinationInvoiceNumbering unavailable — EXM identity claims will fail closed:', err?.message || err);
-}
 const { validateProductsPayload } = require('../services/variantSku.cjs');
-const examinationSyncGuards = require('../services/examinationSyncGuards.cjs');
+let examinationSyncGuards = null;
+try { examinationSyncGuards = require('../services/examinationSyncGuards.cjs'); } catch { /* examination module removed */ }
 const { validateContractDocumentOp } = require('../services/contractDocumentGuard.cjs');
-const examinationPostingService = require('../services/examinationPostingService.cjs');
+let examinationPostingService = null;
+try { examinationPostingService = require('../services/examinationPostingService.cjs'); } catch { /* examination module removed */ }
 const portalLifecycleService = require('../services/portalLifecycleService.cjs');
 const documentIntegrity = require('../services/documentIntegrity.cjs');
 const { isAdmin: roleIsAdmin, isPortalCustomer: roleIsPortalCustomer, resolveRole: resolveAuthRole, normalize: normalizeRole } = require('../middleware/roles.cjs');
@@ -112,11 +107,6 @@ const ALLOWED_TABLES = new Set([
   // VAT / rounding
   'vat_transactions', 'vat_returns', 'rounding_logs',
 
-  // examination module
-  'examination_batches', 'examination_jobs', 'examination_job_subjects',
-  'examination_invoice_groups', 'examination_recurring_profiles',
-  'examination_inventory_deductions', 'examination_batch_notifications',
-  'examination_papers', 'examination_printing_batches',
   'notification_audit_logs', 'job_orders',
 
   // marketing / communications
@@ -699,21 +689,15 @@ router.post('/ops', async (req, res) => {
       // the write's own transaction — not by a read that can race. A delete of a
       // financially committed batch is therefore rejected atomically by the write
       // itself, while legitimate draft cleanup still lands normally.
-      if (table === 'examination_batches') {
-        const precondition = op.operation === 'delete'
-          ? examinationSyncGuards.buildBatchDeletePrecondition()
-          : examinationSyncGuards.buildBatchUpsertPrecondition(op.payload);
-        if (precondition) op = { ...op, precondition };
-      }
 
-      if (table === 'invoices') {
+      if (table === 'invoices' && examinationSyncGuards) {
         const invoiceError = examinationSyncGuards.validateInvoicePayloadShape(op);
         if (!invoiceError) {
           // Posting-boundary rejection. Inert until the authoritative posting
           // boundary is enabled AND tested on the same server, so enabling this
           // ahead of the client switch cannot break invoicing.
           const boundaryError = examinationSyncGuards.validateInvoicePostingBoundary(op, {
-            postingEnabled: examinationPostingService.isPostingEnabled(),
+            postingEnabled: examinationPostingService ? examinationPostingService.isPostingEnabled() : false,
           });
           if (boundaryError) {
             console.warn(`[sync] invoices posting boundary rejected ${op?.operationId}`, { error: boundaryError });
@@ -742,13 +726,13 @@ router.post('/ops', async (req, res) => {
         }
       }
 
-      if (table === 'ledger_entries') {
+      if (table === 'ledger_entries' && examinationSyncGuards) {
         // Posting-boundary rejection: once the server owns Examination posting,
         // the RPC writes ledger rows with the service role. An EXM ledger op
         // arriving here is a client posting AR/revenue (or deleting history)
         // independently of that boundary. Inert while posting is disabled.
         const ledgerBoundaryError = examinationSyncGuards.validateLedgerPostingBoundary(op, {
-          postingEnabled: examinationPostingService.isPostingEnabled(),
+          postingEnabled: examinationPostingService ? examinationPostingService.isPostingEnabled() : false,
         });
         if (ledgerBoundaryError) {
           console.warn(`[sync] ledger_entries posting boundary rejected ${op?.operationId}`, { error: ledgerBoundaryError });
@@ -989,100 +973,6 @@ router.get('/pull', syncPullLimiter, async (req, res) => {
 router.get('/health', (req, res) => {
   res.json({ ok: true, cloud: cloudSyncStore.isConfigured() });
 });
-
-// ─── authoritative Examination Invoice identity claim ────────────────────────
-// POST /api/sync/numbers/examination-invoice
-//
-// An Examination Invoice's `id` IS its official number AND its ledger
-// `referenceId` (transactionService posts `referenceId: invoice.id`). Unlike a
-// Sales Order — whose stable PK is a ULID and whose official number is a
-// separate, re-stampable display field — an EXM identity can never be minted
-// device-locally and adopted afterwards: by the time it is adopted the ledger
-// already references it. So the identity must be claimed HERE, before the
-// invoice and therefore before the AR posting, exactly like the ORD counter
-// (migration 0027 / salesOrderNumbering).
-//
-// Same architecture, not a second numbering system: service-role-only RPC
-// claim (`claim_next_examination_invoice_number`), series resolved from the
-// company numbering settings, and history in `invoices` AND `ledger_entries`
-// always beating the counter row.
-//
-// Auth is deliberately identical to POST /ops (Admin-only, portal customers
-// rejected) because this endpoint allocates a shared business identity.
-//
-// FAILS CLOSED. Any transport/auth/config failure returns a non-2xx status and
-// the client must refuse to create a NEW examination invoice rather than fall
-// back to a locally minted number — a fabricated identity is precisely the
-// defect this endpoint removes.
-router.post('/numbers/examination-invoice', async (req, res) => {
-  try {
-    const hasUser = Boolean(req.user);
-    const authMode = req.authMode || 'none';
-    const callerRole = resolveAuthRole(req.user);
-    if (!hasUser || callerRole === 'anonymous' || callerRole === '') {
-      console.warn('[sync] EXM_NUMBER_AUTH_FAILED reason=unauthenticated authMode=%s path=%s', authMode, req.path);
-      return res.status(401).json({
-        error: 'Unauthenticated',
-        message: 'Authentication required to claim an examination invoice number.',
-      });
-    }
-    if (roleIsPortalCustomer(callerRole)) {
-      console.warn('[sync] EXM_NUMBER_AUTH_FAILED reason=portal_customer authMode=%s role=%s path=%s', authMode, callerRole, req.path);
-      return res.status(403).json({
-        error: 'Forbidden',
-        message: 'Portal customers cannot claim examination invoice numbers.',
-      });
-    }
-    if (!roleIsAdmin(callerRole)) {
-      console.warn('[sync] EXM_NUMBER_AUTH_FAILED reason=non_admin authMode=%s role=%s path=%s', authMode, callerRole, req.path);
-      return res.status(403).json({
-        error: 'Forbidden',
-        message: 'The examination invoice sequence requires an Admin.',
-      });
-    }
-
-    if (!examinationInvoiceNumbering || typeof examinationInvoiceNumbering.mintExaminationInvoiceNumber !== 'function') {
-      return res.status(503).json({
-        error: 'Examination invoice numbering unavailable',
-        reason: 'SEQUENCE_UNAVAILABLE',
-      });
-    }
-
-    // An explicitly requested series is honoured only when it is a plain
-    // alphanumeric token; the company numbering settings decide otherwise.
-    const requestedSeries = String((req.body || {}).series || '').trim();
-    const deps = {};
-    if (requestedSeries) deps.seriesOverride = requestedSeries;
-
-    const invoiceNumber = await examinationInvoiceNumbering.mintExaminationInvoiceNumber(
-      (req.body || {}).context || {},
-      deps,
-    );
-
-    if (!examinationInvoiceNumbering.isExaminationInvoiceNumber(invoiceNumber)) {
-      console.error('[sync] examination invoice mint returned a non-EXM identity:', invoiceNumber);
-      return res.status(500).json({
-        error: 'Examination invoice numbering produced an invalid identity',
-        reason: 'SEQUENCE_INVALID',
-      });
-    }
-
-    console.log('[sync] EXM_NUMBER_OK role=%s invoiceNumber=%s', callerRole, invoiceNumber);
-    return res.set('Content-Type', 'application/json').send(safeJsonStringify({
-      ok: true,
-      invoiceNumber,
-      series: (examinationInvoiceNumbering.parseExaminationInvoiceNumber(invoiceNumber) || {}).series || null,
-    }));
-  } catch (err) {
-    const code = String((err && err.code) || '');
-    console.error('[sync] EXM_NUMBER_FAILED code=%s message=%s', code || 'UNKNOWN', (err && err.message) || err);
-    return res.status(503).json({
-      error: 'Could not claim an authoritative examination invoice identity',
-      reason: code || 'SEQUENCE_UNAVAILABLE',
-    });
-  }
-});
-
 // ─── tombstone lifecycle (admin) ────────────────────────────────────────────
 // Soft deletes keep physical rows so other devices reconcile; the retention
 // policy below gives admins the tools to purge old tombstones from the cloud

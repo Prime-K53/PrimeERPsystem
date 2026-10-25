@@ -3,7 +3,6 @@ import { ItemizedTable, SummaryBlock } from '../components/ItemizedTables';
 import ReceiptNarrative from '../components/ReceiptNarrative';
 import StatementLedger from '../components/StatementLedger';
 import AgingSummary from '../components/AgingSummary';
-import ExaminationInvoice from '../components/ExaminationInvoice';
 import SubscriptionInvoice from '../components/SubscriptionInvoice';
 import WorkOrder from '../components/WorkOrder';
 import PurchaseOrder from '../components/PurchaseOrder';
@@ -338,25 +337,6 @@ export const mapErpDataToDocument = (type: DocumentType, data: any, renderOption
               paymentMethod={data.paymentMethod || 'Posted'}
             />
           </div>
-        );
-
-      case 'Examination Invoice':
-        const examItems = normalizeExamInvoiceItems();
-        return (
-          <ExaminationInvoice
-            items={examItems}
-            subtotal={normalized.subtotal}
-            surcharges={data.surcharges || 0}
-            total={normalized.total}
-            currencySymbol={currency}
-            examinationTerms={data.examinationTerms}
-            candidateInstructions={data.candidateInstructions}
-            classBreakdown={data.classBreakdown}
-            academicYear={data.academicYear}
-            term={data.term}
-            examType={data.examType}
-            schoolName={data.schoolName}
-          />
         );
 
       case 'Subscription Invoice':

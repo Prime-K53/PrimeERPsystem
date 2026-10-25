@@ -12,12 +12,10 @@ import { Invoice, CustomerPayment, InvoiceAllocation } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
 import { useFinance } from '../../../context/FinanceContext';
 import { useSales } from '../../../context/SalesContext';
-import { useExamination } from '../../../context/ExaminationContext';
 import { useInventoryStore } from '../../../stores/inventoryStore';
 import { useDocumentPreview } from '../../../hooks/useDocumentPreview';
 import TransactionPricingInsights from './TransactionPricingInsights';
 import AIDocumentSummarizer from '../../../components/ai/AIDocumentSummarizer';
-import { enrichInvoiceWithBatchPricing, findMatchingExaminationBatch } from '../../../utils/examinationInvoicePricing';
 import { currencyService } from '../../../services/currencyService';
 import { computePostEditCorrection } from '../../../services/transactions/_internal';
 import { isInventoryBearingItem } from '../../../utils/inventoryNormalization';
@@ -55,7 +53,6 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
     const { companyConfig, auditLogs, notify, user } = useAuth();
     const { customerPayments = [], invoices = [], deliveryNotes = [], ledger = [], accounts = [], updateCustomerPayment, updateInvoice, addCustomerPayment, editInvoiceWithAdjustment, postInvoiceCorrection, getInvoiceVerificationToken, getDocumentVerificationToken, cancelInvoice } = useFinance();
     const { customers = [] } = useSales();
-    const { batches = [] } = useExamination();
     const { inventory = [] } = useInventoryStore();
 
     const { handlePreview } = useDocumentPreview();
@@ -82,19 +79,9 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
         ?? initialInvoice
         , [invoices, initialInvoice]);
 
-    const isExaminationInvoice = String((invoice as Record<string, unknown>).originModule ?? (invoice as Record<string, unknown>).origin_module ?? '').toLowerCase() === 'examination'
-        || String((invoice as Record<string, unknown>).documentTitle ?? (invoice as Record<string, unknown>).document_title ?? '').toLowerCase().includes('examination invoice')
-        || String((invoice as Record<string, unknown>).reference ?? '').toUpperCase().startsWith('EXM-BATCH-');
-    const matchingExaminationBatch = useMemo(
-        () => isExaminationInvoice ? findMatchingExaminationBatch(invoice, batches) : undefined,
-        [batches, invoice, isExaminationInvoice]
-    );
-    const pricingInsightTransaction = useMemo(
-        () => (isExaminationInvoice && matchingExaminationBatch)
-            ? enrichInvoiceWithBatchPricing(invoice as Invoice & Record<string, unknown>, matchingExaminationBatch)
-            : invoice,
-        [invoice, isExaminationInvoice, matchingExaminationBatch]
-    );
+    const isExaminationInvoice = false;
+    const matchingExaminationBatch = undefined;
+    const pricingInsightTransaction = invoice;
     
     const docTitle = 'Invoice';
 

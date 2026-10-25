@@ -323,30 +323,6 @@ const notificationSchemas = {
   })
 };
 
-// Examination batch validation schemas
-const examinationSchemas = {
-  batch: z.object({
-    exam_name: z.string().min(1),
-    school_id: z.string().min(1),
-    class_name: z.string().min(1),
-    number_of_learners: z.number().int().positive(),
-    subjects: z.array(z.object({
-      name: z.string().min(1),
-      pages: z.number().int().min(1).optional(),
-      copies: z.number().int().min(1).optional()
-    })).min(1).optional()
-  }),
-  batchUpdate: z.object({
-    exam_name: z.string().min(1).optional(),
-    number_of_learners: z.number().int().positive().optional(),
-    status: z.string().optional()
-  }),
-  pricingSettings: z.object({
-    rounding_method: z.string().optional(),
-    rounding_step: z.number().positive().optional(),
-    profit_margin: z.number().min(0).max(100).optional()
-  })
-};
 
 // Workspace validation schemas
 const workspaceSchemas = {
@@ -845,7 +821,6 @@ module.exports = {
   classSchemas,
   subjectSchemas,
   notificationSchemas,
-  examinationSchemas,
   profitMarginSchemas,
   workspaceSchemas,
   taskSchemas,

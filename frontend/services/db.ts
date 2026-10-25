@@ -1,7 +1,7 @@
 import { openDB, DBSchema, IDBPDatabase, deleteDB } from 'idb';
 import { logger } from '@/services/logger';
 import {
-     Item, Warehouse, Purchase, Sale, Quotation, JobOrder, CustomerPayment, BillOfMaterial, ProductionBatch, WorkOrder, WorkCenter, ProductionResource, Account, LedgerEntry, Invoice, RecurringInvoice, Expense, Income, ScheduledPayment, WalletTransaction, DeliveryNote, Budget, Transfer, Employee, PayrollRun, Payslip, User, ResourceAllocation, GoodsReceipt, UserRole, SMSCampaign, Subscriber, SMSTemplate, Cheque, Shipment, SubcontractOrder, MaintenanceLog, AuditLogEntry, SystemAlert, Reminder, ExamJob, ExamPaper, ExamPrintingBatch, School, Customer, Supplier, SupplierPayment, Order, PurchaseAllocation, VatTransaction, VatReturn, BOMTemplate, MarketAdjustment, MarketAdjustmentTransaction, UserGroup, MaterialCategory, WarehouseInventory, MaterialBatch, InventoryTransaction, MaterialReservation, RoundingLog, ExaminationJob, ExaminationJobSubject, ExaminationInvoiceGroup, ExaminationRecurringProfile, ExaminationInventoryDeduction, CustomerReceiptSnapshot, ExaminationBatchNotification, NotificationAuditLog,     SalesOrder, JobTicket, JobTicketSettings,
+     Item, Warehouse, Purchase, Sale, Quotation, JobOrder, CustomerPayment, BillOfMaterial, ProductionBatch, WorkOrder, WorkCenter, ProductionResource, Account, LedgerEntry, Invoice, RecurringInvoice, Expense, Income, ScheduledPayment, WalletTransaction, DeliveryNote, Budget, Transfer, Employee, PayrollRun, Payslip, User, ResourceAllocation, GoodsReceipt, UserRole, SMSCampaign, Subscriber, SMSTemplate, Cheque, Shipment, SubcontractOrder, MaintenanceLog, AuditLogEntry, SystemAlert, Reminder, ExamJob, ExamPaper, ExamPrintingBatch, School, Customer, Supplier, SupplierPayment, Order, PurchaseAllocation, VatTransaction, VatReturn, BOMTemplate, MarketAdjustment, MarketAdjustmentTransaction, UserGroup, MaterialCategory, WarehouseInventory, MaterialBatch, InventoryTransaction, MaterialReservation, RoundingLog, CustomerReceiptSnapshot, NotificationAuditLog,     SalesOrder, JobTicket, JobTicketSettings,
     TaxRate, FixedAsset, DepreciationEntry, AssetDisposal, OwnerEquityTransaction, Loan, LoanRepayment, AccrualEntry, IncomeSummaryEntry, PurchaseOrder, PurchaseInvoice, InterestIncomeEntry, Prepayment, PrepaymentAmortization, StaffAdvance, UtilityExpense, UtilityPayment, BankChargeEntry, PayrollEntry,
     AssessmentContract, AssessmentContractItem, ContractAmendment, StatementSnapshot,
     ContractDocument
@@ -33,7 +33,6 @@ import { isCloudOnlyMode, isSupabaseConfigured, requireCloudSessionMessage } fro
 import { durableSyncQueue } from './durableSyncQueue';
 import { backgroundSyncService } from './backgroundSyncService';
 import { newId } from '../utils/ulid';
-import { traceExamInvoice, isExamDiagTarget } from '../utils/examinationInvoiceDiag';
 
 import { audit } from './syncAudit';
 
@@ -47,12 +46,6 @@ interface NexusDB extends DBSchema {
     examJobs: { key: string; value: ExamJob; };
     examPapers: { key: string; value: ExamPaper; };
     examPrintingBatches: { key: string; value: ExamPrintingBatch; };
-    examinationJobs: { key: string; value: ExaminationJob; };
-    examinationJobSubjects: { key: string; value: ExaminationJobSubject; };
-    examinationInvoiceGroups: { key: string; value: ExaminationInvoiceGroup; };
-    examinationRecurringProfiles: { key: string; value: ExaminationRecurringProfile; };
-    examinationInventoryDeductions: { key: string; value: ExaminationInventoryDeduction; };
-    examinationBatchNotifications: { key: string; value: ExaminationBatchNotification; };
     examinationBatches: { key: string; value: any; };
     notificationAuditLogs: { key: string; value: NotificationAuditLog; };
     schools: { key: string; value: School; };
@@ -1335,21 +1328,8 @@ export const dbService = {
 
         const itemId = String(raw.id ?? '');
 
-        // Temporary diagnostic trace (EXM-P726/021 invoices only, read-only).
-        const examDiagInvoice = String(storeName) === 'invoices'
-            && isExamDiagTarget(raw.id, (raw as Record<string, unknown>).invoiceNumber);
-
         // Local-first: always write to IndexedDB, return immediately
         const localResultId = await putToLegacyStore(storeName, raw as T);
-        if (examDiagInvoice) {
-            await traceExamInvoice('db-put-local', {
-                id: raw.id,
-                invoiceNumber: (raw as Record<string, unknown>).invoiceNumber,
-                originModule: (raw as Record<string, unknown>).originModule
-                    ?? (raw as Record<string, unknown>).origin_module,
-                verificationToken: (raw as Record<string, unknown>).verificationToken,
-            }, { store: String(storeName) });
-        }
 
         // Background sync: queue to cloud and await durable sync queue insertion
         const isLocalOnly = LOCAL_ONLY_STORES.has(String(storeName));
@@ -1362,32 +1342,10 @@ export const dbService = {
                     operation: 'upsert',
                     payload: raw,
                 });
-                if (examDiagInvoice) {
-                    await traceExamInvoice('db-put-enqueued', {
-                        id: raw.id,
-                        invoiceNumber: (raw as Record<string, unknown>).invoiceNumber,
-                        originModule: (raw as Record<string, unknown>).originModule
-                            ?? (raw as Record<string, unknown>).origin_module,
-                        verificationToken: (raw as Record<string, unknown>).verificationToken,
-                    }, {
-                        table,
-                        opId: String((queuedOp as { id?: unknown })?.id ?? ''),
-                        opStatus: String((queuedOp as { status?: unknown })?.status ?? ''),
-                    });
-                }
                 backgroundSyncService.trigger().catch((triggerErr) => {
                     logger.warn(`[DB] backgroundSyncService.trigger() failed for ${storeName}/${itemId}:`, triggerErr);
                 });
             } catch (syncErr) {
-                if (examDiagInvoice) {
-                    await traceExamInvoice('db-put-enqueue-failed', {
-                        id: raw.id,
-                        invoiceNumber: (raw as Record<string, unknown>).invoiceNumber,
-                    }, {
-                        table: getCloudTable(String(storeName)),
-                        errorSnippet: String((syncErr as Error)?.message || syncErr || '').slice(0, 160) || null,
-                    });
-                }
                 logger.warn(`[DB] Sync enqueue failed for ${storeName}/${itemId}:`, syncErr);
                 throw syncErr;
             }
@@ -1477,9 +1435,8 @@ export const dbService = {
         db.close();
         dbPromise = null;
 
-        const [productionModule, examinationModule, offlineModule] = await Promise.all([
+        const [productionModule, offlineModule] = await Promise.all([
             import('./productionDb'),
-            import('./examinationDb'),
             import('./offlineDb')
         ]);
 

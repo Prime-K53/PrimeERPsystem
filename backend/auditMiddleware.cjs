@@ -51,7 +51,6 @@ const auditCrudMiddleware = (entityType) => {
       try {
         const TABLE_WHITELIST = {
           'invoice': 'documents',
-          'examination_batch': 'examination_batches',
           'customer': 'customers',
           'inventory_item': 'inventory',
           'document': 'documents',

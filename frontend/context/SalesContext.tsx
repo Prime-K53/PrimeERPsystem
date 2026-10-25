@@ -11,7 +11,6 @@ import { bomService } from '../services/bomService';
 import { transactionService } from '../services/transactionService';
 import { inventoryReservationService, inventoryTransactionService } from '../services/inventoryTransactionService';
 import { api } from '../services/api';
-import { examinationBatchService } from '../services/examinationBatchService';
 import { jobTicketConversionService } from '../services/jobTicketConversionService';
 import { generateNextSalesInvoiceNumber } from '../services/documentNumberService';
 import { salesOrderService } from '../services/salesOrderService';
@@ -606,84 +605,7 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             let createdBatchId = String(quotation.linkedBatchId || '').trim() || undefined;
 
             if (quotationType === 'examination') {
-                const resolvedCustomerId = resolveCustomerId(quotation.customerId, quotation.customerName);
-                if (!resolvedCustomerId) {
-                    throw new Error('Examination quotation requires a valid customer before approval');
-                }
-
-                const examinationDetails = normalizeExaminationQuotationDetails(quotation.examinationDetails);
-                if (!examinationDetails.batchName) {
-                    throw new Error('Examination quotation is missing a batch name');
-                }
-                if (examinationDetails.classes.length === 0) {
-                    throw new Error('Examination quotation requires at least one class');
-                }
-
-                const classNames = new Set<string>();
-                for (const entry of examinationDetails.classes) {
-                    if (!entry.className || entry.learners <= 0) {
-                        throw new Error('Each examination class must include a class name and learner count');
-                    }
-                    const normalizedName = entry.className.trim().toLowerCase();
-                    if (classNames.has(normalizedName)) {
-                        throw new Error(`Duplicate class detected: ${entry.className}`);
-                    }
-                    classNames.add(normalizedName);
-                }
-
-                if (!createdBatchId) {
-                    const batch = await examinationBatchService.createBatch({
-                        school_id: resolvedCustomerId,
-                        name: examinationDetails.batchName,
-                        academic_year: examinationDetails.academicYear,
-                        term: examinationDetails.term,
-                        exam_type: examinationDetails.examType,
-                        currency: quotation.currency || companyConfig?.currencySymbol || 'MWK',
-                        sub_account_name: quotation.subAccountName || null,
-                        quotation_id: quotation.id
-                    });
-
-                    createdBatchId = String(batch.id);
-
-                    try {
-                        for (const entry of examinationDetails.classes) {
-                            await examinationBatchService.addClass(createdBatchId, {
-                                class_name: entry.className,
-                                number_of_learners: entry.learners
-                            });
-                        }
-                    } catch (batchError) {
-                        try {
-                            await examinationBatchService.deleteBatch(createdBatchId);
-                        } catch (cleanupError) {
-                            logger.error('Failed to rollback examination batch after quotation approval error', cleanupError);
-                        }
-                        throw batchError;
-                    }
-
-                    try {
-                        await examinationBatchService.calculateBatch(createdBatchId, {
-                            roundingMethod: companyConfig?.pricingSettings?.defaultMethod,
-                            roundingValue: Number(companyConfig?.pricingSettings?.customStep || 50)
-                        });
-                    } catch (calculationError) {
-                        console.warn('Failed to calculate examination batch immediately after quotation approval', calculationError);
-                    }
-                }
-
-                const approvedQuotation = {
-                    ...quotation,
-                    customerId: resolvedCustomerId,
-                    quotationType: 'Examination',
-                    examinationDetails,
-                    linkedBatchId: createdBatchId,
-                    linkedBatchName: examinationDetails.batchName,
-                    status: 'Approved',
-                    isPriceLocked: true,
-                    approvedAt: new Date().toISOString()
-                };
-
-                await transactionService.processQuotation(approvedQuotation);
+                throw new Error('Examination quotations are no longer supported');
             } else {
                 await transactionService.approveQuotation(id);
             }
@@ -772,15 +694,7 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 requesterRole: user?.role || 'System'
             };
 
-            const result = quotationType === 'examination'
-                ? await (() => {
-                    const linkedBatchId = String(q.linkedBatchId || '').trim();
-                    if (!linkedBatchId) {
-                        throw new Error('Approve the examination quotation first so a batch can be created before converting to a job ticket');
-                    }
-                    return jobTicketConversionService.convertExaminationBatchToJobTicket(linkedBatchId, requestMetadata);
-                })()
-                : await jobTicketConversionService.convertQuotationToJobTicket(q.id, requestMetadata);
+            const result = await jobTicketConversionService.convertQuotationToJobTicket(q.id, requestMetadata);
 
             await salesStore.fetchSalesData();
             await productionStore.fetchProductionData();

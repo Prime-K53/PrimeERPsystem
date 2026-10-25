@@ -2,7 +2,6 @@ import { dbService } from './db';
 import { generateNextId } from '../utils/helpers';
 import { workflowService } from './workflowService';
 import { JobTicket } from '../types';
-import { examinationBatchService } from './examinationBatchService';
 import { getProductionDb } from './productionDb';
 
 type SourceType = 'quotation' | 'examination_batch' | 'order';
@@ -520,100 +519,6 @@ const convertQuotationToJobTicket = async (quotationId: string, options: Convers
   };
 };
 
-const convertExaminationBatchToJobTicket = async (batchId: string, options: ConversionOptions = {}): Promise<ConversionResult> => {
-  const requestedBy = toSafeString(options.requestedBy) || 'system';
-  const requesterRole = toSafeString(options.requesterRole) || 'System';
-  const force = Boolean(options.force);
-  const hydratedBatch = await examinationBatchService.getBatch(batchId).catch(() => null);
-
-  const conversion = await dbService.executeAtomicOperation(
-    ['examinationBatches', 'jobTickets', 'workOrders', 'auditLogs', 'idempotencyKeys'],
-    async (tx) => {
-      const batchStore = tx.objectStore('examinationBatches');
-      const jobTicketStore = tx.objectStore('jobTickets');
-      const workOrderStore = tx.objectStore('workOrders');
-      const auditLogStore = tx.objectStore('auditLogs');
-      const idempotencyStore = tx.objectStore('idempotencyKeys');
-
-      const storedBatch = await batchStore.get(batchId);
-      const batch = await mergeBatchSnapshot(storedBatch, hydratedBatch);
-      if (!batch) {
-        throw new Error('Examination batch not found');
-      }
-      const batchReference = resolveBatchReference(batch);
-
-      const validationErrors = validateBatchForConversion(batch);
-      if (!force && validationErrors.length > 0) {
-        throw new Error(validationErrors.join('; '));
-      }
-
-      const lockId = getLockId('examination_batch', batchId);
-      const existingLock = await idempotencyStore.get(lockId);
-      if (existingLock && !force) {
-        throw new Error('Conversion already in progress or completed for this batch');
-      }
-
-      await idempotencyStore.put({
-        id: lockId,
-        scope: 'job_ticket_conversion',
-        sourceId: batchId,
-        createdAt: nowIso(),
-        metadata: { sourceType: 'examination_batch', requestedBy }
-      });
-
-      const existingJobTickets = await jobTicketStore.getAll();
-      const existingWorkOrders = await workOrderStore.getAll();
-      const jobTicketId = generateNextId('TKT', existingJobTickets || []);
-      const workOrderId = generateNextId('WO', existingWorkOrders || []);
-      const workOrder = await mapBatchToWorkOrder(batch, workOrderId);
-      const jobTicket = await mapBatchToTicket(batch, jobTicketId, workOrderId);
-
-      const updatedBatch = {
-        ...batch,
-        conversionStatus: 'Converted',
-        convertedJobTicketId: jobTicketId,
-        linkedWorkOrderId: workOrderId,
-        convertedAt: nowIso()
-      };
-
-      await jobTicketStore.put(jobTicket);
-      await workOrderStore.put(workOrder);
-      await batchStore.put(updatedBatch);
-
-      const auditEntry = createAuditLog({
-        sourceType: 'examination_batch',
-        sourceId: batchId,
-        jobTicketId,
-        requestedBy,
-        requesterRole,
-        details: `Examination batch ${batchReference} converted to job ticket ${jobTicketId} and work order ${workOrderId}`
-      });
-      await auditLogStore.put(auditEntry);
-
-      return { jobTicketId, workOrderId, sourceId: batchId, sourceType: 'examination_batch' as const };
-    }
-  );
-
-  const workflowStarted = conversion.workOrderId
-    ? await startWorkflowForTicket(conversion.workOrderId, requestedBy, 'examination_batch', batchId)
-    : false;
-  try {
-    const prodDb = getProductionDb();
-    if (prodDb) {
-      const ticket = await dbService.get<JobTicket>('jobTickets', conversion.jobTicketId);
-      if (ticket) await prodDb.jobTickets.put(ticket);
-    }
-  } catch { /* non-critical sync to productionDb */ }
-  return {
-    success: true,
-    sourceType: 'examination_batch',
-    sourceId: conversion.sourceId,
-    jobTicketId: conversion.jobTicketId,
-    workOrderId: conversion.workOrderId,
-    message: `Examination batch ${batchId} converted successfully`,
-    workflowStarted
-  };
-};
 
 const convertOrderToJobTicket = async (orderId: string, options: ConversionOptions = {}): Promise<ConversionResult> => {
   const requestedBy = toSafeString(options.requestedBy) || 'system';
@@ -710,7 +615,6 @@ const convertOrderToJobTicket = async (orderId: string, options: ConversionOptio
 
 export const jobTicketConversionService = {
   convertQuotationToJobTicket,
-  convertExaminationBatchToJobTicket,
   convertOrderToJobTicket
 };
 

@@ -186,17 +186,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
             { label: 'Service Recipes', path: '/industrial/service-recipes', icon: <FileText size={14} /> },
           ]
         },
-        {
-          label: 'Examination',
-          path: '/examination',
-          icon: <BookOpen size={18} />,
-          hideSubMenu: true,
-          subItems: [
-            { label: 'Batches', path: '/examination/batches', icon: <Layers size={14} /> },
-            { label: 'Invoices', path: '/examination/invoices', icon: <FileText size={14} /> },
-            { label: 'New Batch', path: '/examination/batches/new', icon: <Plus size={14} /> },
-          ]
-        },
       ].filter(item => item.visible !== false)
     },
     {
@@ -455,7 +444,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
                        { icon: Receipt, color: '#059669', label: 'New Receipt', onClick: () => { navigate('/sales-flow/payments', { state: { action: 'create' } }); setIsNewMenuOpen(false); } },
                        { icon: FileText, color: '#8b5cf6', label: 'New Quotation', onClick: () => { navigate('/sales-flow/quotations', { state: { action: 'create', type: 'Quotation' } }); setIsNewMenuOpen(false); } },
                        { icon: CheckSquare, color: '#f59e0b', label: 'New Task', onClick: () => { navigate('/sales-flow/tasks', { state: { action: 'create' } }); setIsNewMenuOpen(false); } },
-                       { icon: BookOpen, color: '#ec4899', label: 'New Exam Batch', onClick: () => { navigate('/examination/batches/new'); setIsNewMenuOpen(false); } },
                      ].map((item) => (
                         <button key={item.label} onClick={item.onClick} className="group flex items-center gap-[10px] w-full text-left relative rounded-lg px-[10px] py-[7px] border-0 cursor-pointer bg-transparent hover:bg-[#eef7f6] hover:translate-x-[2px] transition-all duration-200" style={{
                           display: 'flex', borderRadius: 8, transition: 'all .2s ease', width: '100%', position: 'relative',

@@ -1,6 +1,5 @@
 import { durableSyncQueue, quarantineOperationsMissingGeneration, classifyError, QueuedOperation, QueueMetrics, releaseSendClaim, releaseAllSendClaims, BACKGROUND_SEND_OWNER } from './durableSyncQueue';
 import { sendSyncOps, SyncOp, SyncOpResult, SyncAuthError, DOCUMENT_CLIENT_CAPABILITY } from './syncApiClient';
-import { traceExamInvoice } from '../utils/examinationInvoiceDiag';
 import { resolvePushConflict } from './syncConflictResolver';
 import { cloudDb } from './cloudDb';
 import { audit } from './syncAudit';
@@ -96,49 +95,8 @@ async function drainDeferredMerges(trigger: string): Promise<void> {
  * `examinationPostingRequests` is deliberately LOCAL_ONLY, so no other device can
  * clear this row: only the device that attempted the posting can resolve it.
  */
-async function resumePendingExaminationPostings(trigger: string): Promise<void> {
-  try {
-    const { listPendingExaminationPostings, resolveExaminationPostingRequest } =
-      await import('./examinationPostingClient');
-    const pending = await listPendingExaminationPostings();
-    if (!pending || pending.length === 0) return;
-
-    for (const request of pending) {
-      try {
-        const outcome = await resolveExaminationPostingRequest(request.batchId, request.invoiceNumber);
-        if (!outcome) continue;
-        if (outcome.status === 'committed') {
-          logger.info('[BackgroundSync] examination posting resolved', {
-            trigger,
-            batchId: request.batchId,
-            invoiceNumber: request.invoiceNumber,
-            replayed: outcome.replayed,
-          });
-        } else if (outcome.status === 'rejected') {
-          logger.warn('[BackgroundSync] examination posting rejected', {
-            trigger,
-            batchId: request.batchId,
-            invoiceNumber: request.invoiceNumber,
-            code: outcome.code,
-          });
-        }
-        // 'pending' means the outcome is STILL unknown (another timeout). The
-        // row stays PENDING and is retried on the next trigger — deliberately
-        // never surfaced as committed.
-      } catch (err) {
-        logger.warn('[BackgroundSync] examination posting resume failed', {
-          trigger,
-          batchId: request.batchId,
-          error: String((err as Error)?.message || err).slice(0, 160),
-        });
-      }
-    }
-  } catch (err) {
-    logger.warn('[BackgroundSync] examination posting resume unavailable', {
-      trigger,
-      error: String((err as Error)?.message || err).slice(0, 160),
-    });
-  }
+async function resumePendingExaminationPostings(_trigger: string): Promise<void> {
+  return;
 }
 
 const isClient = typeof window !== 'undefined';
@@ -496,19 +454,6 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
       for (const result of response.results) {
         if (result.operationId) {
           const matchingItem = gatewayOps.find(g => g.op.operationId === result.operationId);
-          // Temporary diagnostic trace (EXM-P726/021 only, read-only).
-          await traceExamInvoice('sync-gateway-result', {
-            recordId: matchingItem?.op.recordId,
-            id: (matchingItem?.op.payload as Record<string, unknown> | null)?.id,
-            invoiceNumber: (matchingItem?.op.payload as Record<string, unknown> | null)?.invoiceNumber,
-          }, {
-            table: matchingItem?.op.table ?? null,
-            operation: matchingItem?.op.operation ?? null,
-            ok: Boolean(result.ok),
-            errorSnippet: result.error ? String(result.error).slice(0, 160) : null,
-            retryable: result.retryable ?? null,
-            conflict: Boolean(result.conflict),
-          });
           logger.info('[BackgroundSync] op result', {
             table: matchingItem?.op.table,
             recordId: matchingItem?.op.recordId,
@@ -556,18 +501,6 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
         notify('sync-failure', { failed: gatewayOps.length, deadLetter: 0, totalBefore: gatewayOps.length, authorizationBlocked: true, status: err.status });
       }
       for (const { item } of gatewayOps) {
-        // Temporary diagnostic trace (EXM-P726/021 only, read-only).
-        await traceExamInvoice('sync-transport-failure', {
-          recordId: item.recordId,
-          id: (item.payload as Record<string, unknown> | null)?.id,
-          invoiceNumber: (item.payload as Record<string, unknown> | null)?.invoiceNumber,
-        }, {
-          table: item.table,
-          operation: item.operation,
-          authBlocked: err instanceof SyncAuthError,
-          authStatus: err instanceof SyncAuthError ? err.status : null,
-          errorSnippet: errorMessage.slice(0, 160) || null,
-        });
         if (err instanceof SyncAuthError) {
           // Leave item in 'failed' with errorType='unauthorized' so retryFailed()
           // never auto-resets it. The queue drains again via resumeAfterAuth()
@@ -588,69 +521,6 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
     if (!result || result.ok) {
       logger.info('[BackgroundSync] settleItem COMPLETED', { table: item.table, recordId: item.recordId, operation: item.operation, hasResult: !!result, ok: result?.ok });
       await durableSyncQueue.markCompleted(item.id);
-      // Temporary diagnostic trace (EXM-P726/021 only, read-only).
-      await traceExamInvoice('sync-settle', {
-        recordId: item.recordId,
-        id: (item.payload as Record<string, unknown> | null)?.id,
-        invoiceNumber: (item.payload as Record<string, unknown> | null)?.invoiceNumber,
-      }, { table: item.table, operation: item.operation, outcome: 'success' });
-
-      // Stamp the server-stamped version back into the live record (bulkPut:
-      // no re-enqueue) so the next edit carries a valid optimistic-concurrency
-      // base and never trips a `version_required` round-trip. Ambiguous or
-      // non-business tables are skipped and self-heal through the merge path.
-      // Sales Orders additionally adopt the gateway-stamped authoritative ORD
-      // number here, so rows created by older clients (or converged in the
-      // background) heal on push instead of waiting for the next pull.
-      const serverVersion = result ? Number(result.version) : NaN;
-      const stampedPayload = (item.payload ?? {}) as Record<string, unknown>;
-      if (Number.isFinite(serverVersion) && item.table !== '_files' && stampedPayload.id) {
-        try {
-          const { dbService, getStoreForCloudTable } = await import('./db');
-          const storeName = getStoreForCloudTable(item.table);
-          if (storeName) {
-            const live = await dbService.get<Record<string, unknown>>(storeName as never, String(stampedPayload.id));
-            if (live && typeof live === 'object') {
-              (live as Record<string, unknown>)._version = serverVersion;
-              (live as Record<string, unknown>).version = serverVersion;
-              if (item.table === 'sales_orders') {
-                try {
-                  const { adoptServerNumber } = await import('./salesOrderService');
-                  const official = String((result as SyncOpResult)?.order_number ?? '').trim();
-                  if (official) {
-                    const candidate = { ...(live as Record<string, unknown>), order_number: official };
-                    const adopted = adoptServerNumber(candidate);
-                    // adoptServerNumber is a no-op for non-official values —
-                    // only an exact official adoption lands.
-                    if (adopted && String(adopted.order_number ?? '').trim() === official) {
-                      Object.assign(live as Record<string, unknown>, adopted);
-                    }
-                  }
-                } catch { /* adoption best-effort; pull merge still heals */ }
-              }
-              await dbService.bulkPut(storeName as never, [live]);
-            }
-          }
-        } catch {
-          // best-effort version stamp
-        }
-      }
-      return 'success';
-    }
-    // Optimistic-concurrency conflict: the gateway rejected the write because
-    // another device committed a newer version. Holds a current server snapshot
-    // so we can field-merge and requeue in place — no extra round-trip.
-    if (result.conflict && result.server) {
-      const conflictOutcome = await resolveConflict(item, result);
-      // Temporary diagnostic trace (EXM-P726/021 only, read-only).
-      await traceExamInvoice('sync-settle', {
-        recordId: item.recordId,
-        id: (item.payload as Record<string, unknown> | null)?.id,
-        invoiceNumber: (item.payload as Record<string, unknown> | null)?.invoiceNumber,
-      }, {
-        table: item.table, operation: item.operation,
-        outcome: conflictOutcome, conflict: true,
-      });
       return conflictOutcome;
     }
     // Per-op rejection from the gateway: dead-letter permanent errors,
@@ -667,17 +537,6 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
     const errorMessage = result.error || 'Sync gateway rejected the operation';
     const permanent = result.retryable === false || classifyError(errorMessage) === 'permanent';
     logger.warn('[BackgroundSync] settleItem FAILED', { table: item.table, recordId: item.recordId, operation: item.operation, error: errorMessage.slice(0, 200), retryable: result.retryable, permanent, syncGeneration: item.syncGeneration });
-    // Temporary diagnostic trace (EXM-P726/021 only, read-only).
-    await traceExamInvoice('sync-settle', {
-      recordId: item.recordId,
-      id: (item.payload as Record<string, unknown> | null)?.id,
-      invoiceNumber: (item.payload as Record<string, unknown> | null)?.invoiceNumber,
-    }, {
-      table: item.table, operation: item.operation,
-      outcome: permanent ? 'deadLetter' : 'failed',
-      errorSnippet: errorMessage.slice(0, 160) || null,
-      retryable: result.retryable ?? null,
-    });
     if (permanent) {
       await durableSyncQueue.deadLetter(item.id, errorMessage);
       return 'deadLetter';
@@ -712,78 +571,6 @@ async function processBatch(batchSize: number = 10, batchNumber: number = 0): Pr
 
     // Deletes are tombstones that always bind; a conflict only means a
     // concurrent upsert raced ahead of the delete — the delete intent stands.
-    // NARROW EXCEPTION (P0 examination canonical-ID guard): when the server
-    // row is a DIFFERENT examination invoice sharing this id, neither merge
-    // nor delete may touch the winner. Delegated to the examination-owned
-    // module; every other record flows through generic handling unchanged.
-    if (table === 'invoices') {
-      // Contained: an unexpected guard failure must never abort the batch
-      // settle loop and must never fall through to a merge. Retryable
-      // failure preserves all data (local row + queue op intact).
-      try {
-        const { tryResolveExaminationInvoiceCollision } = await import('./examinationInvoiceCollisionService');
-        const { dbService } = await import('./db');
-        const { examinationBatchService } = await import('./examinationBatchService');
-        const collision = await tryResolveExaminationInvoiceCollision(
-          {
-            id: item.id,
-            operationId: item.operationId ?? null,
-            table: item.table,
-            recordId: item.recordId,
-            operation: item.operation,
-            payload: item.payload,
-            conflictCount: item.conflictCount,
-          },
-          {
-            version: serverVersion,
-            updatedAt: result.server?.updatedAt ?? null,
-            data: (result.server?.data ?? null) as Record<string, unknown> | null,
-          },
-          {
-            listInvoices: () => dbService.getAll('invoices').catch(() => []) as Promise<Array<Record<string, unknown>>>,
-            saveInvoiceLocal: (invoice: Record<string, unknown>) => dbService.put('invoices', invoice),
-            removeInvoiceLocal: (id: string) => dbService.hardDelete('invoices', id),
-            listBatches: () => examinationBatchService.listBatches().catch(() => []) as Promise<Array<Record<string, unknown>>>,
-            updateBatchInvoiceLink: (batchId: string, invoiceId: string) =>
-              examinationBatchService.updateBatch(batchId, { invoice_id: invoiceId } as never).then(() => undefined),
-            completeQueueItem: (queueId: string) => durableSyncQueue.markCompleted(queueId),
-            deadLetterQueueItem: (queueId: string, reason: string) => durableSyncQueue.deadLetter(queueId, reason),
-            recordConflictAudit: (entry: { operationId: string | null; table: string; recordId: string | null; conflictedFields: string[]; resolved: 'auto' | 'review'; serverVersion: number }) =>
-              recordConflict(entry.resolved, entry.conflictedFields),
-            notifyUser: (event: string, data: unknown) => notify(event as SyncEventType, data),
-            numberingConfig: undefined,
-            ...(item.operation === 'delete'
-              ? { localRecord: (await dbService.get('invoices', String(recordId || '')).catch(() => null)) as unknown as Record<string, unknown> | null }
-              : {}),
-          }
-        );
-        if (collision.handled) {
-          if (collision.outcome === 'deadLetter') {
-            state.totalFailed++;
-          } else {
-            state.conflictsResolved++;
-            conflictsResolved++;
-          }
-          return collision.outcome;
-        }
-      } catch (guardError) {
-        const message = guardError instanceof Error ? guardError.message : String(guardError);
-        logger.warn('[BackgroundSync] examination collision guard failed — item retryable, never merged', {
-          table,
-          recordId,
-          error: message.slice(0, 200),
-        });
-        try {
-          await durableSyncQueue.markFailed(
-            item.id,
-            `Examination collision guard error (retryable, never merged): ${message}`
-          );
-        } catch {
-          // Queue itself unavailable; the item stays syncing for a later pass.
-        }
-        return 'failed';
-      }
-    }
 
     if (item.operation === 'delete') {
       await durableSyncQueue.markCompleted(item.id);

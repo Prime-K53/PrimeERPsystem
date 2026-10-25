@@ -24,7 +24,6 @@ import { useProduction } from './ProductionContext';
 import { useSales } from './SalesContext';
 import { useProcurement } from './ProcurementContext';
 import { useOrders } from './OrdersContext';
-import { useExamination } from './ExaminationContext';
 import { useBankingStore } from './BankingContext';
 import { useAuth } from './AuthContext';
 import { dbService } from '../services/db';
@@ -77,7 +76,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const sales = useSales();
     const procurement = useProcurement();
     const orders = useOrders();
-    const examination = useExamination();
     const auth = useAuth();
 
     const [tasks, setTasks] = useState<any[]>([]);
@@ -137,7 +135,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 procurement,
                 production,
                 orders,
-                examination,
                 banking: { fetchBankingData: useBankingStore.getState().fetchBankingData }
             }, true);
             diagDashboardDataLoadCompleted('DataContext.refreshAllData', diagLoadStart);
@@ -150,7 +147,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             lastRefreshAtRef.current = Date.now();
             refreshInFlightRef.current = false;
         }
-    }, [finance, sales, inventory, procurement, production, orders, examination]);
+    }, [finance, sales, inventory, procurement, production, orders]);
 
     const queueRefresh = useCallback((delayMs = REFRESH_DEBOUNCE_MS, options: { force?: boolean } = { force: true }) => {
         // [ERP-SYNC-DIAG] existing debounce entry point — reports every refresh trigger.

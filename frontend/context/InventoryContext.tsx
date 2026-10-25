@@ -9,7 +9,6 @@ import { generateNextId, roundFinancial } from '../utils/helpers';
 import { generateLocalId } from '../utils/idGeneration';
 import { dbService } from '../services/db';
 import { useProductionStore } from '../stores/productionStore';
-import { isItemBomRelevant, syncBomRelevantInventoryToBackend } from '../services/examinationSyncService';
 import { logger } from '../services/logger';
 import { syncAllItemStockWithWarehouses } from '../services/inventorySyncService';
 import { checkAndSendLowStockAlerts } from '../services/lowStockAlertService';
@@ -86,21 +85,10 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const isLoading = isInventoryLoading || isProcurementLoading;
 
     const syncBomRelevantInventory = async (
-        triggerReason: string,
-        items?: Array<Partial<Item> & { id: string }>
+        _triggerReason: string,
+        _items?: Array<Partial<Item> & { id: string }>
     ) => {
-        try {
-            const syncResult = await syncBomRelevantInventoryToBackend({
-                items: items && items.length > 0 ? items : undefined,
-                triggerRecalculate: true
-            });
-            if (syncResult?.recalculation?.failed > 0) {
-                notify(`Inventory synced but ${syncResult.recalculation.failed} examination batch recalculation(s) failed`, 'error');
-            }
-        } catch (error) {
-            logger.error(`Failed to sync BOM-relevant inventory after ${triggerReason}:`, error);
-            notify('Inventory updated locally, but examination backend sync failed', 'error');
-        }
+        return;
     };
 
     useEffect(() => {
@@ -187,8 +175,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             const previousCost = normalizePrice(oldVal);
             const nextCost = normalizePrice(item);
             const costChanged = Math.abs(previousCost - nextCost) > 0.00001;
-            const wasBomRelevant = oldVal ? isItemBomRelevant(oldVal) : false;
-            const isNowBomRelevant = isItemBomRelevant(item);
+            const wasBomRelevant = false;
+            const isNowBomRelevant = false;
             if (costChanged || wasBomRelevant || isNowBomRelevant) {
                 // Fire-and-forget sync to backend - don't block the save operation
                 syncBomRelevantInventory('item update', [item]).catch((error) => {

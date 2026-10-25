@@ -1,7 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
 import { logger } from '@/services/logger';
-import { ExaminationBatchNotification } from '../types';
-import { examinationNotificationService } from '../services/examinationNotificationService';
 import { dbService } from '../services/db';
 import { NOTIFICATION_SYNC_KEY, NOTIFICATION_UPDATE_EVENT, publishSystemAlert } from '../services/systemAlertService';
 import { subscribeAdminEvents } from '../services/adminPortalClient';
@@ -78,31 +76,8 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
 
     setLoading(true);
     try {
-      const user = examinationNotificationService.getCurrentUserId();
-      userIdRef.current = user;
-
-      // Parallel fetch from both sources
-      const [examNotifs, systemAlerts] = await Promise.all([
-        user
-          ? examinationNotificationService.getUserNotifications(user, maxNotifications)
-          : Promise.resolve([]),
-        dbService.getAll<any>('alerts')
-      ]);
-
-      // Unified mapping
-      const mappedExam: UnifiedNotification[] = examNotifs.map(n => ({
-        id: n.id,
-        type: n.notification_type || 'EXAM',
-        priority: (n.priority || 'Medium') as UnifiedNotification['priority'],
-        title: n.title,
-        message: n.message,
-        is_read: n.is_read,
-        created_at: n.created_at,
-        read_at: n.read_at,
-        module: 'Examination',
-        batch_id: n.batch_id,
-        actionUrl: `/examination/batches/${n.batch_id}`
-      }));
+      // Fetch system alerts only (examination module removed)
+      const systemAlerts = await dbService.getAll<any>('alerts');
 
       const mappedSystem: UnifiedNotification[] = systemAlerts.map(a => {
         // Assessment countdown alerts published before the Printing
@@ -131,7 +106,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
         };
       });
 
-      const combined = [...mappedExam, ...mappedSystem]
+      const combined = [...mappedSystem]
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
         .slice(0, maxNotifications);
 
@@ -153,17 +128,13 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
       const notification = notifications.find(n => n.id === notificationId);
       if (!notification) return;
 
-      if (notification.module === 'Examination') {
-        await examinationNotificationService.markAsRead(notificationId);
-      } else {
-        const storedAlert = await dbService.get<any>('alerts', notificationId);
-        if (storedAlert) {
-          await dbService.put('alerts', {
-            ...storedAlert,
-            read: true,
-            readAt: new Date().toISOString()
-          });
-        }
+      const storedAlert = await dbService.get<any>('alerts', notificationId);
+      if (storedAlert) {
+        await dbService.put('alerts', {
+          ...storedAlert,
+          read: true,
+          readAt: new Date().toISOString()
+        });
       }
 
       setNotifications(prev =>
@@ -192,11 +163,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
       const notif = notifications.find(n => n.id === notificationId);
       if (!notif) return;
 
-      if (notif.module === 'Examination') {
-        await examinationNotificationService.dismissNotification(notificationId);
-      } else {
-        await dbService.delete('alerts', notificationId);
-      }
+      await dbService.delete('alerts', notificationId);
 
       setNotifications(prev => prev.filter(n => n.id !== notificationId));
     } catch (err) {

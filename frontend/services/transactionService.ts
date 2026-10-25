@@ -18,7 +18,6 @@ import { MultiCurrencyJournalEntry, MultiCurrencyTransactionLine, CurrencyGainLo
 import { assertInvoiceNumberFormat, calculateDueDate, generateNextId, resolveCustomerPaymentTerms, roundToCurrency } from '../utils/helpers';
 import { assertFinancialPeriodOpenForPeriods, type ClosedFinancialPeriod } from '../utils/financialPeriodClosure';
 import { allocateEligibleReservations } from '../utils/contractFunds';
-import { traceExamInvoice } from '../utils/examinationInvoiceDiag';
 import { extractProfitMargin } from '../utils/financial/extractors';
 import { pagesToReams, pagesToTonerKg } from '../utils/printConversions';
 import { inferSignatureInputMode, resolveSignatureDataUrl } from '../utils/signatureUtils';
@@ -2530,12 +2529,6 @@ export const transactionService = {
     },
 
     async processInvoice(invoice: Invoice, performedBy?: string) {
-        await traceExamInvoice('process-entry', {
-            id: (invoice as any)?.id,
-            invoiceNumber: (invoice as any)?.invoiceNumber,
-            originModule: (invoice as any)?.originModule ?? (invoice as any)?.origin_module,
-            verificationToken: (invoice as any)?.verificationToken,
-        });
         const _processInvoiceResult = await dbService.executeAtomicOperation(
             ['invoices', 'inventory', 'ledger', 'customers', 'bomTemplates', 'marketAdjustments', 'marketAdjustmentTransactions', 'customerPayments', 'bankAccounts', 'bankTransactions', 'inventoryTransactions', 'idempotencyKeys', 'walletTransactions', 'accounts'],
             async (tx) => {

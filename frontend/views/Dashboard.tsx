@@ -291,15 +291,16 @@ const PremiumKpiCard = ({
       onKeyDown={handleKeyDown}
       style={{
         position: 'relative',
-        background: '#FEFDFB',
-        borderRadius: 14,
+        background: 'rgba(255, 255, 255, 0.65)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        borderRadius: compact ? 16 : 24,
         padding: compact ? '16px' : '24px',
-        boxShadow: '0 1px 2px rgba(11,62,57,.04)',
-        border: '1px solid #e4ddd1',
+        boxShadow: '0 8px 32px rgba(31, 38, 135, 0.08)',
+        border: '1px solid rgba(255, 255, 255, 0.8)',
         borderTop: `2px solid ${accentColor}44`,
-        borderLeft: `3px solid ${accentColor}22`,
         cursor: onClick ? 'pointer' : 'default',
-        transition: 'box-shadow 0.22s ease, transform 0.22s ease, background 0.22s ease, border-color 0.22s ease',
+        transition: 'all 0.5s ease-in-out',
         display: 'flex',
         flexDirection: 'column',
         gap: compact ? 8 : 16,
@@ -309,19 +310,13 @@ const PremiumKpiCard = ({
         outline: 'none',
       }}
       onClick={onClick}
-      onFocus={(e) => { e.currentTarget.style.boxShadow = `0 0 0 3px ${accentColor}33, 0 1px 2px rgba(11,62,57,.06), 0 4px 12px rgba(11,62,57,.08)`; }}
-      onBlur={(e) => { e.currentTarget.style.boxShadow = '0 1px 2px rgba(11,62,57,.04)'; }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = `0 1px 2px rgba(11,62,57,.06), 0 4px 12px ${accentColor}1f`;
-        e.currentTarget.style.transform = 'translateY(-2px)';
-        e.currentTarget.style.borderLeftColor = `${accentColor}77`;
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow = '0 1px 2px rgba(11,62,57,.04)';
-        e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.borderLeftColor = `${accentColor}22`;
-      }}
     >
+      <div style={{
+        position: 'absolute', top: -60, right: -60, width: 180, height: 180, borderRadius: '50%',
+        background: `radial-gradient(circle, ${accentColor}26 0%, transparent 70%)`,
+        pointerEvents: 'none', zIndex: 0
+      }} />
+      <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', gap: compact ? 8 : 16, flex: 1 }}>
       {children ? children : (
         <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -471,6 +466,7 @@ const PremiumKpiCard = ({
           </div>
         </>
       )}
+      </div>
 
       <div style={{
         position: 'absolute',
@@ -1252,10 +1248,6 @@ const DashboardContent: React.FC = () => {
             <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#cbd5e1' }} />{draft} draft</span>
           </div>
           <div style={{ height: '1px', backgroundColor: 'rgba(0,0,0,0.06)', width: '100%', margin: '2px 0' }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: 11, color: '#64748b' }}>Pending payment</div>
-            <div style={{ fontSize: 11, color: '#0f172a', fontWeight: 700 }}>{contractStats.pendingPayment}</div>
-          </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: 11, color: '#64748b' }}>Prepaid balance</div>
             <div style={{ fontSize: 10, fontWeight: 700, color: '#b45309', backgroundColor: '#fffbeb', padding: '1px 8px', borderRadius: 6 }}>{formatShortCurrency(currency, contractStats.prepaidBalance)}</div>

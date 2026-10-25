@@ -1,6 +1,7 @@
 import { attachPricingBreakdown, getMarketAdjustmentSnapshots } from '../utils/pricingBreakdown';
 import { roundMoney } from '../utils/roundingUtils';
-import { enrichInvoiceWithBatchPricing, findMatchingExaminationBatch } from '../utils/examinationInvoicePricing';
+const enrichInvoiceWithBatchPricing = (inv: any) => inv;
+const findMatchingExaminationBatch = (_inv: any, _batches: any) => null;
 import {
   invoiceRevenueSign,
   isRecognizedInvoiceStatus,

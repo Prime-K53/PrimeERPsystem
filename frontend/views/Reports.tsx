@@ -20,7 +20,6 @@ import { useAuth } from '../context/AuthContext';
 import { useSales } from '../context/SalesContext';
 import { useFinance } from '../context/FinanceContext';
 import { useOrders } from '../context/OrdersContext';
-import { useExamination } from '../context/ExaminationContext';
 import { useLocation, useNavigate } from 'react-router-dom';
 import SalesAudit from './reports/SalesAudit';
 import RevenueDashboard from './reports/RevenueDashboard';
@@ -62,7 +61,7 @@ const Reports: React.FC = () => {
   const { sales = [], customers = [] } = useSales();
   const { invoices = [] } = useFinance();
   const { orders = [] } = useOrders();
-  const { batches: examinationBatches = [] } = useExamination();
+  const examinationBatches: any[] = [];
   const location = useLocation();
   const navigate = useNavigate();
     const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';

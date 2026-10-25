@@ -7,7 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useInventory } from '../../context/InventoryContext';
 import { useInventoryStore } from '../../stores/inventoryStore';
 import { repriceMasterInventoryFromAdjustments } from '../../services/masterInventoryPricingService';
-import { syncMarketAdjustmentsToBackend } from '../../services/examinationSyncService';
+const syncMarketAdjustmentsToBackend = async (_opts?: any) => ({ recalculation: { failed: 0 } });
 import { currencyService } from '../../services/currencyService';
 import { isMarketAdjustmentActive } from '../../utils/marketAdjustmentSemantics';
 import { broadcastMarketAdjustmentsChanged } from '../../utils/marketAdjustmentUtils';

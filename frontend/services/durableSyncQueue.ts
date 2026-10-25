@@ -1,6 +1,5 @@
 import { openDB, IDBPDatabase } from 'idb';
 import { logger } from './logger';
-import { traceExamInvoice } from '../utils/examinationInvoiceDiag';
 
 export type QueueStatus = 'pending' | 'syncing' | 'failed' | 'completed' | 'dead_letter';
 export type QueueOperation = 'insert' | 'update' | 'delete' | 'upsert';
@@ -407,16 +406,6 @@ export const durableSyncQueue = {
     );
 
     if (duplicate) {
-      // Temporary diagnostic trace (EXM-P726/021 only, read-only).
-      await traceExamInvoice('queue-duplicate', {
-        recordId: duplicate.recordId,
-        id: (duplicate.payload as Record<string, unknown> | null)?.id,
-        invoiceNumber: (duplicate.payload as Record<string, unknown> | null)?.invoiceNumber,
-        verificationToken: (duplicate.payload as Record<string, unknown> | null)?.verificationToken,
-      }, {
-        table: duplicate.table, operation: duplicate.operation,
-        opId: duplicate.id, opStatus: duplicate.status, retryCount: duplicate.retryCount ?? 0,
-      });
       return duplicate;
     }
 
@@ -443,17 +432,6 @@ export const durableSyncQueue = {
         existingPendingUpsert.payload = { ...existingPendingUpsert.payload, ...input.payload };
         const db = await getDb();
         await db.put('operations', existingPendingUpsert);
-        // Temporary diagnostic trace (EXM-P726/021 only, read-only).
-        await traceExamInvoice('queue-merged', {
-          recordId: existingPendingUpsert.recordId,
-          id: (existingPendingUpsert.payload as Record<string, unknown> | null)?.id,
-          invoiceNumber: (existingPendingUpsert.payload as Record<string, unknown> | null)?.invoiceNumber,
-          verificationToken: (existingPendingUpsert.payload as Record<string, unknown> | null)?.verificationToken,
-        }, {
-          table: existingPendingUpsert.table, operation: existingPendingUpsert.operation,
-          opId: existingPendingUpsert.id, opStatus: existingPendingUpsert.status,
-          retryCount: existingPendingUpsert.retryCount ?? 0,
-        });
         return existingPendingUpsert;
       }
     }
@@ -525,16 +503,6 @@ export const durableSyncQueue = {
     });
     await db.put('operations', item);
     /* SYNC-FORENSIC suppressed: STAGE-3 durableSyncQueue.enqueue() persisted */
-    // Temporary diagnostic trace (EXM-P726/021 only, read-only).
-    await traceExamInvoice('queue-created', {
-      recordId: item.recordId,
-      id: (item.payload as Record<string, unknown> | null)?.id,
-      invoiceNumber: (item.payload as Record<string, unknown> | null)?.invoiceNumber,
-      verificationToken: (item.payload as Record<string, unknown> | null)?.verificationToken,
-    }, {
-      table: item.table, operation: item.operation,
-      opId: item.id, opStatus: item.status, retryCount: item.retryCount ?? 0,
-    });
     return item;
   },
 

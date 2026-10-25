@@ -4,7 +4,6 @@ import { useAuth } from '../../context/AuthContext';
 import { useSales } from '../../context/SalesContext';
 import { useFinance } from '../../context/FinanceContext';
 import { useOrders } from '../../context/OrdersContext';
-import { useExamination } from '../../context/ExaminationContext';
 import { useModuleRefresh } from '../../hooks/useModuleRefresh';
 import {
   Activity, AlertTriangle, Coins, DollarSign, Layers3, Receipt, TrendingDown, TrendingUp, Users, Wallet, } from 'lucide-react';
@@ -37,7 +36,7 @@ const RevenueDashboard: React.FC = () => {
   const { sales = [], isLoading } = useSales();
   const { invoices = [], expenses = [], ledger = [], accounts = [] } = useFinance();
   const { orders = [] } = useOrders();
-  const { batches: examinationBatches = [] } = useExamination();
+  const examinationBatches: any[] = [];
   const { refreshAllData } = useData();
 
   const [isRefreshing, setIsRefreshing] = useState(false);

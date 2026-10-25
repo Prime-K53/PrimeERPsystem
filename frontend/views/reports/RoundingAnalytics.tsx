@@ -4,7 +4,6 @@ import { useAuth } from '../../context/AuthContext';
 import { useSales } from '../../context/SalesContext';
 import { useFinance } from '../../context/FinanceContext';
 import { useOrders } from '../../context/OrdersContext';
-import { useExamination } from '../../context/ExaminationContext';
 import { currencyService } from '../../services/currencyService';
 import { buildRevenueReportingSnapshot } from '../../services/revenueReportingService';
 
@@ -40,7 +39,7 @@ const RoundingAnalytics: React.FC = () => {
   const { sales = [], isLoading } = useSales();
   const { invoices = [] } = useFinance();
   const { orders = [] } = useOrders();
-  const { batches: examinationBatches = [] } = useExamination();
+  const examinationBatches: any[] = [];
 
   const currency = companyConfig?.currencySymbol || currencyService.getCurrency(currencyService.getBaseCurrency())?.symbol || '$';
   const [period, setPeriod] = useState<Period>('week');

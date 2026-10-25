@@ -373,17 +373,6 @@ const publicDocumentDownloadRoutes = require('./routes/publicDocumentDownload.cj
 app.use('/api/public/documents', documentVerificationLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 120 }), publicDocumentDownloadRoutes);
 
 // Apply JWT verification to all /api routes (auth routes are skipped by verifyToken internally)
-// Public read-only Examination capability probe, registered BEFORE the global
-// `verifyToken` gate because it exposes no user data and the browser POST
-// path needs to know the server boundary even on a fresh session.
-app.get('/api/examination/posting/capability', (req, res) => {
-  const postingService = require('./services/examinationPostingService.cjs');
-  res.set('Cache-Control', 'no-store');
-  res.json({
-    enabled: postingService.isPostingEnabled(),
-    boundary: 'examination',
-  });
-});
 
 app.use('/api', verifyToken);
 // Inject currency into requests
@@ -1260,18 +1249,6 @@ async function startServer() {
       res.status(500).json({ error: 'Failed to void sale' });
     }
   });
-
-  // --- Examination Module Endpoints ---
-  // Apply checkPermission middleware to all examination routes that modify state
-  // For GET routes, we might allow read-only access or apply granular permissions if needed
-  const examinationRoutes = require('./routes/examination.cjs');
-  app.use('/api/examination', (req, res, next) => {
-      if (req.method !== 'GET' && !req.user) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-      next();
-  }, auditCrudMiddleware('examination_batch'), examinationRoutes);
-
   // --- Profit Margin Settings Endpoints ---
   const settingsRoutes = require('./routes/settings.cjs');
   app.use('/api/settings', (req, res, next) => {
@@ -4164,114 +4141,6 @@ const result = await paymentAllocation.allocatePayment(payment, allocations, pay
       res.status(500).json({ error: err?.message || 'Failed to delete inventory item' });
     }
   });
-
-// 11. Delete Examination Batch
-app.delete('/api/examinations/batch/:batch_id', requireRole('Admin'), async (req, res) => {
-  const { batch_id } = req.params;
-  try {
-    await sq.run("DELETE FROM examination_bom_calculations WHERE batch_id = ?", [batch_id]);
-    await sq.run("DELETE FROM examination_subjects WHERE batch_id = ?", [batch_id]);
-    await sq.run("DELETE FROM examination_classes WHERE batch_id = ?", [batch_id]);
-    await sq.run("DELETE FROM examinations WHERE batch_id = ?", [batch_id]);
-    await sq.run("DELETE FROM examination_batches WHERE id = ?", [batch_id]);
-    res.json({ success: true });
-  } catch (err) {
-    console.error('[Examination] delete batch error:', err);
-    res.status(500).json({ error: 'Failed to delete batch' });
-  }
-});
-
-// 13. Toggle Recurring Status
-app.post('/api/examinations/batch/:batch_id/recurring', requireRole('Admin'), async (req, res) => {
-  const { batch_id } = req.params;
-  const { is_recurring } = req.body;
-  sq.run("UPDATE examinations SET is_recurring = ? WHERE batch_id = ?", [is_recurring ? 1 : 0, batch_id], (err) => {
-    if (err) { console.error('[Examination] toggle recurring error:', err); return res.status(500).json({ error: 'Failed to update recurring status' }); }
-    res.json({ success: true });
-  });
-});
-
-// 12. Get Invoice Details
-app.get('/api/invoices/:id/details', requireRole('Admin', 'Accountant', 'Manager', 'Clerk', 'Viewer'), (req, res) => {
-  const { id } = req.params;
-  sq.getAll(`SELECT class, SUM(candidates) as learner_count, AVG(charge_per_learner) as charge_per_learner, SUM(selling_price) as total
-          FROM examinations 
-          WHERE invoice_id = ?
-          GROUP BY class`, [id], (err, rows) => {
-    if (err) { console.error('[Invoices] details error:', err); return res.status(500).json({ error: 'Failed to retrieve invoice details' }); }
-    res.json(rows);
-  });
-});
-
-  // 10. Get Examination Stats
-  app.get('/api/stats/examination', checkPermission('view_stats'), injectFinancialYear, async (req, res) => {
-    try {
-      const fyStart = req.fyStartDate;
-      const fyEnd = req.fyEndDate;
-      const stats = {};
-      
-      const examinations = await sq.getAll(`SELECT * FROM examinations`, []);
-      const invoices = await sq.getAll(`SELECT * FROM invoices`, []);
-      
-      const pendingExams = examinations.filter(e => e.status === 'pending' && e.created_at >= fyStart && e.created_at <= fyEnd);
-      stats.pending_jobs = pendingExams.length;
-      
-      const paidInvoices = invoices.filter(i => String(i.status || '').toLowerCase() === 'paid' && i.created_at >= fyStart && i.created_at <= fyEnd);
-      stats.total_revenue = paidInvoices.reduce((sum, i) => sum + (Number(i.total_amount) || 0), 0);
-      
-      const unpaidInvoices = invoices.filter(i => String(i.status || '').toLowerCase() === 'unpaid' && i.created_at >= fyStart && i.created_at <= fyEnd);
-      stats.outstanding_amount = unpaidInvoices.reduce((sum, i) => sum + (Number(i.total_amount) || 0), 0);
-      
-      const wasteExams = examinations.filter(e => e.created_at >= fyStart && e.created_at <= fyEnd);
-      stats.total_waste = wasteExams.reduce((sum, e) => sum + (Number(e.actual_waste_sheets) || 0), 0);
-      
-      const sheetsExams = examinations.filter(e => e.created_at >= fyStart && e.created_at <= fyEnd);
-      stats.total_sheets = sheetsExams.reduce((sum, e) => sum + (Number(e.total_sheets_used) || 0), 0);
-      stats.total_cost = sheetsExams.reduce((sum, e) => sum + (Number(e.internal_cost) || 0), 0);
-      
-      res.json(stats);
-    } catch (err) {
-      console.error('[Stats] examination stats error:', err?.message || err);
-      res.status(500).json({ error: 'Failed to load stats' });
-    }
-  });
-
-  // 14. Get Monthly Examination Data for Dashboard
-  app.get('/api/stats/monthly-data', checkPermission('view_stats'), injectFinancialYear, async (req, res) => {
-    try {
-      const fyStart = req.fyStartDate;
-      const fyEnd = req.fyEndDate;
-      
-      const invoices = await sq.getAll(`SELECT * FROM invoices WHERE status != 'cancelled'`, []);
-      const examinations = await sq.getAll(`SELECT * FROM examinations`, []);
-      
-      const months = ['01','02','03','04','05','06','07','08','09','10','11','12'];
-      const result = months.map(m => ({ month: m, revenue: 0, cost: 0 }));
-      
-      for (const inv of invoices) {
-        if (inv.created_at >= fyStart && inv.created_at <= fyEnd) {
-          const month = String(new Date(inv.created_at).getMonth() + 1).padStart(2, '0');
-          const idx = result.findIndex(r => r.month === month);
-          if (idx >= 0) result[idx].revenue += Number(inv.total_amount) || 0;
-        }
-      }
-      
-      for (const exam of examinations) {
-        if (exam.created_at >= fyStart && exam.created_at <= fyEnd) {
-          const month = String(new Date(exam.created_at).getMonth() + 1).padStart(2, '0');
-          const idx = result.findIndex(r => r.month === month);
-          if (idx >= 0) result[idx].cost += Number(exam.internal_cost) || 0;
-        }
-      }
-      
-      res.json(result);
-    } catch (err) {
-      console.error('[Stats] monthly-data error:', err?.message || err);
-      res.status(500).json({ error: 'Failed to load monthly data' });
-    }
-  });
-  // --- End of Monthly Data ---
-
   // === Inventory Transaction API Endpoints ===
   
   // Create inventory transaction (deduction)

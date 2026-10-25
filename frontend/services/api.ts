@@ -10,7 +10,6 @@ import {
   SMSCampaign, Subscriber, SMSTemplate, Cheque, Shipment, SubcontractOrder,
   MaintenanceLog, UserRole,
   ExamPaper, ExamPrintingBatch, School, ExamJob, Customer, Supplier, SupplierPayment, SalesReturn,
-  ExaminationJob, ExaminationJobSubject, ExaminationInvoiceGroup, ExaminationRecurringProfile,
   Order, BillOfMaterial, BOMTemplate, MarketAdjustment,
   AssessmentContract, AssessmentContractItem, ContractAmendment
 } from '../types';
@@ -24,7 +23,6 @@ import { derivePurchasePaymentStatus } from '../utils/paymentUtils';
 import { generateNextSalesInvoiceNumber } from './documentNumberService';
 import { sumPostedExpenseDebits } from '../utils/glReconciliation';
 import { normalizeInventoryItemPricing } from '../utils/pricing';
-import { examinationJobService } from './examinationJobService.ts';
 
 
 /**
@@ -523,76 +521,6 @@ export const api = {
 
     getExaminations: () => handle(() => dbService.getAll<ExamPaper>('examPapers'), 'Production.GetExaminations'),
     getSchools: () => handle(() => dbService.getAll<School>('schools'), 'Production.GetSchools'),
-
-    // --- New Examination Printing Module ---
-    getExaminationJobs: () => handle(() => examinationJobService.listJobs(), 'Production.GetExaminationJobs'),
-    getExaminationJob: (examId: string) => handle(() => examinationJobService.getJob(examId), 'Production.GetExaminationJob'),
-    createExaminationJob: (payload: ExaminationJobPayload) => handle(() => {
-      checkAuth(['Admin', 'Accountant', 'Clerk'], 'Production.CreateExaminationJob');
-      return examinationJobService.createJob(payload);
-    }, 'Production.CreateExaminationJob'),
-    updateExaminationJob: (examId: string, updates: Partial<ExaminationJobPayload>) => handle(() => {
-      checkAuth(['Admin', 'Accountant', 'Clerk'], 'Production.UpdateExaminationJob');
-      return examinationJobService.updateJob(examId, updates);
-    }, 'Production.UpdateExaminationJob'),
-    replaceExaminationSubjects: (examId: string, subjects: ExaminationJobPayload['subjects']) => handle(() => {
-      checkAuth(['Admin', 'Accountant', 'Clerk'], 'Production.ReplaceExaminationSubjects');
-      return examinationJobService.replaceSubjects(examId, subjects);
-    }, 'Production.ReplaceExaminationSubjects'),
-    recalculateExam: (examId: string) => handle(() => {
-      checkAuth(['Admin', 'Accountant', 'Clerk'], 'Production.RecalculateExam');
-      return examinationJobService.recalculateExam(examId);
-    }, 'Production.RecalculateExam'),
-    recalculateOpenExaminationJobs: (includeOverridden = true) => handle(() => {
-      checkAuth(['Admin', 'Accountant', 'Clerk'], 'Production.RecalculateOpenExaminationJobs');
-      return examinationJobService.recalculateOpenJobs({ includeOverridden });
-    }, 'Production.RecalculateOpenExaminationJobs'),
-    approveExaminationJob: (examId: string) => handle(() => {
-      checkAuth(['Admin', 'Accountant', 'Clerk'], 'Production.ApproveExaminationJob');
-      return examinationJobService.approveJob(examId);
-    }, 'Production.ApproveExaminationJob'),
-    deleteExaminationJob: (examId: string) => handle(async () => {
-      checkAuth(['Admin', 'Accountant'], 'Production.DeleteExaminationJob');
-      return examinationJobService.deleteJob(examId);
-    }, 'Production.DeleteExaminationJob'),
-    createExaminationInvoice: (jobIds: string[]) => handle(() => {
-      checkAuth(['Admin', 'Accountant', 'Clerk'], 'Production.CreateExaminationInvoice');
-      return examinationJobService.createInvoiceForJobs(jobIds);
-    }, 'Production.CreateExaminationInvoice'),
-    getExaminationInvoiceGroups: () => handle(() => examinationJobService.listInvoiceGroups(), 'Production.GetExaminationInvoiceGroups'),
-    createExaminationInvoiceGroup: (payload: ExaminationGroupPayload) => handle(() => {
-      checkAuth(['Admin', 'Accountant', 'Clerk'], 'Production.CreateExaminationInvoiceGroup');
-      return examinationJobService.createInvoiceGroup(payload);
-    }, 'Production.CreateExaminationInvoiceGroup'),
-    addJobsToExaminationInvoiceGroup: (groupId: string, jobIds: string[]) => handle(() => {
-      checkAuth(['Admin', 'Accountant', 'Clerk'], 'Production.AddJobsToExaminationInvoiceGroup');
-      return examinationJobService.addJobsToGroup(groupId, jobIds);
-    }, 'Production.AddJobsToExaminationInvoiceGroup'),
-    removeJobFromExaminationInvoiceGroup: (groupId: string, jobId: string) => handle(() => {
-      checkAuth(['Admin', 'Accountant', 'Clerk'], 'Production.RemoveJobFromExaminationInvoiceGroup');
-      return examinationJobService.removeJobFromGroup(groupId, jobId);
-    }, 'Production.RemoveJobFromExaminationInvoiceGroup'),
-    deleteExaminationInvoiceGroup: (groupId: string) => handle(async () => {
-      checkAuth(['Admin', 'Accountant'], 'Production.DeleteExaminationInvoiceGroup');
-      return examinationJobService.deleteInvoiceGroup(groupId);
-    }, 'Production.DeleteExaminationInvoiceGroup'),
-    generateExaminationGroupInvoice: (groupId: string) => handle(() => {
-      checkAuth(['Admin', 'Accountant', 'Clerk'], 'Production.GenerateExaminationGroupInvoice');
-      return examinationJobService.generateInvoiceForGroup(groupId);
-    }, 'Production.GenerateExaminationGroupInvoice'),
-    getExaminationRecurringProfiles: () => handle(() => examinationJobService.listRecurringProfiles(), 'Production.GetExaminationRecurringProfiles'),
-    convertExaminationJobToRecurring: (examId: string, payload: ExaminationRecurringPayload) => handle(() => {
-      checkAuth(['Admin', 'Accountant', 'Clerk'], 'Production.ConvertExaminationJobToRecurring');
-      return examinationJobService.convertJobToRecurring(examId, payload);
-    }, 'Production.ConvertExaminationJobToRecurring'),
-    convertExaminationGroupToRecurring: (groupId: string, payload: ExaminationRecurringPayload) => handle(() => {
-      checkAuth(['Admin', 'Accountant', 'Clerk'], 'Production.ConvertExaminationGroupToRecurring');
-      return examinationJobService.convertGroupToRecurring(groupId, payload);
-    }, 'Production.ConvertExaminationGroupToRecurring'),
-    runExaminationRecurringBilling: (asOfDate?: string) => handle(() => {
-      checkAuth(['Admin', 'Accountant', 'Clerk'], 'Production.RunExaminationRecurringBilling');
-      return examinationJobService.runRecurringBilling(asOfDate);
-    }, 'Production.RunExaminationRecurringBilling'),
 
     // --- Dynamic Classes & Subjects ---
     getClasses: () => handle(async () => {

@@ -24,7 +24,6 @@ import { ProductionProvider } from "./context/ProductionContext";
 import { ProcurementProvider } from "./context/ProcurementContext";
 import { DataProvider } from "./context/DataContext";
 import { useSales } from "./context/SalesContext";
-import { ExaminationProvider } from "./context/ExaminationContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import { OrdersProvider } from "./context/OrdersContext";
 import { PwaInstallProvider, usePwaInstall } from "./context/PwaInstallContext";
@@ -251,38 +250,7 @@ const MachineMaintenance = lazyWithRetry(
   "./views/production/MachineMaintenance",
   () => import("./views/production/MachineMaintenance"),
 );
-const ExaminationHub = lazyWithRetry(
-  "./views/examination/ExaminationHub",
-  () => import("./views/examination/ExaminationHub"),
-);
-const ExaminationInvoices = lazyWithRetry(
-  "./views/examination/ExaminationInvoices",
-  () => import("./views/examination/ExaminationInvoices"),
-);
-const ExaminationBatchForm = lazyWithRetry(
-  "./views/examination/ExaminationBatchForm",
-  () => import("./views/examination/ExaminationBatchForm"),
-);
-const ExaminationBatchDetail = lazyWithRetry(
-  "./views/examination/ExaminationBatchDetail",
-  () => import("./views/examination/ExaminationBatchDetail"),
-);
-const ExaminationJobForm = lazyWithRetry(
-  "./views/examination/ExaminationJobForm",
-  () => import("./views/examination/ExaminationJobForm"),
-);
-const InvoiceGroupManager = lazyWithRetry(
-  "./views/examination/InvoiceGroupManager",
-  () => import("./views/examination/InvoiceGroupManager"),
-);
-const RecurringProfiles = lazyWithRetry(
-  "./views/examination/RecurringProfiles",
-  () => import("./views/examination/RecurringProfiles"),
-);
-const ExaminationPrinting = lazyWithRetry(
-  "./views/production/ExaminationPrinting",
-  () => import("./views/production/ExaminationPrinting"),
-);
+
 const Subcontracting = lazyWithRetry(
   "./views/purchases/Subcontracting",
   () => import("./views/purchases/Subcontracting"),
@@ -486,10 +454,6 @@ const Profile = lazyWithRetry(
 const SyncHealth = lazyWithRetry(
   "./views/admin/SyncHealth",
   () => import("./views/admin/SyncHealth"),
-);
-const ExaminationInvoiceDiag = lazyWithRetry(
-  "./views/admin/ExaminationInvoiceDiag",
-  () => import("./views/admin/ExaminationInvoiceDiag"),
 );
 const BOMRecipes = lazyWithRetry(
   "./views/production/BOMRecipes",
@@ -1382,10 +1346,6 @@ const AppLayout: React.FC = () => {
                     element={<Navigate to="/industrial/mrp" replace />}
                   />
                   <Route
-                    path="/production/examination-printing"
-                    element={<Navigate to="/examination/batches" replace />}
-                  />
-                  <Route
                     path="/accounts/expenses"
                     element={<Navigate to="/procurement/expenses" replace />}
                   />
@@ -2097,83 +2057,6 @@ const AppLayout: React.FC = () => {
                     />
                   </Route>
 
-                  {/* Examination */}
-                  <Route
-                    element={
-                      <ErrorBoundary name="Examination">
-                        <Outlet />
-                      </ErrorBoundary>
-                    }
-                  >
-                    <Route
-                      path="/examination"
-                      element={<Navigate to="/examination/batches" replace />}
-                    />
-                    <Route
-                      path="/examination/batches"
-                      element={
-                        <ProtectedRoute permission="production.view">
-                          <ExaminationHub />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/examination/batches/new"
-                      element={
-                        <ProtectedRoute permission="production.view">
-                          <ExaminationBatchForm />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/examination/batches/:id"
-                      element={
-                        <ProtectedRoute permission="production.view">
-                          <ExaminationBatchDetail />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/examination/invoices"
-                      element={
-                        <ProtectedRoute permission="production.view">
-                          <ExaminationInvoices />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/examination/jobs/new"
-                      element={
-                        <ProtectedRoute permission="production.view">
-                          <ExaminationJobForm />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/examination/jobs/:id"
-                      element={
-                        <ProtectedRoute permission="production.view">
-                          <ExaminationJobForm />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/examination/groups"
-                      element={
-                        <ProtectedRoute permission="production.view">
-                          <InvoiceGroupManager />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/examination/recurring"
-                      element={
-                        <ProtectedRoute permission="production.view">
-                          <RecurringProfiles />
-                        </ProtectedRoute>
-                      }
-                    />
-                  </Route>
 
                   {/* VAT */}
                   <Route
@@ -2230,16 +2113,6 @@ const AppLayout: React.FC = () => {
                       <ErrorBoundary name="Admin">
                         <ProtectedRoute permission="admin.settings">
                           <SyncHealth />
-                        </ProtectedRoute>
-                      </ErrorBoundary>
-                    }
-                  />
-                  <Route
-                    path="/admin/examination-invoice-diag"
-                    element={
-                      <ErrorBoundary name="Admin">
-                        <ProtectedRoute permission="admin.settings">
-                          <ExaminationInvoiceDiag />
                         </ProtectedRoute>
                       </ErrorBoundary>
                     }
@@ -2980,7 +2853,6 @@ const App: React.FC = () => {
                   <FinanceProvider>
                     <InventoryProvider>
                       <ProductionProvider>
-                        <ExaminationProvider>
                           <ProcurementProvider>
                             <SalesProvider>
                               <OrdersProvider>
@@ -2992,7 +2864,6 @@ const App: React.FC = () => {
                               </OrdersProvider>
                             </SalesProvider>
                           </ProcurementProvider>
-                        </ExaminationProvider>
                       </ProductionProvider>
                     </InventoryProvider>
                   </FinanceProvider>
